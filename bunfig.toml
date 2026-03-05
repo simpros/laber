@@ -1,0 +1,5 @@
+[run]
+bun = true
+
+[test]
+preload = ["./svelte-test-setup.ts"]

@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Turborepo
+.turbo/
+
+# SvelteKit
+.svelte-kit/
+build/
+
+# Build output
+dist/
+.output/
+.vercel/
+.netlify/
+.wrangler/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.e2e
+
+# Database files
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+tests/.auth/
+
+# Logs
+*.log
+
+# Lock files (bun.lockb is binary, bun.lock is text - include bun.lock)
+bun.lockb

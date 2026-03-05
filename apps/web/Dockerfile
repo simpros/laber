@@ -1,0 +1,51 @@
+ARG COMMIT_SHA=unknown
+
+FROM oven/bun:1.3.10-alpine AS base
+
+WORKDIR /app
+
+# ---- Prune monorepo ----
+FROM base AS prepare
+
+RUN bun add -g turbo@^2
+
+COPY . .
+RUN turbo prune @laber/web --docker
+
+# ---- Install deps + build ----
+FROM base AS builder
+
+# Install dependencies (cached until lockfile/package.json changes)
+COPY --from=prepare /app/out/json/ .
+COPY --from=prepare /app/bun.lock ./bun.lock
+COPY --from=prepare /app/packages/typescript-config/package.json ./packages/typescript-config/package.json
+RUN bun install --frozen-lockfile
+
+# Build the project
+COPY --from=prepare /app/out/full/ .
+COPY --from=prepare /app/packages/typescript-config/ ./packages/typescript-config/
+RUN bun run build --filter=@laber/web
+
+# ---- Production runner ----
+FROM base AS runner
+
+ARG COMMIT_SHA
+
+RUN apk add --no-cache curl && \
+    addgroup --system --gid 1001 app && \
+    adduser --system --uid 1001 -G app app
+USER app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV COMMIT_SHA=${COMMIT_SHA}
+
+COPY --from=builder --chown=app:app /app/apps/web/build ./
+COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
+
+EXPOSE 3000/tcp
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+CMD ["bun", "run", "index.js"]
