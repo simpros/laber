@@ -1,0 +1,31 @@
+{
+  "name": "@laber/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "check": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "bun test ./**/*.test.ts --timeout 60000",
+    "test:integration": "INTEGRATION=1 bun test ./**/*.integration-test.ts --timeout 120000"
+  },
+  "dependencies": {
+    "nanoid": "^5.1.6",
+    "valibot": "^1.1.0"
+  },
+  "devDependencies": {
+    "@laber/eslint-config": "workspace:*",
+    "@types/bun": "1.3.8",
+    "drizzle-kit": "1.0.0-beta.12-a5629fb",
+    "drizzle-orm": "1.0.0-beta.12-a5629fb",
+    "drizzle-valibot": "^0.4.2",
+    "typescript": "^5.9.3"
+  }
+}
