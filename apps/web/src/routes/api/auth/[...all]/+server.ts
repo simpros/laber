@@ -1,8 +1,8 @@
-import { auth } from "$lib/server/auth";
+import { getAuth } from "$lib/server/auth";
 import type { RequestHandler } from "./$types";
 
 const handler: RequestHandler = async ({ request }) => {
-  return auth.handler(request);
+  return getAuth().handler(request);
 };
 
 export const GET = handler;
