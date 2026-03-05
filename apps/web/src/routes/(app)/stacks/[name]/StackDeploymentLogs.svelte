@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { StatusBadge } from "$lib/components";
+  import { StatusBadge } from "@laber/ui";
 
   type LogEntry = {
     id: string;

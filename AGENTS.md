@@ -43,7 +43,7 @@ After making changes, run:
 - **Styling**: Tailwind CSS v4 (CSS-first config via `@theme` in `src/app.css`)
 - **Theming**: Dark/light mode via `.dark` class on `<html>`. Color tokens are CSS custom properties defined in `@theme` (dark defaults) with light overrides in `html:not(.dark)`. All components use semantic token classes (`bg-surface-2`, `text-text-primary`, `border-border`, etc.) that automatically respect the active theme.
 - **Fonts**: DM Sans (body) + JetBrains Mono (code)
-- **Shared Components** (`$lib/components/`): Icon, Button, Card, CardHeader, Alert, StatusBadge, ActionForm, AuthLayout
+- **Shared Components** (`@laber/ui`): Icon, Button, Card, CardHeader, Alert, StatusBadge, ActionForm, AuthLayout
 - **Shared Utilities** (`$lib/utils.ts`): statusColor, containerStatusBg, logStatusColor, statusBadge, timeAgo
 - **Server Config** (`$lib/server/config.ts`): DATA_DIR, getRepoDir, getComposePath, getStackAndRepo
 
@@ -52,7 +52,7 @@ After making changes, run:
 - Use Svelte 5 runes API (`$props()`, `$state()`, `$derived()`, etc.) - not legacy Svelte 4 stores
 - Use `$lib/` alias for imports from `src/lib/`
 - Server-only code goes in `$lib/server/`
-- Follow existing component patterns: use `$lib/components/` for shared UI, Tailwind utility classes, semantic color tokens
+- Follow existing component patterns: use `@laber/ui` (`packages/ui`) for shared UI, Tailwind utility classes, semantic color tokens
 - Use the `Icon` component for inline SVGs (wraps `<svg viewBox="0 0 16 16">` with consistent sizing)
 - Use `$lib/server/config.ts` for shared server constants (DATA_DIR, path helpers, stack+repo lookups)
 - Do not add comments unless asked

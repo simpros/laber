@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Card } from "$lib/components";
+  import { Card } from "@laber/ui";
   import { statusColor, containerStatusBg } from "$lib/utils";
   import type { ContainerInfo } from "$lib/server/docker";
 
