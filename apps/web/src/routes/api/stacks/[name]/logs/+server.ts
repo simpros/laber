@@ -7,7 +7,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
   const containers = await listContainers(params.name);
   if (containers.length === 0) {
-    return new Response("No containers found for this stack", { status: 404 });
+    return new Response("No containers found for this stack", {
+      status: 404,
+    });
   }
 
   const containerId = containers[0].id;
@@ -28,7 +30,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
             const { done, value } = await reader.read();
             if (done) break;
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(value)}\n\n`),
+              encoder.encode(`data: ${JSON.stringify(value)}\n\n`)
             );
           }
           controller.close();

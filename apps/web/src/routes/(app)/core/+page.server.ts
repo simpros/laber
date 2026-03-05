@@ -12,23 +12,72 @@ import {
 import type { PageServerLoad, Actions } from "./$types";
 
 const CORE_KEYS = [
-  { key: "ROOT_DOMAIN", label: "Root Domain", secret: false, placeholder: "yourdomain.com" },
-  { key: "CF_DNS_API_TOKEN", label: "Cloudflare DNS API Token", secret: true, placeholder: "Your CF API token" },
-  { key: "ZONE_ID", label: "Cloudflare Zone ID", secret: true, placeholder: "Your CF Zone ID" },
-  { key: "TUNNEL_TOKEN", label: "Cloudflare Tunnel Token", secret: true, placeholder: "Your tunnel token" },
-  { key: "ACME_EMAIL", label: "ACME Email", secret: false, placeholder: "admin@yourdomain.com" },
-  { key: "HTTP_TIMEOUT", label: "HTTP Timeout", secret: false, placeholder: "60" },
-  { key: "POLLING_INTERVAL", label: "Polling Interval", secret: false, placeholder: "10" },
-  { key: "PROPAGATION_TIMEOUT", label: "Propagation Timeout", secret: false, placeholder: "3600" },
+  {
+    key: "ROOT_DOMAIN",
+    label: "Root Domain",
+    secret: false,
+    placeholder: "yourdomain.com",
+  },
+  {
+    key: "CF_DNS_API_TOKEN",
+    label: "Cloudflare DNS API Token",
+    secret: true,
+    placeholder: "Your CF API token",
+  },
+  {
+    key: "ZONE_ID",
+    label: "Cloudflare Zone ID",
+    secret: true,
+    placeholder: "Your CF Zone ID",
+  },
+  {
+    key: "TUNNEL_TOKEN",
+    label: "Cloudflare Tunnel Token",
+    secret: true,
+    placeholder: "Your tunnel token",
+  },
+  {
+    key: "ACME_EMAIL",
+    label: "ACME Email",
+    secret: false,
+    placeholder: "admin@yourdomain.com",
+  },
+  {
+    key: "HTTP_TIMEOUT",
+    label: "HTTP Timeout",
+    secret: false,
+    placeholder: "60",
+  },
+  {
+    key: "POLLING_INTERVAL",
+    label: "Polling Interval",
+    secret: false,
+    placeholder: "10",
+  },
+  {
+    key: "PROPAGATION_TIMEOUT",
+    label: "Propagation Timeout",
+    secret: false,
+    placeholder: "3600",
+  },
   { key: "TTL", label: "TTL", secret: false, placeholder: "300" },
-  { key: "LOG_LEVEL", label: "Log Level", secret: false, placeholder: "INFO" },
+  {
+    key: "LOG_LEVEL",
+    label: "Log Level",
+    secret: false,
+    placeholder: "INFO",
+  },
 ] as const;
 
 export const load: PageServerLoad = async () => {
   const config = await db.select().from(coreConfig);
-  const configMap: Record<string, { value: string; isSecret: boolean }> = {};
+  const configMap: Record<string, { value: string; isSecret: boolean }> =
+    {};
   for (const c of config) {
-    configMap[c.key] = { value: c.isSecret ? "" : c.value, isSecret: c.isSecret };
+    configMap[c.key] = {
+      value: c.isSecret ? "" : c.value,
+      isSecret: c.isSecret,
+    };
   }
 
   let coreServices: Awaited<ReturnType<typeof getCoreStatus>> = [];
@@ -82,9 +131,14 @@ export const actions: Actions = {
     const configMap: Record<string, string> = {};
     for (const c of config) configMap[c.key] = c.value;
 
-    if (!configMap.ROOT_DOMAIN || !configMap.CF_DNS_API_TOKEN || !configMap.TUNNEL_TOKEN) {
+    if (
+      !configMap.ROOT_DOMAIN ||
+      !configMap.CF_DNS_API_TOKEN ||
+      !configMap.TUNNEL_TOKEN
+    ) {
       return fail(400, {
-        error: "ROOT_DOMAIN, CF_DNS_API_TOKEN, and TUNNEL_TOKEN are required",
+        error:
+          "ROOT_DOMAIN, CF_DNS_API_TOKEN, and TUNNEL_TOKEN are required",
       });
     }
 

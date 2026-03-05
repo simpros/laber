@@ -1,12 +1,19 @@
 import { db } from "$lib/server/db";
-import { stacks, repositories, deploymentLogs, coreConfig } from "@laber/db";
+import {
+  stacks,
+  repositories,
+  deploymentLogs,
+  coreConfig,
+} from "@laber/db";
 import { count, desc, eq } from "drizzle-orm";
 import { getContainersByLabel } from "$lib/server/docker";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async () => {
   const [stackCount] = await db.select({ count: count() }).from(stacks);
-  const [repoCount] = await db.select({ count: count() }).from(repositories);
+  const [repoCount] = await db
+    .select({ count: count() })
+    .from(repositories);
 
   const deployedStacks = await db
     .select({ count: count() })
@@ -31,7 +38,7 @@ export const load: PageServerLoad = async () => {
   try {
     const containers = await getContainersByLabel(
       "com.docker.compose.project",
-      "laber-core",
+      "laber-core"
     );
     coreServices = containers.map((c) => ({
       name: c.name,

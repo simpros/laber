@@ -1,4 +1,5 @@
 import Docker from "dockerode";
+import { dirname } from "path";
 
 export type ContainerInfo = {
   id: string;
@@ -44,7 +45,7 @@ function mapContainer(c: Docker.ContainerInfo): ContainerInfo {
 }
 
 export async function listContainers(
-  projectLabel?: string,
+  projectLabel?: string
 ): Promise<ContainerInfo[]> {
   const filters: Record<string, string[]> = {};
   if (projectLabel) {
@@ -58,7 +59,7 @@ export async function listContainers(
 }
 
 export async function getContainerInfo(
-  containerId: string,
+  containerId: string
 ): Promise<ContainerInfo | null> {
   const containers = await getDocker().listContainers({
     all: true,
@@ -99,7 +100,9 @@ export function getContainerLogs(options: {
             });
           },
           cancel() {
-            (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+            (
+              stream as NodeJS.ReadableStream & { destroy?: () => void }
+            ).destroy?.();
           },
         });
       });
@@ -116,9 +119,7 @@ export function getContainerLogs(options: {
     .then((buffer) => buffer.toString());
 }
 
-export async function ensureNetwork(
-  networkName: string,
-): Promise<void> {
+export async function ensureNetwork(networkName: string): Promise<void> {
   const networks = await getDocker().listNetworks({
     filters: { name: [networkName] },
   });
@@ -133,21 +134,20 @@ export async function ensureNetwork(
 
 export async function connectContainerToNetwork(
   containerId: string,
-  networkName: string,
+  networkName: string
 ): Promise<void> {
   const network = getDocker().getNetwork(networkName);
   try {
     await network.connect({ Container: containerId });
   } catch (err: unknown) {
-    const msg =
-      err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? err.message : String(err);
     if (!msg.includes("already exists")) throw err;
   }
 }
 
 export async function getContainersByLabel(
   labelKey: string,
-  labelValue: string,
+  labelValue: string
 ): Promise<ContainerInfo[]> {
   const containers = await getDocker().listContainers({
     all: true,
@@ -177,10 +177,7 @@ export async function execCompose(options: {
     env,
     stdout: "pipe",
     stderr: "pipe",
-    cwd: options.composePath
-      .split("/")
-      .slice(0, -1)
-      .join("/"),
+    cwd: dirname(options.composePath),
   });
 
   const [stdout, stderr] = await Promise.all([

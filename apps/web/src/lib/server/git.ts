@@ -4,16 +4,15 @@ import {
   writeFileSync,
   unlinkSync,
   readdirSync,
-  readFileSync,
   existsSync,
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { parse } from "yaml";
+import { parseComposeFile, extractNetworkName } from "./compose-parser";
 
 function withSshKey(
   sshKey: string | undefined,
-  fn: (gitEnv: Record<string, string>) => Promise<void>,
+  fn: (gitEnv: Record<string, string>) => Promise<void>
 ): Promise<void> {
   if (!sshKey) return fn({});
 
@@ -38,7 +37,7 @@ export async function cloneRepo(
   url: string,
   targetDir: string,
   branch?: string,
-  sshKey?: string,
+  sshKey?: string
 ): Promise<void> {
   await withSshKey(sshKey, async (gitEnv) => {
     const git = simpleGit();
@@ -51,7 +50,7 @@ export async function cloneRepo(
 
 export async function pullRepo(
   repoDir: string,
-  sshKey?: string,
+  sshKey?: string
 ): Promise<void> {
   await withSshKey(sshKey, async (gitEnv) => {
     const git = simpleGit(repoDir);
@@ -76,23 +75,9 @@ export async function getLastCommit(repoDir: string): Promise<{
   };
 }
 
-function extractNetworkFromCompose(filePath: string): string | null {
-  try {
-    const content = readFileSync(filePath, "utf-8");
-    const compose = parse(content);
-    if (!compose?.networks) return null;
-    for (const net of Object.values(compose.networks) as Array<{ name?: string; external?: boolean }>) {
-      if (net?.external && net?.name) return net.name;
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return null;
-}
-
 export async function discoverStacks(
   repoDir: string,
-  stacksPath: string,
+  stacksPath: string
 ): Promise<
   Array<{
     name: string;
@@ -122,11 +107,18 @@ export async function discoverStacks(
     ]) {
       const composePath = join(dirPath, candidate);
       if (existsSync(composePath)) {
+        let networkName: string | null = null;
+        try {
+          const compose = parseComposeFile(composePath);
+          networkName = extractNetworkName(compose) ?? null;
+        } catch {
+          // ignore parse errors
+        }
         stacks.push({
           name: entry.name,
           relativePath: join(stacksPath, entry.name),
           composeFile: candidate,
-          networkName: extractNetworkFromCompose(composePath),
+          networkName,
         });
         break;
       }

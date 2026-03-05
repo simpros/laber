@@ -6,6 +6,7 @@ import {
   getDocker,
   connectContainerToNetwork,
 } from "./docker";
+import { DATA_DIR } from "./config";
 
 export type CoreConfig = {
   rootDomain: string;
@@ -27,10 +28,8 @@ export type CoreServiceStatus = {
   image: string;
 };
 
-const dataDir = process.env.DATA_DIR ?? "./data";
-
 function getComposeDir(): string {
-  const dir = join(dataDir, "core");
+  const dir = join(DATA_DIR, "core");
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -39,16 +38,12 @@ function getComposePath(): string {
   return join(getComposeDir(), "docker-compose.yaml");
 }
 
-export function getCoreComposeContent(
-  config: CoreConfig,
-): string {
-  const acmeEmail =
-    config.acmeEmail ?? `admin@${config.rootDomain}`;
+export function getCoreComposeContent(config: CoreConfig): string {
+  const acmeEmail = config.acmeEmail ?? `admin@${config.rootDomain}`;
   const logLevel = config.logLevel ?? "ERROR";
   const httpTimeout = config.httpTimeout ?? "180";
   const pollingInterval = config.pollingInterval ?? "30";
-  const propagationTimeout =
-    config.propagationTimeout ?? "300";
+  const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
 
   return `services:
@@ -142,7 +137,7 @@ volumes:
 }
 
 export async function deployCoreStack(
-  config: CoreConfig,
+  config: CoreConfig
 ): Promise<{ success: boolean; output: string }> {
   const composePath = getComposePath();
   const content = getCoreComposeContent(config);
@@ -194,9 +189,7 @@ export async function restartCoreStack(): Promise<{
   };
 }
 
-export async function getCoreStatus(): Promise<
-  CoreServiceStatus[]
-> {
+export async function getCoreStatus(): Promise<CoreServiceStatus[]> {
   const containers = await listContainers("laber-core");
   return containers.map((c) => ({
     name: c.name,
@@ -207,7 +200,7 @@ export async function getCoreStatus(): Promise<
 }
 
 export async function connectTraefikToNetwork(
-  networkName: string,
+  networkName: string
 ): Promise<void> {
   const containers = await getDocker().listContainers({
     all: true,
@@ -218,17 +211,15 @@ export async function connectTraefikToNetwork(
 
   const traefik =
     containers.find((c) =>
-      c.Names.some((n) => n === "/laber-reverse-proxy"),
+      c.Names.some((n) => n === "/laber-reverse-proxy")
     ) ??
     containers.find(
-      (c) =>
-        c.Labels["com.docker.compose.service"] ===
-        "reverse-proxy",
+      (c) => c.Labels["com.docker.compose.service"] === "reverse-proxy"
     );
 
   if (!traefik) {
     throw new Error(
-      "Traefik container not found. Is the core stack running?",
+      "Traefik container not found. Is the core stack running?"
     );
   }
 
