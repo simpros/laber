@@ -163,7 +163,7 @@
               <div class="mt-2 flex flex-wrap gap-1.5">
                 {#each container.ports as port, i (i)}
                   <span
-                    class="bg-surface-0/50 rounded px-1.5 py-0.5 font-mono text-xs"
+                    class="bg-surface-3 rounded px-1.5 py-0.5 font-mono text-xs"
                   >
                     {port.host}:{port.container}
                   </span>
