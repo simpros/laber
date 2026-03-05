@@ -28,7 +28,7 @@ export const load: PageServerLoad = async () => {
         .from(stackEnvVars)
         .where(eq(stackEnvVars.stackId, stack.id));
       return { ...stack, envVarCount: envCount.count };
-    }),
+    })
   );
 
   return { stacks: stacksWithEnvCount };

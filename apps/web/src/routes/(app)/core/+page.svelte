@@ -1,14 +1,16 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import {
+    Card,
+    CardHeader,
+    Button,
+    Alert,
+    ActionForm,
+  } from "$lib/components";
+  import { statusColor } from "$lib/utils";
 
   let { data, form } = $props();
   let actionLoading = $state("");
-
-  function statusColor(state: string) {
-    if (state === "running") return "text-success";
-    if (state === "exited" || state === "stopped") return "text-warning";
-    return "text-danger";
-  }
 </script>
 
 <svelte:head>
@@ -24,60 +26,51 @@
   </div>
 
   {#if form?.output}
-    <div
-      class="rounded-xl border p-4 font-mono text-xs whitespace-pre-wrap {form?.success
-        ? 'bg-success/5 border-success/20 text-success'
-        : 'bg-danger/5 border-danger/20 text-danger'}"
-    >
+    <Alert variant={form?.success ? "success" : "error"} mono>
       {form.output}
-    </div>
+    </Alert>
   {/if}
 
   {#if form?.message}
-    <div class="bg-success/5 border-success/20 rounded-xl border p-4 text-sm text-success">
-      {form.message}
-    </div>
+    <Alert variant="success">{form.message}</Alert>
   {/if}
 
   {#if form?.error}
-    <div class="bg-danger/5 border-danger/20 rounded-xl border p-4 text-sm text-danger">
-      {form.error}
-    </div>
+    <Alert variant="error">{form.error}</Alert>
   {/if}
 
+  {#snippet statusActions()}
+    <ActionForm
+      action="?/restart"
+      onLoadingChange={(v) => (actionLoading = v)}
+    >
+      <Button
+        variant="secondary"
+        size="sm"
+        type="submit"
+        disabled={actionLoading !== ""}
+      >
+        {actionLoading === "restart" ? "..." : "Restart"}
+      </Button>
+    </ActionForm>
+    <ActionForm
+      action="?/stop"
+      onLoadingChange={(v) => (actionLoading = v)}
+    >
+      <Button
+        variant="danger"
+        size="sm"
+        type="submit"
+        disabled={actionLoading !== ""}
+      >
+        {actionLoading === "stop" ? "..." : "Stop"}
+      </Button>
+    </ActionForm>
+  {/snippet}
+
   {#if data.coreServices.length > 0}
-    <div class="bg-surface-2 border-border rounded-xl border">
-      <div class="border-border border-b px-5 py-3">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-medium">Status</h2>
-          <div class="flex gap-2">
-            <form method="POST" action="?/restart" use:enhance={() => {
-              actionLoading = "restart";
-              return async ({ update }) => { actionLoading = ""; await update(); };
-            }}>
-              <button
-                type="submit"
-                disabled={actionLoading !== ""}
-                class="border-border hover:bg-surface-3 rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-50"
-              >
-                {actionLoading === "restart" ? "..." : "Restart"}
-              </button>
-            </form>
-            <form method="POST" action="?/stop" use:enhance={() => {
-              actionLoading = "stop";
-              return async ({ update }) => { actionLoading = ""; await update(); };
-            }}>
-              <button
-                type="submit"
-                disabled={actionLoading !== ""}
-                class="bg-danger/10 text-danger hover:bg-danger/20 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-50"
-              >
-                {actionLoading === "stop" ? "..." : "Stop"}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
+    <Card>
+      <CardHeader title="Status" actions={statusActions} />
       <div class="divide-border divide-y">
         {#each data.coreServices as svc (svc.name)}
           <div class="flex items-center justify-between px-5 py-3">
@@ -91,7 +84,7 @@
           </div>
         {/each}
       </div>
-    </div>
+    </Card>
   {/if}
 
   <form
@@ -100,55 +93,53 @@
     use:enhance={() => {
       return async ({ update }) => await update();
     }}
-    class="bg-surface-2 border-border rounded-xl border"
   >
-    <div class="border-border border-b px-5 py-3">
-      <h2 class="text-sm font-medium">Configuration</h2>
-    </div>
-    <div class="space-y-4 p-5">
-      {#each data.coreKeys as keyDef (keyDef.key)}
-        <div class="grid grid-cols-3 items-center gap-4">
-          <label
-            for={keyDef.key}
-            class="text-text-secondary text-sm font-medium"
-          >
-            {keyDef.label}
-          </label>
-          <div class="col-span-2">
-            <input
-              id={keyDef.key}
-              name={keyDef.key}
-              type={keyDef.secret ? "password" : "text"}
-              value={data.config[keyDef.key]?.value ?? ""}
-              placeholder={keyDef.placeholder}
-              class="w-full font-mono text-sm"
-            />
+    <Card>
+      <CardHeader title="Configuration" />
+      <div class="space-y-4 p-5">
+        {#each data.coreKeys as keyDef (keyDef.key)}
+          <div class="grid grid-cols-3 items-center gap-4">
+            <label
+              for={keyDef.key}
+              class="text-text-secondary text-sm font-medium"
+            >
+              {keyDef.label}
+            </label>
+            <div class="col-span-2">
+              <input
+                id={keyDef.key}
+                name={keyDef.key}
+                type={keyDef.secret ? "password" : "text"}
+                value={data.config[keyDef.key]?.value ?? ""}
+                placeholder={keyDef.placeholder}
+                class="w-full font-mono text-sm"
+              />
+            </div>
           </div>
-        </div>
-      {/each}
-    </div>
-    <div class="border-border flex items-center justify-end gap-2 border-t px-5 py-3">
-      <button
-        type="submit"
-        class="border-border hover:bg-surface-3 rounded-lg border px-4 py-2 text-sm transition-colors"
+        {/each}
+      </div>
+      <div
+        class="border-border flex items-center justify-end gap-2 border-t px-5 py-3"
       >
-        Save Configuration
-      </button>
-    </div>
+        <Button variant="secondary" type="submit">
+          Save Configuration
+        </Button>
+      </div>
+    </Card>
   </form>
 
-  <div class="flex justify-end -mt-4">
-    <form method="POST" action="?/deploy" use:enhance={() => {
-      actionLoading = "deploy";
-      return async ({ update }) => { actionLoading = ""; await update(); };
-    }}>
-      <button
+  <div class="-mt-4 flex justify-end">
+    <ActionForm
+      action="?/deploy"
+      onLoadingChange={(v) => (actionLoading = v)}
+    >
+      <Button
+        variant="primary"
         type="submit"
         disabled={actionLoading !== "" || !data.isConfigured}
-        class="bg-accent hover:bg-accent-hover rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
       >
         {actionLoading === "deploy" ? "Deploying..." : "Deploy Core Stack"}
-      </button>
-    </form>
+      </Button>
+    </ActionForm>
   </div>
 </div>

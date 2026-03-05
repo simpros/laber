@@ -14,15 +14,30 @@ import {
   restartStack,
   pullStack,
 } from "$lib/server/stack-manager";
-import { parseComposeFile, extractServices } from "$lib/server/compose-parser";
+import {
+  parseComposeFile,
+  extractServices,
+} from "$lib/server/compose-parser";
 import type { PageServerLoad, Actions } from "./$types";
-import { resolve } from "path";
+import {
+  getStackAndRepo,
+  getComposePath,
+  getRepoDir,
+} from "$lib/server/config";
 
 export const load: PageServerLoad = async ({ params }) => {
-  const [stack] = await db.select().from(stacks).where(eq(stacks.name, params.name)).limit(1);
+  const [stack] = await db
+    .select()
+    .from(stacks)
+    .where(eq(stacks.name, params.name))
+    .limit(1);
   if (!stack) throw error(404, "Stack not found");
 
-  const [repo] = await db.select().from(repositories).where(eq(repositories.id, stack.repositoryId)).limit(1);
+  const [repo] = await db
+    .select()
+    .from(repositories)
+    .where(eq(repositories.id, stack.repositoryId))
+    .limit(1);
 
   const envVars = await db
     .select()
@@ -45,12 +60,13 @@ export const load: PageServerLoad = async ({ params }) => {
 
   let services: ReturnType<typeof extractServices> = [];
   try {
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const repoDir = repo
-      ? resolve(dataDir, "repos", repo.id)
-      : "";
+    const repoDir = repo ? getRepoDir(repo.id) : "";
     if (repoDir) {
-      const composePath = resolve(repoDir, stack.relativePath, stack.composeFile);
+      const composePath = getComposePath(
+        repo.id,
+        stack.relativePath,
+        stack.composeFile
+      );
       const compose = parseComposeFile(composePath);
       services = extractServices(compose);
     }
@@ -72,11 +88,9 @@ export const load: PageServerLoad = async ({ params }) => {
 
 export const actions: Actions = {
   deploy: async ({ params }) => {
-    const [stack] = await db.select().from(stacks).where(eq(stacks.name, params.name)).limit(1);
-    if (!stack) return fail(404, { error: "Stack not found" });
-
-    const [repo] = await db.select().from(repositories).where(eq(repositories.id, stack.repositoryId)).limit(1);
-    if (!repo) return fail(404, { error: "Repository not found" });
+    const lookup = await getStackAndRepo(params.name);
+    if ("status" in lookup) return lookup;
+    const { stack, composePath } = lookup;
 
     const envVars = await db
       .select()
@@ -85,15 +99,6 @@ export const actions: Actions = {
 
     const envMap: Record<string, string> = {};
     for (const v of envVars) envMap[v.key] = v.value;
-
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const composePath = resolve(
-      dataDir,
-      "repos",
-      repo.id,
-      stack.relativePath,
-      stack.composeFile,
-    );
 
     const result = await deployStack({
       composePath,
@@ -120,20 +125,9 @@ export const actions: Actions = {
   },
 
   stop: async ({ params }) => {
-    const [stack] = await db.select().from(stacks).where(eq(stacks.name, params.name)).limit(1);
-    if (!stack) return fail(404, { error: "Stack not found" });
-
-    const [repo] = await db.select().from(repositories).where(eq(repositories.id, stack.repositoryId)).limit(1);
-    if (!repo) return fail(404, { error: "Repository not found" });
-
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const composePath = resolve(
-      dataDir,
-      "repos",
-      repo.id,
-      stack.relativePath,
-      stack.composeFile,
-    );
+    const lookup = await getStackAndRepo(params.name);
+    if ("status" in lookup) return lookup;
+    const { stack, composePath } = lookup;
 
     const result = await stopStack(composePath, stack.name);
 
@@ -155,20 +149,9 @@ export const actions: Actions = {
   },
 
   restart: async ({ params }) => {
-    const [stack] = await db.select().from(stacks).where(eq(stacks.name, params.name)).limit(1);
-    if (!stack) return fail(404, { error: "Stack not found" });
-
-    const [repo] = await db.select().from(repositories).where(eq(repositories.id, stack.repositoryId)).limit(1);
-    if (!repo) return fail(404, { error: "Repository not found" });
-
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const composePath = resolve(
-      dataDir,
-      "repos",
-      repo.id,
-      stack.relativePath,
-      stack.composeFile,
-    );
+    const lookup = await getStackAndRepo(params.name);
+    if ("status" in lookup) return lookup;
+    const { stack, composePath } = lookup;
 
     const result = await restartStack(composePath, stack.name);
 
@@ -183,20 +166,9 @@ export const actions: Actions = {
   },
 
   pull: async ({ params }) => {
-    const [stack] = await db.select().from(stacks).where(eq(stacks.name, params.name)).limit(1);
-    if (!stack) return fail(404, { error: "Stack not found" });
-
-    const [repo] = await db.select().from(repositories).where(eq(repositories.id, stack.repositoryId)).limit(1);
-    if (!repo) return fail(404, { error: "Repository not found" });
-
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const composePath = resolve(
-      dataDir,
-      "repos",
-      repo.id,
-      stack.relativePath,
-      stack.composeFile,
-    );
+    const lookup = await getStackAndRepo(params.name);
+    if ("status" in lookup) return lookup;
+    const { stack, composePath } = lookup;
 
     const result = await pullStack(composePath, stack.name);
 
@@ -211,8 +183,9 @@ export const actions: Actions = {
   },
 
   saveEnv: async ({ params, request }) => {
-    const [stack] = await db.select().from(stacks).where(eq(stacks.name, params.name)).limit(1);
-    if (!stack) return fail(404, { error: "Stack not found" });
+    const lookup = await getStackAndRepo(params.name);
+    if ("status" in lookup) return lookup;
+    const { stack } = lookup;
 
     const formData = await request.formData();
     const envJson = formData.get("env") as string;
@@ -235,7 +208,7 @@ export const actions: Actions = {
           key: e.key,
           value: e.value,
           isSecret: e.isSecret,
-        })),
+        }))
       );
     }
 

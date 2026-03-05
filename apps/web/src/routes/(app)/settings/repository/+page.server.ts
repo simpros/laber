@@ -3,7 +3,7 @@ import { db } from "$lib/server/db";
 import { repositories, stacks } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { cloneRepo, pullRepo, discoverStacks } from "$lib/server/git";
-import { resolve } from "path";
+import { getRepoDir } from "$lib/server/config";
 import { existsSync } from "fs";
 import type { PageServerLoad, Actions } from "./$types";
 
@@ -24,17 +24,18 @@ export const actions: Actions = {
     const url = formData.get("url") as string;
     const branch = (formData.get("branch") as string) || "main";
     const stacksPath = (formData.get("stacksPath") as string) || "stacks";
-    const sshPrivateKey = (formData.get("sshPrivateKey") as string) || null;
+    const sshPrivateKey =
+      (formData.get("sshPrivateKey") as string) || null;
 
-    if (!name || !url) return fail(400, { error: "Name and URL are required" });
+    if (!name || !url)
+      return fail(400, { error: "Name and URL are required" });
 
     const [repo] = await db
       .insert(repositories)
       .values({ name, url, branch, stacksPath, sshPrivateKey })
       .returning();
 
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const repoDir = resolve(dataDir, "repos", repo.id);
+    const repoDir = getRepoDir(repo.id);
 
     try {
       await cloneRepo(url, repoDir, branch, sshPrivateKey ?? undefined);
@@ -58,7 +59,7 @@ export const actions: Actions = {
           relativePath: s.relativePath,
           composeFile: s.composeFile,
           networkName: s.networkName,
-        })),
+        }))
       );
     }
 
@@ -70,18 +71,21 @@ export const actions: Actions = {
     const repoId = formData.get("repoId") as string;
     if (!repoId) return fail(400, { error: "Repository ID required" });
 
-    const [repo] = await db.select().from(repositories).where(eq(repositories.id, repoId)).limit(1);
+    const [repo] = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, repoId))
+      .limit(1);
     if (!repo) return fail(404, { error: "Repository not found" });
 
-    const dataDir = process.env.DATA_DIR ?? "./data";
-    const repoDir = resolve(dataDir, "repos", repo.id);
+    const repoDir = getRepoDir(repo.id);
 
     if (!existsSync(repoDir)) {
       await cloneRepo(
         repo.url,
         repoDir,
         repo.branch,
-        repo.sshPrivateKey ?? undefined,
+        repo.sshPrivateKey ?? undefined
       );
     } else {
       await pullRepo(repoDir, repo.sshPrivateKey ?? undefined);
@@ -108,7 +112,7 @@ export const actions: Actions = {
           relativePath: s.relativePath,
           composeFile: s.composeFile,
           networkName: s.networkName,
-        })),
+        }))
       );
     }
 
