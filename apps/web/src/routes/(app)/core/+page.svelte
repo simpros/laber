@@ -6,7 +6,7 @@
     Button,
     Alert,
     ActionForm,
-  } from "$lib/components";
+  } from "@laber/ui";
   import { statusColor } from "$lib/utils";
 
   let { data, form } = $props();
@@ -43,6 +43,7 @@
     <ActionForm
       action="?/restart"
       onLoadingChange={(v) => (actionLoading = v)}
+      {enhance}
     >
       <Button
         variant="secondary"
@@ -56,6 +57,7 @@
     <ActionForm
       action="?/stop"
       onLoadingChange={(v) => (actionLoading = v)}
+      {enhance}
     >
       <Button
         variant="danger"
@@ -132,6 +134,7 @@
     <ActionForm
       action="?/deploy"
       onLoadingChange={(v) => (actionLoading = v)}
+      {enhance}
     >
       <Button
         variant="primary"

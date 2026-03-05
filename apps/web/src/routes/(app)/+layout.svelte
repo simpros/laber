@@ -4,7 +4,7 @@
   import { signOut } from "@laber/auth/client";
   import { onMount } from "svelte";
   import { theme } from "$lib/theme.svelte";
-  import { Icon } from "$lib/components";
+  import { Icon } from "@laber/ui";
 
   let { data, children } = $props();
 

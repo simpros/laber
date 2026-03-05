@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
-  import { Card, CardHeader, StatusBadge } from "$lib/components";
+  import { Card, CardHeader, StatusBadge } from "@laber/ui";
   import { statusColor, timeAgo } from "$lib/utils";
 
   let { data } = $props();

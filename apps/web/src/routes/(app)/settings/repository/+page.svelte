@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { Card, Button, Alert, Icon } from "$lib/components";
+  import { Card, Button, Alert, Icon } from "@laber/ui";
   import { timeAgo } from "$lib/utils";
 
   let { data, form } = $props();

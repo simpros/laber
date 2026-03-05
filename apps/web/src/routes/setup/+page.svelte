@@ -1,6 +1,6 @@
 <script lang="ts">
   import { signUp } from "@laber/auth/client";
-  import { AuthLayout, Button } from "$lib/components";
+  import { AuthLayout, Button } from "@laber/ui";
 
   let name = $state("");
   let email = $state("");

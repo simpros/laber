@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { Button, Icon } from "$lib/components";
+  import { Button, Icon } from "@laber/ui";
 
   type EnvEntry = {
     key: string;

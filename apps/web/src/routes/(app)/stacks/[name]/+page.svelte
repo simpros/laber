@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
-  import { Alert, Button, ActionForm } from "$lib/components";
+  import { enhance } from "$app/forms";
+  import { Alert, Button, ActionForm } from "@laber/ui";
   import StackServices from "./StackServices.svelte";
   import StackEnvEditor from "./StackEnvEditor.svelte";
   import StackDeploymentLogs from "./StackDeploymentLogs.svelte";
@@ -43,7 +44,7 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <ActionForm action="?/pull" onLoadingChange={setLoading}>
+      <ActionForm action="?/pull" onLoadingChange={setLoading} {enhance}>
         <Button
           variant="secondary"
           size="sm"
@@ -55,7 +56,7 @@
       </ActionForm>
 
       {#if data.stack.status === "deployed"}
-        <ActionForm action="?/restart" onLoadingChange={setLoading}>
+        <ActionForm action="?/restart" onLoadingChange={setLoading} {enhance}>
           <Button
             variant="secondary"
             size="sm"
@@ -65,7 +66,7 @@
             {actionLoading === "restart" ? "Restarting..." : "Restart"}
           </Button>
         </ActionForm>
-        <ActionForm action="?/stop" onLoadingChange={setLoading}>
+        <ActionForm action="?/stop" onLoadingChange={setLoading} {enhance}>
           <Button
             variant="danger"
             size="sm"
@@ -76,7 +77,7 @@
           </Button>
         </ActionForm>
       {:else}
-        <ActionForm action="?/deploy" onLoadingChange={setLoading}>
+        <ActionForm action="?/deploy" onLoadingChange={setLoading} {enhance}>
           <Button
             variant="primary"
             size="sm"
