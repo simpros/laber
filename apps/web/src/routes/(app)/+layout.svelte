@@ -2,8 +2,16 @@
   import { page } from "$app/state";
   import { resolve } from "$app/paths";
   import { signOut } from "@laber/auth/client";
+  import { onMount } from "svelte";
+  import { theme } from "$lib/theme.svelte";
 
   let { data, children } = $props();
+
+  onMount(() => {
+    theme.init(
+      document.documentElement.classList.contains("dark") ? "dark" : "light",
+    );
+  });
 
   const nav = [
     { href: "/", label: "Dashboard", icon: "grid" },
@@ -100,15 +108,33 @@
           </p>
           <p class="text-text-muted truncate text-xs">{data.user.email}</p>
         </div>
-        <button
-          onclick={handleSignOut}
-          class="text-text-muted hover:text-danger rounded-md p-1.5 transition-colors"
-          title="Sign out"
-        >
-          <svg class="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M6 8h8" />
-          </svg>
-        </button>
+        <div class="flex items-center gap-0.5">
+          <button
+            onclick={() => theme.toggle()}
+            class="text-text-muted hover:text-text-primary rounded-md p-1.5 transition-colors"
+            title="Toggle theme"
+          >
+            {#if theme.value === "dark"}
+              <svg class="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="8" cy="8" r="3.5" />
+                <path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7" />
+              </svg>
+            {:else}
+              <svg class="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z" />
+              </svg>
+            {/if}
+          </button>
+          <button
+            onclick={handleSignOut}
+            class="text-text-muted hover:text-danger rounded-md p-1.5 transition-colors"
+            title="Sign out"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M6 8h8" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </aside>

@@ -15,5 +15,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     event.locals.session = null;
   }
 
-  return resolve(event);
+  const themeCookie = event.cookies.get("theme");
+  const theme = themeCookie === "light" ? "light" : "dark";
+
+  return resolve(event, {
+    transformPageChunk: ({ html }) =>
+      html.replace("%sveltekit.html.attributes%", `class="${theme}"`),
+  });
 };
