@@ -15,6 +15,7 @@
     "test:e2e": "bun --bun --env-file=.env.e2e playwright test"
   },
   "devDependencies": {
+    "@better-auth/drizzle-adapter": "^1.5.3",
     "@laber/auth": "workspace:*",
     "@laber/db": "workspace:*",
     "@laber/eslint-config": "workspace:*",
@@ -27,6 +28,7 @@
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tailwindcss/vite": "^4.0.0",
     "@types/bun": "^1.3.10",
+    "@types/dockerode": "^4.0.1",
     "better-auth": "1.4.18",
     "bits-ui": "^2.16.2",
     "drizzle-orm": "1.0.0-beta.15-859cf75",
@@ -38,5 +40,9 @@
     "valibot": "^1.2.0",
     "vite": "7.3.1"
   },
-  "dependencies": {}
+  "dependencies": {
+    "dockerode": "^4.0.9",
+    "simple-git": "^3.32.3",
+    "yaml": "^2.8.2"
+  }
 }

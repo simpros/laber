@@ -5,7 +5,8 @@
       "cache": false,
       "persistent": true,
       "env": [
-        "DATABASE_URL",
+        "DATABASE_PATH",
+        "DATA_DIR",
         "BETTER_AUTH_SECRET",
         "BETTER_AUTH_BASE_URL",
         "SMTP_HOST",

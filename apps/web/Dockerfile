@@ -31,20 +31,25 @@ FROM base AS runner
 
 ARG COMMIT_SHA
 
-RUN apk add --no-cache curl && \
+RUN apk add --no-cache curl git openssh-client docker-cli docker-cli-compose && \
     addgroup --system --gid 1001 app && \
-    adduser --system --uid 1001 -G app app
+    adduser --system --uid 1001 -G app app && \
+    mkdir -p /data && chown app:app /data
 USER app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV COMMIT_SHA=${COMMIT_SHA}
+ENV DATABASE_PATH=/data/laber.db
+ENV DATA_DIR=/data
 
 COPY --from=builder --chown=app:app /app/apps/web/build ./
 # Deploy invariant: the image ships drizzle migrations from @laber/db.
 # Run `bun run db:generate` (once @laber/db has a schema) before building;
 # local/CI `bun run build` intentionally does NOT fabricate this directory.
 COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
+
+VOLUME /data
 
 EXPOSE 3000/tcp
 
