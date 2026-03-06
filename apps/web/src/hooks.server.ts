@@ -5,6 +5,7 @@ import type { Handle } from "@sveltejs/kit";
 
 if (!building) {
   runMigrations();
+  console.log("MIGRATED");
 }
 
 export const handle: Handle = async ({ event, resolve }) => {

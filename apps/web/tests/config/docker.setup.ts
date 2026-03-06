@@ -19,9 +19,12 @@ export default async function dockerSetup(): Promise<void> {
   }
 
   console.log("🐳 Starting e2e database container...");
-  execSync(`docker compose -f ${composeFile} down -v 2>/dev/null || true`, {
-    stdio: "inherit",
-  });
+  execSync(
+    `docker compose -f ${composeFile} down -v 2>/dev/null || true`,
+    {
+      stdio: "inherit",
+    }
+  );
   execSync(`docker compose -f ${composeFile} up -d --wait`, {
     stdio: "inherit",
   });

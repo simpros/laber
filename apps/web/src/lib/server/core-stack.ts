@@ -21,7 +21,7 @@ export type CoreConfig = {
   acmeEmail?: string;
 };
 
-export type CoreServiceStatus = {
+type CoreServiceStatus = {
   name: string;
   status: string;
   state: string;
@@ -38,7 +38,7 @@ function getComposePath(): string {
   return join(getComposeDir(), "docker-compose.yaml");
 }
 
-export function getCoreComposeContent(config: CoreConfig): string {
+function getCoreComposeContent(config: CoreConfig): string {
   const acmeEmail = config.acmeEmail ?? `admin@${config.rootDomain}`;
   const logLevel = config.logLevel ?? "ERROR";
   const httpTimeout = config.httpTimeout ?? "180";

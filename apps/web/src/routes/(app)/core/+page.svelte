@@ -1,16 +1,48 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
-  import {
-    Card,
-    CardHeader,
-    Button,
-    Alert,
-    ActionForm,
-  } from "@laber/ui";
+  import { Card, CardHeader, Button, Alert } from "@laber/ui";
   import { statusColor } from "$lib/utils";
+  import { CORE_KEYS } from "$lib/core-keys";
+  import {
+    getCoreData,
+    saveCoreConfig,
+    deployCore,
+    stopCore,
+    restartCore,
+  } from "./data.remote";
 
-  let { data, form } = $props();
+  const data = $derived(await getCoreData());
   let actionLoading = $state("");
+  let result = $state<{ success?: boolean; output?: string; message?: string } | null>(null);
+
+  async function handleAction(
+    action: () => Promise<{ success: boolean; output: string }>,
+    name: string,
+  ) {
+    actionLoading = name;
+    result = null;
+    try {
+      result = await action();
+    } catch (e) {
+      result = { success: false, output: e instanceof Error ? e.message : "Unknown error" };
+    } finally {
+      actionLoading = "";
+    }
+  }
+
+  async function handleSave(e: SubmitEvent) {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const values: Record<string, string> = {};
+    for (const keyDef of CORE_KEYS) {
+      values[keyDef.key] = (formData.get(keyDef.key) as string) ?? "";
+    }
+    result = null;
+    try {
+      result = await saveCoreConfig(values);
+    } catch (e) {
+      result = { success: false, output: e instanceof Error ? e.message : "Unknown error" };
+    }
+  }
 </script>
 
 <svelte:head>
@@ -25,49 +57,33 @@
     </p>
   </div>
 
-  {#if form?.output}
-    <Alert variant={form?.success ? "success" : "error"} mono>
-      {form.output}
+  {#if result?.output}
+    <Alert variant={result?.success ? "success" : "error"} mono>
+      {result.output}
     </Alert>
   {/if}
 
-  {#if form?.message}
-    <Alert variant="success">{form.message}</Alert>
-  {/if}
-
-  {#if form?.error}
-    <Alert variant="error">{form.error}</Alert>
+  {#if result?.message}
+    <Alert variant="success">{result.message}</Alert>
   {/if}
 
   {#snippet statusActions()}
-    <ActionForm
-      action="?/restart"
-      onLoadingChange={(v) => (actionLoading = v)}
-      {enhance}
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={actionLoading !== ""}
+      onclick={() => handleAction(restartCore, "restart")}
     >
-      <Button
-        variant="secondary"
-        size="sm"
-        type="submit"
-        disabled={actionLoading !== ""}
-      >
-        {actionLoading === "restart" ? "..." : "Restart"}
-      </Button>
-    </ActionForm>
-    <ActionForm
-      action="?/stop"
-      onLoadingChange={(v) => (actionLoading = v)}
-      {enhance}
+      {actionLoading === "restart" ? "..." : "Restart"}
+    </Button>
+    <Button
+      variant="danger"
+      size="sm"
+      disabled={actionLoading !== ""}
+      onclick={() => handleAction(stopCore, "stop")}
     >
-      <Button
-        variant="danger"
-        size="sm"
-        type="submit"
-        disabled={actionLoading !== ""}
-      >
-        {actionLoading === "stop" ? "..." : "Stop"}
-      </Button>
-    </ActionForm>
+      {actionLoading === "stop" ? "..." : "Stop"}
+    </Button>
   {/snippet}
 
   {#if data.coreServices.length > 0}
@@ -89,17 +105,11 @@
     </Card>
   {/if}
 
-  <form
-    method="POST"
-    action="?/save"
-    use:enhance={() => {
-      return async ({ update }) => await update();
-    }}
-  >
+  <form onsubmit={handleSave}>
     <Card>
       <CardHeader title="Configuration" />
       <div class="space-y-4 p-5">
-        {#each data.coreKeys as keyDef (keyDef.key)}
+        {#each CORE_KEYS as keyDef (keyDef.key)}
           <div class="grid grid-cols-3 items-center gap-4">
             <label
               for={keyDef.key}
@@ -131,18 +141,12 @@
   </form>
 
   <div class="-mt-4 flex justify-end">
-    <ActionForm
-      action="?/deploy"
-      onLoadingChange={(v) => (actionLoading = v)}
-      {enhance}
+    <Button
+      variant="primary"
+      disabled={actionLoading !== "" || !data.isConfigured}
+      onclick={() => handleAction(deployCore, "deploy")}
     >
-      <Button
-        variant="primary"
-        type="submit"
-        disabled={actionLoading !== "" || !data.isConfigured}
-      >
-        {actionLoading === "deploy" ? "Deploying..." : "Deploy Core Stack"}
-      </Button>
-    </ActionForm>
+      {actionLoading === "deploy" ? "Deploying..." : "Deploy Core Stack"}
+    </Button>
   </div>
 </div>

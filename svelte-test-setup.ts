@@ -29,24 +29,30 @@ plugin({
   setup(builder) {
     // Redirect svelte's server entry to the client entry so mount/hydrate
     // are available in tests. This replaces the need for --conditions browser.
-    builder.onLoad({ filter: /svelte\/src\/index-server\.js$/ }, (args) => {
-      const clientPath = args.path.replace("index-server.js", "index-client.js");
-      return { contents: readFileSync(clientPath, "utf-8"), loader: "js" };
-    });
+    builder.onLoad(
+      { filter: /svelte\/src\/index-server\.js$/ },
+      (args) => {
+        const clientPath = args.path.replace(
+          "index-server.js",
+          "index-client.js"
+        );
+        return {
+          contents: readFileSync(clientPath, "utf-8"),
+          loader: "js",
+        };
+      }
+    );
 
     // Compile .svelte.js and .svelte.ts rune modules
-    builder.onLoad(
-      { filter: /\.svelte\.[jt]s$/ },
-      async ({ path }) => {
-        const compiler = await getCompiler(path);
-        const source = readFileSync(path, "utf-8");
-        const result = compiler.compileModule(source, {
-          filename: path,
-          dev: false,
-        });
-        return { contents: result.js.code, loader: "js" };
-      },
-    );
+    builder.onLoad({ filter: /\.svelte\.[jt]s$/ }, async ({ path }) => {
+      const compiler = await getCompiler(path);
+      const source = readFileSync(path, "utf-8");
+      const result = compiler.compileModule(source, {
+        filename: path,
+        dev: false,
+      });
+      return { contents: result.js.code, loader: "js" };
+    });
 
     // Compile .svelte component files
     builder.onLoad({ filter: /\.svelte(\?[^.]+)?$/ }, async ({ path }) => {

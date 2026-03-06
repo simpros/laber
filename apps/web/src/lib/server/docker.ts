@@ -1,21 +1,8 @@
 import Docker from "dockerode";
 import { dirname } from "path";
+import type { ContainerInfo } from "$lib/types";
 
-export type ContainerInfo = {
-  id: string;
-  name: string;
-  image: string;
-  state: string;
-  status: string;
-  ports: Array<{
-    host: number;
-    container: number;
-    protocol: string;
-  }>;
-  labels: Record<string, string>;
-  networks: string[];
-  createdAt: string;
-};
+export type { ContainerInfo };
 
 let docker: Docker | null = null;
 
@@ -56,17 +43,6 @@ export async function listContainers(
     filters,
   });
   return containers.map(mapContainer);
-}
-
-export async function getContainerInfo(
-  containerId: string
-): Promise<ContainerInfo | null> {
-  const containers = await getDocker().listContainers({
-    all: true,
-    filters: { id: [containerId] },
-  });
-  if (containers.length === 0) return null;
-  return mapContainer(containers[0]);
 }
 
 export function getContainerLogs(options: {

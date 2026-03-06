@@ -2,8 +2,9 @@
   import { resolve } from "$app/paths";
   import { Card, Button, Icon } from "@laber/ui";
   import { statusBadge } from "$lib/utils";
+  import { getStacks } from "./data.remote";
 
-  let { data } = $props();
+  const stacks = $derived(await getStacks());
 </script>
 
 <svelte:head>
@@ -18,14 +19,14 @@
         Manage your homelab service stacks
       </p>
     </div>
-    {#if data.stacks.length === 0}
+    {#if stacks.length === 0}
       <a href={resolve("/settings/repository")}>
         <Button variant="primary">Link Repository</Button>
       </a>
     {/if}
   </div>
 
-  {#if data.stacks.length === 0}
+  {#if stacks.length === 0}
     <Card class="px-6 py-12 text-center">
       <Icon size="lg" class="mx-auto h-12 w-12 opacity-20">
         <path d="M8 1.5L14.5 5.5L8 9.5L1.5 5.5Z" />
@@ -38,7 +39,7 @@
     </Card>
   {:else}
     <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {#each data.stacks as stack (stack.name)}
+      {#each stacks as stack (stack.name)}
         <a
           href={resolve(`/stacks/${stack.name}`)}
           class="bg-surface-2 border-border hover:border-border-hover group rounded-xl border p-5 transition-colors"

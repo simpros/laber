@@ -1,11 +1,63 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
   import { Card, Button, Alert, Icon } from "@laber/ui";
   import { timeAgo } from "$lib/utils";
+  import {
+    getRepositories,
+    addRepository,
+    syncRepository,
+    removeRepository,
+  } from "./data.remote";
 
-  let { data, form } = $props();
+  const data = $derived(await getRepositories());
   let showAddForm = $state(false);
   let syncLoading = $state<string | null>(null);
+  let errorMsg = $state("");
+  let successMsg = $state("");
+
+  async function handleAdd(e: SubmitEvent) {
+    e.preventDefault();
+    errorMsg = "";
+    successMsg = "";
+    const formData = new FormData(e.target as HTMLFormElement);
+    try {
+      const result = await addRepository({
+        name: formData.get("name") as string,
+        url: formData.get("url") as string,
+        branch: (formData.get("branch") as string) || "main",
+        stacksPath: (formData.get("stacksPath") as string) || "stacks",
+        sshPrivateKey: (formData.get("sshPrivateKey") as string) || null,
+      });
+      showAddForm = false;
+      successMsg = `Repository added. Discovered ${result.discovered} stack(s).`;
+      (e.target as HTMLFormElement).reset();
+    } catch (e) {
+      errorMsg = e instanceof Error ? e.message : "Failed to add repository";
+    }
+  }
+
+  async function handleSync(repoId: string) {
+    syncLoading = repoId;
+    errorMsg = "";
+    successMsg = "";
+    try {
+      const result = await syncRepository(repoId);
+      successMsg = `Synced. Found ${result.newStacks} new stack(s).`;
+    } catch (e) {
+      errorMsg = e instanceof Error ? e.message : "Failed to sync repository";
+    } finally {
+      syncLoading = null;
+    }
+  }
+
+  async function handleRemove(repoId: string) {
+    errorMsg = "";
+    successMsg = "";
+    try {
+      await removeRepository(repoId);
+    } catch (e) {
+      errorMsg = e instanceof Error ? e.message : "Failed to remove repository";
+    }
+  }
 </script>
 
 <svelte:head>
@@ -27,33 +79,16 @@
     {/if}
   </div>
 
-  {#if form?.error}
-    <Alert variant="error">{form.error}</Alert>
+  {#if errorMsg}
+    <Alert variant="error">{errorMsg}</Alert>
   {/if}
 
-  {#if form?.success}
-    <Alert variant="success">
-      {#if form.discovered !== undefined}
-        Repository added. Discovered {form.discovered} stack(s).
-      {:else if form.newStacks !== undefined}
-        Synced. Found {form.newStacks} new stack(s).
-      {:else}
-        Success.
-      {/if}
-    </Alert>
+  {#if successMsg}
+    <Alert variant="success">{successMsg}</Alert>
   {/if}
 
   {#if showAddForm || data.repositories.length === 0}
-    <form
-      method="POST"
-      action="?/add"
-      use:enhance={() => {
-        return async ({ result, update }) => {
-          if (result.type === "success") showAddForm = false;
-          await update();
-        };
-      }}
-    >
+    <form onsubmit={handleAdd}>
       <Card class="p-5">
         <h2 class="mb-4 text-sm font-medium">Add Repository</h2>
         <div class="space-y-3">
@@ -154,41 +189,26 @@
           <span class="text-text-muted text-xs">
             Synced {timeAgo(repo.lastSyncedAt)}
           </span>
-          <form
-            method="POST"
-            action="?/sync"
-            use:enhance={() => {
-              syncLoading = repo.id;
-              return async ({ update }) => {
-                syncLoading = null;
-                await update();
-              };
-            }}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={syncLoading === repo.id}
+            onclick={() => handleSync(repo.id)}
           >
-            <input type="hidden" name="repoId" value={repo.id} />
-            <Button
-              variant="secondary"
-              size="sm"
-              type="submit"
-              disabled={syncLoading === repo.id}
-            >
-              {syncLoading === repo.id ? "Syncing..." : "Sync"}
-            </Button>
-          </form>
-          <form method="POST" action="?/remove" use:enhance>
-            <input type="hidden" name="repoId" value={repo.id} />
-            <button
-              type="submit"
-              class="text-text-muted hover:text-danger p-1.5 transition-colors"
-              title="Remove repository"
-            >
-              <Icon>
-                <path
-                  d="M2.5 4.5h11M5.5 4.5V3a1 1 0 011-1h3a1 1 0 011 1v1.5M6.5 7v4M9.5 7v4M3.5 4.5l.5 8.5a1 1 0 001 1h6a1 1 0 001-1l.5-8.5"
-                />
-              </Icon>
-            </button>
-          </form>
+            {syncLoading === repo.id ? "Syncing..." : "Sync"}
+          </Button>
+          <button
+            type="button"
+            class="text-text-muted hover:text-danger p-1.5 transition-colors"
+            title="Remove repository"
+            onclick={() => handleRemove(repo.id)}
+          >
+            <Icon>
+              <path
+                d="M2.5 4.5h11M5.5 4.5V3a1 1 0 011-1h3a1 1 0 011 1v1.5M6.5 7v4M9.5 7v4M3.5 4.5l.5 8.5a1 1 0 001 1h6a1 1 0 001-1l.5-8.5"
+              />
+            </Icon>
+          </button>
         </div>
       </div>
       <div class="border-border border-t px-5 py-3">

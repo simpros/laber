@@ -744,7 +744,7 @@ export function cn(...inputs: ClassValue[]) {
 // Focus ring utility
 export const focusRing = cn(
   "focus-visible:outline-none focus-visible:ring-2",
-  "focus-visible:ring-ring focus-visible:ring-offset-2",
+  "focus-visible:ring-ring focus-visible:ring-offset-2"
 );
 
 // Disabled utility
@@ -765,7 +765,7 @@ Define reusable custom utilities:
 
 /* Custom utility for text gradients */
 @utility text-gradient {
-  @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+  @apply from-primary to-accent bg-gradient-to-r bg-clip-text text-transparent;
 }
 ```
 
@@ -807,7 +807,11 @@ Define reusable custom utilities:
 ```css
 @theme {
   /* Use color-mix() for alpha variants */
-  --color-primary-50: color-mix(in oklab, var(--color-primary) 5%, transparent);
+  --color-primary-50: color-mix(
+    in oklab,
+    var(--color-primary) 5%,
+    transparent
+  );
   --color-primary-100: color-mix(
     in oklab,
     var(--color-primary) 10%,

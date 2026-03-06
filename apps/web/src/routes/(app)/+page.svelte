@@ -2,8 +2,9 @@
   import { resolve } from "$app/paths";
   import { Card, CardHeader, StatusBadge } from "@laber/ui";
   import { statusColor, timeAgo } from "$lib/utils";
+  import { getDashboard } from "./data.remote";
 
-  let { data } = $props();
+  const data = $derived(await getDashboard());
 </script>
 
 <svelte:head>

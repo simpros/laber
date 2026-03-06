@@ -58,23 +58,6 @@ export async function pullRepo(
   });
 }
 
-export async function getLastCommit(repoDir: string): Promise<{
-  hash: string;
-  message: string;
-  date: string;
-  author: string;
-}> {
-  const git = simpleGit(repoDir);
-  const log = await git.log({ maxCount: 1 });
-  const latest = log.latest;
-  return {
-    hash: latest?.hash ?? "",
-    message: latest?.message ?? "",
-    date: latest?.date ?? "",
-    author: latest?.author_name ?? "",
-  };
-}
-
 export async function discoverStacks(
   repoDir: string,
   stacksPath: string

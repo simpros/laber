@@ -9,25 +9,20 @@ import {
 } from "./docker";
 import { connectTraefikToNetwork } from "./core-stack";
 
-export type DeployOptions = {
+type DeployOptions = {
   composePath: string;
   envVars: Record<string, string>;
   networkName?: string;
   projectName?: string;
 };
 
-export type DeployResult = {
+type DeployResult = {
   success: boolean;
   output: string;
 };
 
-function writeEnvFile(
-  envVars: Record<string, string>,
-): string {
-  const envPath = join(
-    tmpdir(),
-    `laber-env-${Date.now()}.env`,
-  );
+function writeEnvFile(envVars: Record<string, string>): string {
+  const envPath = join(tmpdir(), `laber-env-${Date.now()}.env`);
   const content = Object.entries(envVars)
     .map(([k, v]) => `${k}=${v}`)
     .join("\n");
@@ -36,7 +31,7 @@ function writeEnvFile(
 }
 
 export async function deployStack(
-  options: DeployOptions,
+  options: DeployOptions
 ): Promise<DeployResult> {
   if (options.networkName) {
     await ensureNetwork(options.networkName);
@@ -59,14 +54,9 @@ export async function deployStack(
       projectName: options.projectName,
     });
 
-    if (
-      result.exitCode === 0 &&
-      options.networkName
-    ) {
+    if (result.exitCode === 0 && options.networkName) {
       try {
-        await connectTraefikToNetwork(
-          options.networkName,
-        );
+        await connectTraefikToNetwork(options.networkName);
       } catch {
         // traefik may not be running yet
       }
@@ -89,7 +79,7 @@ export async function deployStack(
 
 export async function stopStack(
   composePath: string,
-  projectName?: string,
+  projectName?: string
 ): Promise<DeployResult> {
   const result = await execCompose({
     composePath,
@@ -105,7 +95,7 @@ export async function stopStack(
 
 export async function restartStack(
   composePath: string,
-  projectName?: string,
+  projectName?: string
 ): Promise<DeployResult> {
   const result = await execCompose({
     composePath,
@@ -121,7 +111,7 @@ export async function restartStack(
 
 export async function pullStack(
   composePath: string,
-  projectName?: string,
+  projectName?: string
 ): Promise<DeployResult> {
   const result = await execCompose({
     composePath,
@@ -136,7 +126,7 @@ export async function pullStack(
 }
 
 export async function getStackContainers(
-  projectName: string,
+  projectName: string
 ): Promise<ContainerInfo[]> {
   return listContainers(projectName);
 }

@@ -43,8 +43,8 @@ After making changes, run:
 - **Styling**: Tailwind CSS v4 (CSS-first config via `@theme` in `src/app.css`)
 - **Theming**: Dark/light mode via `.dark` class on `<html>`. Color tokens are CSS custom properties defined in `@theme` (dark defaults) with light overrides in `html:not(.dark)`. All components use semantic token classes (`bg-surface-2`, `text-text-primary`, `border-border`, etc.) that automatically respect the active theme.
 - **Fonts**: DM Sans (body) + JetBrains Mono (code)
-- **Shared Components** (`@laber/ui`): Icon, Button, Card, CardHeader, Alert, StatusBadge, ActionForm, AuthLayout
-- **Shared Utilities** (`$lib/utils.ts`): statusColor, containerStatusBg, logStatusColor, statusBadge, timeAgo
+- **Shared Components** (`@laber/ui`): Icon, Button, Card, CardHeader, Alert, StatusBadge, AuthLayout
+- **Shared Utilities** (`$lib/utils.ts`): statusColor, containerStatusBg, statusBadge, timeAgo
 - **Server Config** (`$lib/server/config.ts`): DATA_DIR, getRepoDir, getComposePath, getStackAndRepo
 
 ## Code Conventions
