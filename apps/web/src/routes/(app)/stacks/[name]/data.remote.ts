@@ -19,6 +19,8 @@ import {
 import {
   parseComposeFile,
   extractServices,
+  extractAllEnvVarNames,
+  readComposeRaw,
 } from "$lib/server/compose-parser";
 import {
   getStackAndRepo,
@@ -60,6 +62,8 @@ export const getStackDetail = query(v.string(), async (name) => {
   }
 
   let services: ReturnType<typeof extractServices> = [];
+  let detectedEnvVars: string[] = [];
+  let composeRaw = "";
   try {
     const repoDir = repo ? getRepoDir(repo.id) : "";
     if (repoDir) {
@@ -70,6 +74,8 @@ export const getStackDetail = query(v.string(), async (name) => {
       );
       const compose = parseComposeFile(composePath);
       services = extractServices(compose);
+      detectedEnvVars = extractAllEnvVarNames(compose);
+      composeRaw = readComposeRaw(composePath);
     }
   } catch {
     // Compose file not available
@@ -84,6 +90,8 @@ export const getStackDetail = query(v.string(), async (name) => {
     logs,
     containers,
     services,
+    detectedEnvVars,
+    composeRaw,
   };
 });
 

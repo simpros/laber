@@ -43,7 +43,7 @@ export function parseComposeFile(filePath: string): ComposeFile {
   return parse(content) as ComposeFile;
 }
 
-function extractEnvVarNames(
+export function extractEnvVarNames(
   env: string[] | Record<string, string> | undefined
 ): string[] {
   if (!env) return [];
@@ -134,6 +134,20 @@ export function extractServices(compose: ComposeFile): ServiceInfo[] {
       traefikRoute: extractTraefikFromLabels(labels),
     };
   });
+}
+
+export function extractAllEnvVarNames(compose: ComposeFile): string[] {
+  const allNames = new Set<string>();
+  for (const svc of Object.values(compose.services)) {
+    for (const name of extractEnvVarNames(svc.environment)) {
+      allNames.add(name);
+    }
+  }
+  return [...allNames];
+}
+
+export function readComposeRaw(filePath: string): string {
+  return readFileSync(filePath, "utf-8");
 }
 
 export function extractNetworkName(

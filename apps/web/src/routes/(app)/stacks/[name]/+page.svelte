@@ -5,6 +5,7 @@
   import StackServices from "./StackServices.svelte";
   import StackEnvEditor from "./StackEnvEditor.svelte";
   import StackDeploymentLogs from "./StackDeploymentLogs.svelte";
+  import StackComposeView from "./StackComposeView.svelte";
   import {
     getStackDetail,
     deployStackCmd,
@@ -15,13 +16,14 @@
 
   const stackName = $derived(page.params.name!);
   const data = $derived(await getStackDetail(stackName));
-  let activeTab = $state<"services" | "env" | "logs">("services");
+  let activeTab = $state<"services" | "env" | "logs" | "compose">("services");
   let actionLoading = $state("");
   let result = $state<{ success?: boolean; output?: string } | null>(null);
 
   const tabs = [
     { id: "services" as const, label: "Services" },
     { id: "env" as const, label: "Environment" },
+    { id: "compose" as const, label: "Compose" },
     { id: "logs" as const, label: "Deployments" },
   ];
 
@@ -126,7 +128,9 @@
   {#if activeTab === "services"}
     <StackServices containers={data.containers} services={data.services} />
   {:else if activeTab === "env"}
-    <StackEnvEditor envVars={data.envVars} stackName={stackName} />
+    <StackEnvEditor envVars={data.envVars} stackName={stackName} detectedEnvVars={data.detectedEnvVars} />
+  {:else if activeTab === "compose"}
+    <StackComposeView content={data.composeRaw} fileName={data.stack.composeFile} />
   {:else}
     <StackDeploymentLogs logs={data.logs} />
   {/if}
