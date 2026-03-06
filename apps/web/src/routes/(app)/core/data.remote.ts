@@ -72,19 +72,15 @@ export const deployCore = command(async () => {
   const configMap: Record<string, string> = {};
   for (const c of config) configMap[c.key] = c.value;
 
-  if (
-    !configMap.ROOT_DOMAIN ||
-    !configMap.CF_DNS_API_TOKEN ||
-    !configMap.TUNNEL_TOKEN
-  ) {
-    error(400, "ROOT_DOMAIN, CF_DNS_API_TOKEN, and TUNNEL_TOKEN are required");
+  if (!configMap.ROOT_DOMAIN || !configMap.CF_DNS_API_TOKEN) {
+    error(400, "ROOT_DOMAIN and CF_DNS_API_TOKEN are required");
   }
 
   const coreConf: CoreConfig = {
     rootDomain: configMap.ROOT_DOMAIN,
     cfDnsApiToken: configMap.CF_DNS_API_TOKEN,
-    zoneId: configMap.ZONE_ID ?? "",
-    tunnelToken: configMap.TUNNEL_TOKEN,
+    zoneId: configMap.ZONE_ID || undefined,
+    tunnelToken: configMap.TUNNEL_TOKEN || undefined,
     httpTimeout: configMap.HTTP_TIMEOUT,
     pollingInterval: configMap.POLLING_INTERVAL,
     propagationTimeout: configMap.PROPAGATION_TIMEOUT,

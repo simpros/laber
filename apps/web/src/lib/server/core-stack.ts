@@ -11,8 +11,8 @@ import { DATA_DIR } from "./config";
 export type CoreConfig = {
   rootDomain: string;
   cfDnsApiToken: string;
-  zoneId: string;
-  tunnelToken: string;
+  zoneId?: string;
+  tunnelToken?: string;
   httpTimeout?: string;
   pollingInterval?: string;
   propagationTimeout?: string;
@@ -46,7 +46,7 @@ function getCoreComposeContent(config: CoreConfig): string {
   const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
 
-  return `services:
+  let compose = `services:
   reverse-proxy:
     image: traefik:v3
     container_name: laber-reverse-proxy
@@ -90,7 +90,10 @@ function getCoreComposeContent(config: CoreConfig): string {
       - traefik.enable=true
     networks:
       - main
+`;
 
+  if (config.tunnelToken) {
+    compose += `
   tunnel:
     image: cloudflare/cloudflared:latest
     container_name: laber-tunnel
@@ -100,7 +103,11 @@ function getCoreComposeContent(config: CoreConfig): string {
       TUNNEL_TOKEN: "${config.tunnelToken}"
     networks:
       - main
+`;
+  }
 
+  if (config.zoneId) {
+    compose += `
   cloudflare-companion:
     image: ghcr.io/tiredofit/docker-traefik-cloudflare-companion:latest
     container_name: laber-cloudflare-companion
@@ -124,7 +131,10 @@ function getCoreComposeContent(config: CoreConfig): string {
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - main
+`;
+  }
 
+  compose += `
 networks:
   main:
     name: main
@@ -134,6 +144,8 @@ volumes:
   acme:
   traefik:
 `;
+
+  return compose;
 }
 
 export async function deployCoreStack(
