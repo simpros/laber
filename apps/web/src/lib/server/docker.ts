@@ -137,6 +137,7 @@ export async function execCompose(options: {
   command: string;
   envVars?: Record<string, string>;
   projectName?: string;
+  onOutput?: (chunk: string) => void;
 }): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const args = ["compose", "-f", options.composePath];
   if (options.projectName) {
@@ -155,6 +156,31 @@ export async function execCompose(options: {
     stderr: "pipe",
     cwd: dirname(options.composePath),
   });
+
+  if (options.onOutput) {
+    const onOutput = options.onOutput;
+
+    async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let full = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        full += text;
+        onOutput(text);
+      }
+      return full;
+    }
+
+    const [stdout, stderr] = await Promise.all([
+      readStream(proc.stdout),
+      readStream(proc.stderr),
+    ]);
+    const exitCode = await proc.exited;
+    return { stdout, stderr, exitCode };
+  }
 
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),

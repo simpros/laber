@@ -1,11 +1,17 @@
 import { readFileSync } from "fs";
 import { parse } from "yaml";
 
+type ComposeSecretDef = {
+  file?: string;
+  environment?: string;
+  external?: boolean;
+};
+
 type ComposeFile = {
   services: Record<string, ComposeService>;
   networks?: Record<string, ComposeNetwork>;
   volumes?: Record<string, unknown>;
-  secrets?: Record<string, unknown>;
+  secrets?: Record<string, ComposeSecretDef>;
 };
 
 type ComposeService = {
@@ -17,6 +23,7 @@ type ComposeService = {
   volumes?: string[];
   restart?: string;
   networks?: string[] | Record<string, unknown>;
+  secrets?: string[];
   [key: string]: unknown;
 };
 
@@ -167,4 +174,31 @@ export function extractNetworkName(
   return undefined;
 }
 
+export type SecretDefinition = {
+  name: string;
+  filePath: string;
+  services: string[];
+};
+
+export function extractSecrets(compose: ComposeFile): SecretDefinition[] {
+  if (!compose.secrets) return [];
+
+  const serviceMap = new Map<string, string[]>();
+  for (const [svcName, svc] of Object.entries(compose.services)) {
+    if (!svc.secrets) continue;
+    for (const secretName of svc.secrets) {
+      const list = serviceMap.get(secretName) ?? [];
+      list.push(svcName);
+      serviceMap.set(secretName, list);
+    }
+  }
+
+  return Object.entries(compose.secrets)
+    .filter(([, def]) => def.file)
+    .map(([name, def]) => ({
+      name,
+      filePath: def.file!,
+      services: serviceMap.get(name) ?? [],
+    }));
+}
 

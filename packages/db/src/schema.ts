@@ -89,6 +89,23 @@ export const coreConfig = sqliteTable("core_config", {
     .$defaultFn(() => new Date()),
 });
 
+export const stackSecrets = sqliteTable("stack_secrets", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
+  stackId: text("stack_id")
+    .notNull()
+    .references(() => stacks.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  value: text("value").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const deploymentLogs = sqliteTable("deployment_logs", {
   id: text("id")
     .primaryKey()

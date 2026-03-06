@@ -5,6 +5,8 @@
   import { onMount } from "svelte";
   import { theme } from "$lib/theme.svelte";
   import { Icon } from "@laber/ui";
+  import ActivityPanel from "$lib/components/ActivityPanel.svelte";
+  import { activityStore } from "$lib/activity.svelte";
 
   let { data, children } = $props();
   let sidebarOpen = $state(false);
@@ -110,6 +112,21 @@
     {#each bottomNav as item (item.href)}
       {@render navLink(item.href, item.label, item.icon)}
     {/each}
+    <button
+      onclick={() => (activityStore.open = true)}
+      class="relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors text-text-secondary hover:bg-surface-2 hover:text-text-primary"
+    >
+      <Icon class="opacity-60">
+        <path d="M8 1.5v5l3 1.5" />
+        <circle cx="8" cy="8" r="6.5" />
+      </Icon>
+      Activity
+      {#if activityStore.hasRunning}
+        <span class="bg-accent ml-auto h-2 w-2 rounded-full">
+          <span class="bg-accent absolute inset-0 h-2 w-2 animate-ping rounded-full opacity-75"></span>
+        </span>
+      {/if}
+    </button>
   </div>
 
   <div class="border-border border-t px-4 py-3">
@@ -187,6 +204,19 @@
         </Icon>
       </button>
       <span class="font-mono text-sm font-bold tracking-tight">laber</span>
+      <button
+        onclick={() => (activityStore.open = true)}
+        class="text-text-secondary hover:text-text-primary relative ml-auto rounded-md p-1 transition-colors"
+        aria-label="Open activity panel"
+      >
+        <Icon>
+          <path d="M8 1.5v5l3 1.5" />
+          <circle cx="8" cy="8" r="6.5" />
+        </Icon>
+        {#if activityStore.hasRunning}
+          <span class="bg-accent absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full"></span>
+        {/if}
+      </button>
     </header>
 
     <main class="flex-1 overflow-y-auto">
@@ -195,4 +225,6 @@
       </div>
     </main>
   </div>
+
+  <ActivityPanel />
 </div>

@@ -10,6 +10,11 @@ import {
   type CoreConfig,
 } from "$lib/server/core-stack";
 import { CORE_KEYS } from "$lib/core-keys";
+import {
+  createActivity,
+  appendOutput,
+  finishActivity,
+} from "$lib/server/activity";
 
 export const getCoreData = query(async () => {
   const config = await db.select().from(coreConfig);
@@ -76,6 +81,8 @@ export const deployCore = command(async () => {
     error(400, "ROOT_DOMAIN and CF_DNS_API_TOKEN are required");
   }
 
+  const activity = createActivity("Deploying core services");
+
   const coreConf: CoreConfig = {
     rootDomain: configMap.ROOT_DOMAIN,
     cfDnsApiToken: configMap.CF_DNS_API_TOKEN,
@@ -89,7 +96,12 @@ export const deployCore = command(async () => {
     acmeEmail: configMap.ACME_EMAIL,
   };
 
-  const result = await deployCoreStack(coreConf);
+  const result = await deployCoreStack(
+    coreConf,
+    (chunk) => appendOutput(activity.id, chunk),
+  );
+
+  finishActivity(activity.id, result.success ? "success" : "error");
 
   await db.insert(deploymentLogs).values({
     isCore: true,
@@ -103,7 +115,12 @@ export const deployCore = command(async () => {
 });
 
 export const stopCore = command(async () => {
-  const result = await stopCoreStack();
+  const activity = createActivity("Stopping core services");
+  const result = await stopCoreStack(
+    (chunk) => appendOutput(activity.id, chunk),
+  );
+
+  finishActivity(activity.id, result.success ? "success" : "error");
 
   await db.insert(deploymentLogs).values({
     isCore: true,
@@ -117,7 +134,12 @@ export const stopCore = command(async () => {
 });
 
 export const restartCore = command(async () => {
-  const result = await restartCoreStack();
+  const activity = createActivity("Restarting core services");
+  const result = await restartCoreStack(
+    (chunk) => appendOutput(activity.id, chunk),
+  );
+
+  finishActivity(activity.id, result.success ? "success" : "error");
 
   await db.insert(deploymentLogs).values({
     isCore: true,

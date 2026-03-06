@@ -6,6 +6,11 @@ import { eq } from "drizzle-orm";
 import { cloneRepo, pullRepo, discoverStacks } from "$lib/server/git";
 import { getRepoDir } from "$lib/server/config";
 import { existsSync } from "fs";
+import {
+  createActivity,
+  appendOutput,
+  finishActivity,
+} from "$lib/server/activity";
 
 export const getRepositories = query(async () => {
   const repos = await db.select().from(repositories);
@@ -23,6 +28,9 @@ export const addRepository = command(
     sshPrivateKey: v.optional(v.nullable(v.string()), null),
   }),
   async ({ name, url, branch, stacksPath, sshPrivateKey }) => {
+    const activity = createActivity(`Cloning ${name}`);
+    appendOutput(activity.id, `Cloning ${url} (branch: ${branch})...\n`);
+
     const [repo] = await db
       .insert(repositories)
       .values({ name, url, branch, stacksPath, sshPrivateKey })
@@ -36,8 +44,10 @@ export const addRepository = command(
         .update(repositories)
         .set({ lastSyncedAt: new Date() })
         .where(eq(repositories.id, repo.id));
+      appendOutput(activity.id, "Clone complete. Discovering stacks...\n");
     } catch (e) {
       await db.delete(repositories).where(eq(repositories.id, repo.id));
+      finishActivity(activity.id, "error");
       error(
         500,
         `Failed to clone repository: ${e instanceof Error ? e.message : "Unknown error"}`,
@@ -57,6 +67,9 @@ export const addRepository = command(
       );
     }
 
+    appendOutput(activity.id, `Discovered ${discovered.length} stack(s)\n`);
+    finishActivity(activity.id, "success");
+
     getRepositories().refresh();
     return { discovered: discovered.length };
   },
@@ -72,18 +85,28 @@ export const syncRepository = command(
       .limit(1);
     if (!repo) error(404, "Repository not found");
 
+    const activity = createActivity(`Syncing ${repo.name}`);
+    appendOutput(activity.id, `Pulling latest changes from ${repo.url}...\n`);
+
     const repoDir = getRepoDir(repo.id);
 
-    if (!existsSync(repoDir)) {
-      await cloneRepo(
-        repo.url,
-        repoDir,
-        repo.branch,
-        repo.sshPrivateKey ?? undefined,
-      );
-    } else {
-      await pullRepo(repoDir, repo.sshPrivateKey ?? undefined);
+    try {
+      if (!existsSync(repoDir)) {
+        await cloneRepo(
+          repo.url,
+          repoDir,
+          repo.branch,
+          repo.sshPrivateKey ?? undefined,
+        );
+      } else {
+        await pullRepo(repoDir, repo.sshPrivateKey ?? undefined);
+      }
+    } catch (e) {
+      finishActivity(activity.id, "error");
+      throw e;
     }
+
+    appendOutput(activity.id, "Pull complete. Discovering new stacks...\n");
 
     await db
       .update(repositories)
@@ -109,6 +132,9 @@ export const syncRepository = command(
         })),
       );
     }
+
+    appendOutput(activity.id, `Found ${newStacks.length} new stack(s)\n`);
+    finishActivity(activity.id, "success");
 
     getRepositories().refresh();
     return { newStacks: newStacks.length };
