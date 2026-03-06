@@ -22,6 +22,15 @@ export const handle: Handle = async ({ event, resolve }) => {
     event.locals.session = null;
   }
 
+  const { pathname } = event.url;
+  if (
+    pathname.startsWith("/api/") &&
+    !pathname.startsWith("/api/auth/") &&
+    !event.locals.user
+  ) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const themeCookie = event.cookies.get("theme");
   const theme = themeCookie === "light" ? "light" : "dark";
 

@@ -1,5 +1,5 @@
-import { writeFileSync, unlinkSync } from "fs";
-import { join } from "path";
+import { writeFileSync, unlinkSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
   execCompose,
@@ -9,11 +9,18 @@ import {
 } from "./docker";
 import { connectTraefikToNetwork } from "./core-stack";
 
+type SecretFile = {
+  filePath: string;
+  value: string;
+};
+
 type DeployOptions = {
   composePath: string;
   envVars: Record<string, string>;
+  secretFiles?: SecretFile[];
   networkName?: string;
   projectName?: string;
+  onOutput?: (chunk: string) => void;
 };
 
 type DeployResult = {
@@ -26,8 +33,15 @@ function writeEnvFile(envVars: Record<string, string>): string {
   const content = Object.entries(envVars)
     .map(([k, v]) => `${k}=${v}`)
     .join("\n");
-  writeFileSync(envPath, content, "utf-8");
+  writeFileSync(envPath, content, { encoding: "utf-8", mode: 0o600 });
   return envPath;
+}
+
+function writeSecretFiles(files: SecretFile[]): void {
+  for (const { filePath, value } of files) {
+    mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+    writeFileSync(filePath, value, { encoding: "utf-8", mode: 0o600 });
+  }
 }
 
 export async function deployStack(
@@ -39,6 +53,10 @@ export async function deployStack(
 
   let envFilePath: string | undefined;
   try {
+    if (options.secretFiles?.length) {
+      writeSecretFiles(options.secretFiles);
+    }
+
     const envArgs: string[] = [];
     if (Object.keys(options.envVars).length > 0) {
       envFilePath = writeEnvFile(options.envVars);
@@ -52,6 +70,7 @@ export async function deployStack(
       command,
       envVars: options.envVars,
       projectName: options.projectName,
+      onOutput: options.onOutput,
     });
 
     if (result.exitCode === 0 && options.networkName) {
@@ -79,12 +98,14 @@ export async function deployStack(
 
 export async function stopStack(
   composePath: string,
-  projectName?: string
+  projectName?: string,
+  onOutput?: (chunk: string) => void,
 ): Promise<DeployResult> {
   const result = await execCompose({
     composePath,
     command: "down",
     projectName,
+    onOutput,
   });
 
   return {
@@ -95,12 +116,14 @@ export async function stopStack(
 
 export async function restartStack(
   composePath: string,
-  projectName?: string
+  projectName?: string,
+  onOutput?: (chunk: string) => void,
 ): Promise<DeployResult> {
   const result = await execCompose({
     composePath,
     command: "restart",
     projectName,
+    onOutput,
   });
 
   return {
@@ -111,12 +134,14 @@ export async function restartStack(
 
 export async function pullStack(
   composePath: string,
-  projectName?: string
+  projectName?: string,
+  onOutput?: (chunk: string) => void,
 ): Promise<DeployResult> {
   const result = await execCompose({
     composePath,
     command: "pull",
     projectName,
+    onOutput,
   });
 
   return {

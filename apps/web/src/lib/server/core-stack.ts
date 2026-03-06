@@ -149,7 +149,8 @@ volumes:
 }
 
 export async function deployCoreStack(
-  config: CoreConfig
+  config: CoreConfig,
+  onOutput?: (chunk: string) => void,
 ): Promise<{ success: boolean; output: string }> {
   const composePath = getComposePath();
   const content = getCoreComposeContent(config);
@@ -159,6 +160,7 @@ export async function deployCoreStack(
     composePath,
     command: "up -d",
     projectName: "laber-core",
+    onOutput,
   });
 
   return {
@@ -167,7 +169,9 @@ export async function deployCoreStack(
   };
 }
 
-export async function stopCoreStack(): Promise<{
+export async function stopCoreStack(
+  onOutput?: (chunk: string) => void,
+): Promise<{
   success: boolean;
   output: string;
 }> {
@@ -176,6 +180,7 @@ export async function stopCoreStack(): Promise<{
     composePath,
     command: "down",
     projectName: "laber-core",
+    onOutput,
   });
 
   return {
@@ -184,7 +189,9 @@ export async function stopCoreStack(): Promise<{
   };
 }
 
-export async function restartCoreStack(): Promise<{
+export async function restartCoreStack(
+  onOutput?: (chunk: string) => void,
+): Promise<{
   success: boolean;
   output: string;
 }> {
@@ -193,6 +200,7 @@ export async function restartCoreStack(): Promise<{
     composePath,
     command: "restart",
     projectName: "laber-core",
+    onOutput,
   });
 
   return {

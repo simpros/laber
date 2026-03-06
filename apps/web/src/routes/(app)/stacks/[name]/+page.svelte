@@ -4,6 +4,7 @@
   import { Alert, Button } from "@laber/ui";
   import StackServices from "./StackServices.svelte";
   import StackEnvEditor from "./StackEnvEditor.svelte";
+  import StackSecretsEditor from "./StackSecretsEditor.svelte";
   import StackDeploymentLogs from "./StackDeploymentLogs.svelte";
   import StackComposeView from "./StackComposeView.svelte";
   import {
@@ -16,7 +17,7 @@
   import { useSearchParams } from "runed/kit";
   import * as v from "valibot";
 
-  const tabIds = ["services", "env", "compose", "logs"] as const;
+  const tabIds = ["services", "env", "secrets", "compose", "logs"] as const;
 
   const searchParams = useSearchParams(
     v.object({
@@ -29,7 +30,7 @@
   const data = $derived(await getStackDetail(stackName));
   let activeTab = $derived.by(() => {
     const tab = page.url.searchParams.get("tab");
-    if (tab === "env" || tab === "compose" || tab === "logs") return tab;
+    if (tab === "env" || tab === "secrets" || tab === "compose" || tab === "logs") return tab;
     return "services" as const;
   });
   let actionLoading = $state("");
@@ -38,6 +39,7 @@
   const tabs = [
     { id: "services", label: "Services" },
     { id: "env", label: "Environment" },
+    { id: "secrets", label: "Secrets" },
     { id: "compose", label: "Compose" },
     { id: "logs", label: "Deployments" },
   ] as const;
@@ -144,6 +146,8 @@
     <StackServices containers={data.containers} services={data.services} />
   {:else if activeTab === "env"}
     <StackEnvEditor envVars={data.envVars} stackName={stackName} detectedEnvVars={data.detectedEnvVars} />
+  {:else if activeTab === "secrets"}
+    <StackSecretsEditor secrets={data.secrets} stackName={stackName} />
   {:else if activeTab === "compose"}
     <StackComposeView content={data.composeRaw} fileName={data.stack.composeFile} />
   {:else}

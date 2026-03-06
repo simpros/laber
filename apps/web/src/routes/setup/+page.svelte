@@ -1,5 +1,6 @@
 <script lang="ts">
   import { signUp } from "@laber/auth/client";
+  import { goto } from "$app/navigation";
   import { AuthLayout, Button } from "@laber/ui";
 
   let name = $state("");
@@ -23,7 +24,10 @@
     if (authError) {
       error = authError.message ?? "Registration failed";
       loading = false;
+      return;
     }
+
+    await goto("/");
   }
 </script>
 
