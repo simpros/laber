@@ -1,6 +1,6 @@
 import { query } from "$app/server";
-import { getDb } from "$lib/server/db";
 import {
+  db,
   stacks,
   repositories,
   deploymentLogs,
@@ -10,7 +10,6 @@ import { count, desc, eq } from "drizzle-orm";
 import { getContainersByLabel } from "$lib/server/docker";
 
 export const getDashboard = query(async () => {
-  const db = getDb();
   const [stackCount] = await db.select({ count: count() }).from(stacks);
   const [repoCount] = await db
     .select({ count: count() })
