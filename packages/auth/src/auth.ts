@@ -1,19 +1,18 @@
 import { betterAuth } from "better-auth";
-import { drizzleAdapter, type DB } from "better-auth/adapters/drizzle";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "@laber/db";
 
-export function createAuth(
-  db: DB,
-  options: { baseURL: string; secret: string },
-) {
-  return betterAuth({
-    database: drizzleAdapter(db, { provider: "sqlite" }),
-    basePath: "/api/auth",
-    baseURL: options.baseURL,
-    secret: options.secret,
-    emailAndPassword: {
-      enabled: true,
-    },
-  });
-}
+const baseURL = process.env.BETTER_AUTH_BASE_URL ?? "http://localhost:5173";
+const secret = process.env.BETTER_AUTH_SECRET ?? "dev-secret-change-me";
 
-export type Auth = ReturnType<typeof createAuth>;
+export const auth = betterAuth({
+  database: drizzleAdapter(db, { provider: "sqlite" }),
+  basePath: "/api/auth",
+  baseURL,
+  secret,
+  emailAndPassword: {
+    enabled: true,
+  },
+});
+
+export type Auth = typeof auth;

@@ -1,9 +1,14 @@
-import { getAuth } from "$lib/server/auth";
+import { building } from "$app/environment";
+import { auth } from "@laber/auth";
+import { runMigrations } from "@laber/db";
 import type { Handle } from "@sveltejs/kit";
+
+if (!building) {
+  runMigrations();
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
   try {
-    const auth = getAuth();
     const sessionResult = await auth.api.getSession({
       headers: event.request.headers,
     });

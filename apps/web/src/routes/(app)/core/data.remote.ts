@@ -1,7 +1,6 @@
 import { error } from "@sveltejs/kit";
 import { query, command } from "$app/server";
-import { getDb } from "$lib/server/db";
-import { coreConfig, deploymentLogs } from "@laber/db";
+import { db, coreConfig, deploymentLogs } from "@laber/db";
 import { eq } from "drizzle-orm";
 import {
   deployCoreStack,
@@ -13,7 +12,6 @@ import {
 import { CORE_KEYS } from "$lib/core-keys";
 
 export const getCoreData = query(async () => {
-  const db = getDb();
   const config = await db.select().from(coreConfig);
   const configMap: Record<string, { value: string; isSecret: boolean }> = {};
   for (const c of config) {
@@ -40,7 +38,6 @@ export const getCoreData = query(async () => {
 export const saveCoreConfig = command(
   "unchecked",
   async (values: Record<string, string>) => {
-    const db = getDb();
     for (const keyDef of CORE_KEYS) {
       const value = values[keyDef.key];
       if (value === undefined || value === null) continue;
@@ -71,7 +68,6 @@ export const saveCoreConfig = command(
 );
 
 export const deployCore = command(async () => {
-  const db = getDb();
   const config = await db.select().from(coreConfig);
   const configMap: Record<string, string> = {};
   for (const c of config) configMap[c.key] = c.value;
@@ -111,7 +107,6 @@ export const deployCore = command(async () => {
 });
 
 export const stopCore = command(async () => {
-  const db = getDb();
   const result = await stopCoreStack();
 
   await db.insert(deploymentLogs).values({
@@ -126,7 +121,6 @@ export const stopCore = command(async () => {
 });
 
 export const restartCore = command(async () => {
-  const db = getDb();
   const result = await restartCoreStack();
 
   await db.insert(deploymentLogs).values({

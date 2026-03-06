@@ -1,6 +1,5 @@
 import { resolve } from "path";
-import { getDb } from "$lib/server/db";
-import { stacks, repositories } from "@laber/db";
+import { db, stacks, repositories } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { error } from "@sveltejs/kit";
 
@@ -19,7 +18,6 @@ export function getComposePath(
 }
 
 export async function getStackAndRepo(stackName: string) {
-  const db = getDb();
   const [stack] = await db
     .select()
     .from(stacks)

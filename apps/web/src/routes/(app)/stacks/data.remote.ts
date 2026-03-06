@@ -1,10 +1,8 @@
 import { query } from "$app/server";
-import { getDb } from "$lib/server/db";
-import { stacks, repositories, stackEnvVars } from "@laber/db";
+import { db, stacks, repositories, stackEnvVars } from "@laber/db";
 import { eq, count } from "drizzle-orm";
 
 export const getStacks = query(async () => {
-  const db = getDb();
   const allStacks = await db
     .select({
       id: stacks.id,

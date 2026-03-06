@@ -1,15 +1,13 @@
 import * as v from "valibot";
 import { error } from "@sveltejs/kit";
 import { query, command } from "$app/server";
-import { getDb } from "$lib/server/db";
-import { repositories, stacks } from "@laber/db";
+import { db, repositories, stacks } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { cloneRepo, pullRepo, discoverStacks } from "$lib/server/git";
 import { getRepoDir } from "$lib/server/config";
 import { existsSync } from "fs";
 
 export const getRepositories = query(async () => {
-  const db = getDb();
   const repos = await db.select().from(repositories);
   const allStacks = await db.select().from(stacks);
 
@@ -25,7 +23,6 @@ export const addRepository = command(
     sshPrivateKey: v.optional(v.nullable(v.string()), null),
   }),
   async ({ name, url, branch, stacksPath, sshPrivateKey }) => {
-    const db = getDb();
     const [repo] = await db
       .insert(repositories)
       .values({ name, url, branch, stacksPath, sshPrivateKey })
@@ -68,7 +65,6 @@ export const addRepository = command(
 export const syncRepository = command(
   v.string(),
   async (repoId) => {
-    const db = getDb();
     const [repo] = await db
       .select()
       .from(repositories)
@@ -122,7 +118,6 @@ export const syncRepository = command(
 export const removeRepository = command(
   v.string(),
   async (repoId) => {
-    const db = getDb();
     await db.delete(stacks).where(eq(stacks.repositoryId, repoId));
     await db.delete(repositories).where(eq(repositories.id, repoId));
 

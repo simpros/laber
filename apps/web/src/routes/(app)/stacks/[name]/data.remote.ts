@@ -1,8 +1,8 @@
 import * as v from "valibot";
 import { error } from "@sveltejs/kit";
 import { query, command } from "$app/server";
-import { getDb } from "$lib/server/db";
 import {
+  db,
   stacks,
   stackEnvVars,
   repositories,
@@ -27,7 +27,6 @@ import {
 } from "$lib/server/config";
 
 export const getStackDetail = query(v.string(), async (name) => {
-  const db = getDb();
   const [stack] = await db
     .select()
     .from(stacks)
@@ -89,7 +88,6 @@ export const getStackDetail = query(v.string(), async (name) => {
 });
 
 export const deployStackCmd = command(v.string(), async (name) => {
-  const db = getDb();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
 
@@ -127,7 +125,6 @@ export const deployStackCmd = command(v.string(), async (name) => {
 });
 
 export const stopStackCmd = command(v.string(), async (name) => {
-  const db = getDb();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
 
@@ -152,7 +149,6 @@ export const stopStackCmd = command(v.string(), async (name) => {
 });
 
 export const restartStackCmd = command(v.string(), async (name) => {
-  const db = getDb();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
 
@@ -170,7 +166,6 @@ export const restartStackCmd = command(v.string(), async (name) => {
 });
 
 export const pullStackCmd = command(v.string(), async (name) => {
-  const db = getDb();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
 
@@ -199,7 +194,6 @@ export const saveStackEnv = command(
     ),
   }),
   async ({ name, entries }) => {
-    const db = getDb();
     const lookup = await getStackAndRepo(name);
     const { stack } = lookup;
 

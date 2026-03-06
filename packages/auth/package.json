@@ -14,6 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@laber/db": "workspace:*",
     "@better-auth/drizzle-adapter": "^1.5.3",
     "better-auth": "^1.4.18"
   },
