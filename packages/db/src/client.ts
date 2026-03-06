@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { resolve, dirname } from "path";
 import { mkdirSync } from "fs";
-import { relations } from "./index";
+import { relations } from "./relations";
 
 const dbPath = resolve(process.env.DATABASE_PATH ?? "./data/laber.db");
 mkdirSync(dirname(dbPath), { recursive: true });
