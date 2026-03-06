@@ -8,7 +8,6 @@ export function runMigrations() {
     process.env.MIGRATIONS_FOLDER ??
       fileURLToPath(new URL("../drizzle", import.meta.url))
   );
-  console.log("migrationsfolder", migrationsFolder);
 
   migrate(db, { migrationsFolder });
 }
