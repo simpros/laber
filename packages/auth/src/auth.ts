@@ -1,12 +1,13 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "@laber/db";
+import { db, schema } from "@laber/db";
 
-const baseURL = process.env.BETTER_AUTH_BASE_URL ?? "http://localhost:5173";
+const baseURL =
+  process.env.BETTER_AUTH_BASE_URL ?? "http://localhost:5173";
 const secret = process.env.BETTER_AUTH_SECRET ?? "dev-secret-change-me";
 
 export const auth = betterAuth({
-  database: drizzleAdapter(db, { provider: "sqlite" }),
+  database: drizzleAdapter(db, { provider: "sqlite", schema }),
   basePath: "/api/auth",
   baseURL,
   secret,

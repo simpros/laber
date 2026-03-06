@@ -21,7 +21,7 @@ export { expect } from "@playwright/test";
 export async function loginAsUser(
   page: Page,
   email: string,
-  password: string,
+  password: string
 ): Promise<void> {
   await page.goto("/auth/login");
   await page.locator("#email").fill(email);

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Card } from "@laber/ui";
   import { statusColor, containerStatusBg } from "$lib/utils";
-  import type { ContainerInfo } from "$lib/server/docker";
+  import type { ContainerInfo } from "$lib/types";
 
   type ServiceInfo = {
     name: string;

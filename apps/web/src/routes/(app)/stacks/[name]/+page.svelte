@@ -1,14 +1,23 @@
 <script lang="ts">
+  import { page } from "$app/state";
   import { resolve } from "$app/paths";
-  import { enhance } from "$app/forms";
-  import { Alert, Button, ActionForm } from "@laber/ui";
+  import { Alert, Button } from "@laber/ui";
   import StackServices from "./StackServices.svelte";
   import StackEnvEditor from "./StackEnvEditor.svelte";
   import StackDeploymentLogs from "./StackDeploymentLogs.svelte";
+  import {
+    getStackDetail,
+    deployStackCmd,
+    stopStackCmd,
+    restartStackCmd,
+    pullStackCmd,
+  } from "./data.remote";
 
-  let { data, form } = $props();
+  const stackName = $derived(page.params.name!);
+  const data = $derived(await getStackDetail(stackName));
   let activeTab = $state<"services" | "env" | "logs">("services");
   let actionLoading = $state("");
+  let result = $state<{ success?: boolean; output?: string } | null>(null);
 
   const tabs = [
     { id: "services" as const, label: "Services" },
@@ -16,8 +25,19 @@
     { id: "logs" as const, label: "Deployments" },
   ];
 
-  function setLoading(v: string) {
-    actionLoading = v;
+  async function handleAction(
+    action: (name: string) => Promise<{ success: boolean; output: string }>,
+    name: string,
+  ) {
+    actionLoading = name;
+    result = null;
+    try {
+      result = await action(stackName);
+    } catch (e) {
+      result = { success: false, output: e instanceof Error ? e.message : "Unknown error" };
+    } finally {
+      actionLoading = "";
+    }
   }
 </script>
 
@@ -44,56 +64,48 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <ActionForm action="?/pull" onLoadingChange={setLoading} {enhance}>
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={actionLoading !== ""}
+        onclick={() => handleAction(pullStackCmd, "pull")}
+      >
+        {actionLoading === "pull" ? "Pulling..." : "Pull"}
+      </Button>
+
+      {#if data.stack.status === "deployed"}
         <Button
           variant="secondary"
           size="sm"
-          type="submit"
           disabled={actionLoading !== ""}
+          onclick={() => handleAction(restartStackCmd, "restart")}
         >
-          {actionLoading === "pull" ? "Pulling..." : "Pull"}
+          {actionLoading === "restart" ? "Restarting..." : "Restart"}
         </Button>
-      </ActionForm>
-
-      {#if data.stack.status === "deployed"}
-        <ActionForm action="?/restart" onLoadingChange={setLoading} {enhance}>
-          <Button
-            variant="secondary"
-            size="sm"
-            type="submit"
-            disabled={actionLoading !== ""}
-          >
-            {actionLoading === "restart" ? "Restarting..." : "Restart"}
-          </Button>
-        </ActionForm>
-        <ActionForm action="?/stop" onLoadingChange={setLoading} {enhance}>
-          <Button
-            variant="danger"
-            size="sm"
-            type="submit"
-            disabled={actionLoading !== ""}
-          >
-            {actionLoading === "stop" ? "Stopping..." : "Stop"}
-          </Button>
-        </ActionForm>
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={actionLoading !== ""}
+          onclick={() => handleAction(stopStackCmd, "stop")}
+        >
+          {actionLoading === "stop" ? "Stopping..." : "Stop"}
+        </Button>
       {:else}
-        <ActionForm action="?/deploy" onLoadingChange={setLoading} {enhance}>
-          <Button
-            variant="primary"
-            size="sm"
-            type="submit"
-            disabled={actionLoading !== ""}
-          >
-            {actionLoading === "deploy" ? "Deploying..." : "Deploy"}
-          </Button>
-        </ActionForm>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={actionLoading !== ""}
+          onclick={() => handleAction(deployStackCmd, "deploy")}
+        >
+          {actionLoading === "deploy" ? "Deploying..." : "Deploy"}
+        </Button>
       {/if}
     </div>
   </div>
 
-  {#if form?.output}
-    <Alert variant={form?.success ? "success" : "error"} mono>
-      {form.output}
+  {#if result?.output}
+    <Alert variant={result?.success ? "success" : "error"} mono>
+      {result.output}
     </Alert>
   {/if}
 
@@ -114,7 +126,7 @@
   {#if activeTab === "services"}
     <StackServices containers={data.containers} services={data.services} />
   {:else if activeTab === "env"}
-    <StackEnvEditor envVars={data.envVars} />
+    <StackEnvEditor envVars={data.envVars} stackName={stackName} />
   {:else}
     <StackDeploymentLogs logs={data.logs} />
   {/if}

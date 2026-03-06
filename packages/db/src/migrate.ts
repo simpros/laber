@@ -6,7 +6,9 @@ import { db } from "./client";
 export function runMigrations() {
   const migrationsFolder = resolve(
     process.env.MIGRATIONS_FOLDER ??
-      fileURLToPath(new URL("../drizzle", import.meta.url)),
+      fileURLToPath(new URL("../drizzle", import.meta.url))
   );
+  console.log("migrationsfolder", migrationsFolder);
+
   migrate(db, { migrationsFolder });
 }

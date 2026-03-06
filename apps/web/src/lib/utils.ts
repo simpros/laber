@@ -10,12 +10,6 @@ export function containerStatusBg(state: string) {
   return "bg-danger/10 border-danger/20";
 }
 
-export function logStatusColor(status: string) {
-  if (status === "success") return "bg-success/10 text-success";
-  if (status === "error") return "bg-danger/10 text-danger";
-  return "bg-warning/10 text-warning";
-}
-
 export function statusBadge(status: string) {
   const map: Record<string, string> = {
     deployed: "bg-success/10 text-success",
