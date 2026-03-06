@@ -7,6 +7,7 @@
   import { Icon } from "@laber/ui";
 
   let { data, children } = $props();
+  let sidebarOpen = $state(false);
 
   onMount(() => {
     theme.init(
@@ -14,6 +15,11 @@
         ? "dark"
         : "light"
     );
+  });
+
+  $effect(() => {
+    void page.url.pathname;
+    sidebarOpen = false;
   });
 
   const nav = [
@@ -85,76 +91,108 @@
   </a>
 {/snippet}
 
-<div class="flex h-dvh overflow-hidden">
-  <aside
-    class="bg-surface-1 border-border flex w-60 shrink-0 flex-col border-r"
-  >
-    <div class="border-border flex items-center gap-2 border-b px-5 py-4">
-      <span class="font-mono text-lg font-bold tracking-tight">laber</span>
-      <span
-        class="bg-accent/10 text-accent rounded px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase"
-        >homelab</span
-      >
-    </div>
+{#snippet sidebarContent()}
+  <div class="border-border flex items-center gap-2 border-b px-5 py-4">
+    <span class="font-mono text-lg font-bold tracking-tight">laber</span>
+    <span
+      class="bg-accent/10 text-accent rounded px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase"
+      >homelab</span
+    >
+  </div>
 
-    <nav class="flex-1 space-y-0.5 p-3">
-      {#each nav as item (item.href)}
-        {@render navLink(item.href, item.label, item.icon)}
-      {/each}
-    </nav>
+  <nav class="flex-1 space-y-0.5 p-3">
+    {#each nav as item (item.href)}
+      {@render navLink(item.href, item.label, item.icon)}
+    {/each}
+  </nav>
 
-    <div class="border-border space-y-0.5 border-t p-3">
-      {#each bottomNav as item (item.href)}
-        {@render navLink(item.href, item.label, item.icon)}
-      {/each}
-    </div>
+  <div class="border-border space-y-0.5 border-t p-3">
+    {#each bottomNav as item (item.href)}
+      {@render navLink(item.href, item.label, item.icon)}
+    {/each}
+  </div>
 
-    <div class="border-border border-t px-4 py-3">
-      <div class="flex items-center justify-between">
-        <div class="min-w-0">
-          <p class="text-text-primary truncate text-sm font-medium">
-            {data.user.name}
-          </p>
-          <p class="text-text-muted truncate text-xs">{data.user.email}</p>
-        </div>
-        <div class="flex items-center gap-0.5">
-          <button
-            onclick={() => theme.toggle()}
-            class="text-text-muted hover:text-text-primary rounded-md p-1.5 transition-colors"
-            title="Toggle theme"
-          >
-            {#if theme.value === "dark"}
-              <Icon>
-                <circle cx="8" cy="8" r="3.5" />
-                <path
-                  d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7"
-                />
-              </Icon>
-            {:else}
-              <Icon>
-                <path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z" />
-              </Icon>
-            {/if}
-          </button>
-          <button
-            onclick={handleSignOut}
-            class="text-text-muted hover:text-danger rounded-md p-1.5 transition-colors"
-            title="Sign out"
-          >
+  <div class="border-border border-t px-4 py-3">
+    <div class="flex items-center justify-between">
+      <div class="min-w-0">
+        <p class="text-text-primary truncate text-sm font-medium">
+          {data.user.name}
+        </p>
+        <p class="text-text-muted truncate text-xs">{data.user.email}</p>
+      </div>
+      <div class="flex items-center gap-0.5">
+        <button
+          onclick={() => theme.toggle()}
+          class="text-text-muted hover:text-text-primary rounded-md p-1.5 transition-colors"
+          title="Toggle theme"
+        >
+          {#if theme.value === "dark"}
             <Icon>
+              <circle cx="8" cy="8" r="3.5" />
               <path
-                d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M6 8h8"
+                d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7"
               />
             </Icon>
-          </button>
-        </div>
+          {:else}
+            <Icon>
+              <path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z" />
+            </Icon>
+          {/if}
+        </button>
+        <button
+          onclick={handleSignOut}
+          class="text-text-muted hover:text-danger rounded-md p-1.5 transition-colors"
+          title="Sign out"
+        >
+          <Icon>
+            <path
+              d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M6 8h8"
+            />
+          </Icon>
+        </button>
       </div>
     </div>
+  </div>
+{/snippet}
+
+<div class="flex h-dvh overflow-hidden">
+  <aside
+    class="bg-surface-1 border-border hidden w-60 shrink-0 flex-col border-r md:flex"
+  >
+    {@render sidebarContent()}
   </aside>
 
-  <main class="flex-1 overflow-y-auto">
-    <div class="p-8">
-      {@render children()}
+  {#if sidebarOpen}
+    <div class="fixed inset-0 z-40 md:hidden">
+      <button
+        class="absolute inset-0 bg-black/50"
+        onclick={() => (sidebarOpen = false)}
+        aria-label="Close sidebar"
+      ></button>
+      <aside class="bg-surface-1 border-border relative z-50 flex h-full w-60 flex-col border-r">
+        {@render sidebarContent()}
+      </aside>
     </div>
-  </main>
+  {/if}
+
+  <div class="flex min-w-0 flex-1 flex-col [contain:paint]">
+    <header class="bg-surface-1 border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
+      <button
+        onclick={() => (sidebarOpen = true)}
+        class="text-text-secondary hover:text-text-primary -ml-1 rounded-md p-1 transition-colors"
+        aria-label="Open sidebar"
+      >
+        <Icon>
+          <path d="M2 4h12M2 8h12M2 12h12" />
+        </Icon>
+      </button>
+      <span class="font-mono text-sm font-bold tracking-tight">laber</span>
+    </header>
+
+    <main class="flex-1 overflow-y-auto">
+      <div class="p-4 sm:p-6 md:p-8">
+        {@render children()}
+      </div>
+    </main>
+  </div>
 </div>

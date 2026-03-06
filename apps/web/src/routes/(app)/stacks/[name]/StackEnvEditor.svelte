@@ -134,13 +134,9 @@
 </div>
 
 {#if detectedEnvVars.length > 0}
-  <div
-    class="bg-surface-1 border-border fixed right-0 bottom-0 left-60 z-10 border-t px-6 py-3"
-  >
+  <div class="bg-surface-1 border-border fixed inset-x-0 bottom-0 z-10 border-t px-4 py-3 sm:px-6 md:px-8">
     <div class="flex items-center gap-3">
-      <span
-        class="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase"
-      >
+      <span class="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase">
         Detected
       </span>
       <div class="flex flex-wrap items-center gap-1.5">
@@ -155,9 +151,7 @@
               + {name}
             </button>
           {:else}
-            <span
-              class="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs"
-            >
+            <span class="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs">
               {name}
             </span>
           {/if}

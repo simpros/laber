@@ -13,19 +13,34 @@
     restartStackCmd,
     pullStackCmd,
   } from "./data.remote";
+  import { useSearchParams } from "runed/kit";
+  import * as v from "valibot";
+
+  const tabIds = ["services", "env", "compose", "logs"] as const;
+
+  const searchParams = useSearchParams(
+    v.object({
+      tab: v.fallback(v.picklist([...tabIds]), "services"),
+    }),
+    { showDefaults: false, pushHistory: false },
+  );
 
   const stackName = $derived(page.params.name!);
   const data = $derived(await getStackDetail(stackName));
-  let activeTab = $state<"services" | "env" | "logs" | "compose">("services");
+  let activeTab = $derived.by(() => {
+    const tab = page.url.searchParams.get("tab");
+    if (tab === "env" || tab === "compose" || tab === "logs") return tab;
+    return "services" as const;
+  });
   let actionLoading = $state("");
   let result = $state<{ success?: boolean; output?: string } | null>(null);
 
   const tabs = [
-    { id: "services" as const, label: "Services" },
-    { id: "env" as const, label: "Environment" },
-    { id: "compose" as const, label: "Compose" },
-    { id: "logs" as const, label: "Deployments" },
-  ];
+    { id: "services", label: "Services" },
+    { id: "env", label: "Environment" },
+    { id: "compose", label: "Compose" },
+    { id: "logs", label: "Deployments" },
+  ] as const;
 
   async function handleAction(
     action: (name: string) => Promise<{ success: boolean; output: string }>,
@@ -114,7 +129,7 @@
   <div class="border-border flex gap-0 border-b">
     {#each tabs as tab (tab.id)}
       <button
-        onclick={() => (activeTab = tab.id)}
+        onclick={() => (searchParams.tab = tab.id)}
         class="border-b-2 px-4 py-2 text-sm font-medium transition-colors {activeTab ===
         tab.id
           ? 'border-accent text-text-primary'
