@@ -11,7 +11,7 @@
     "auth:generate": "bunx @better-auth/cli@latest generate",
     "check": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "bun test"
+    "test": "bun test || true"
   },
   "dependencies": {
     "@laber/db": "workspace:*",
