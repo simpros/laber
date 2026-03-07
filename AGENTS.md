@@ -46,12 +46,10 @@ Uses **Bun's built-in test runner** (`bun test`) for unit and component tests, a
 | ---------------------- | ------------------------------------ |
 | `bun run test`         | Unit & component tests (all packages)|
 | `bun run test:e2e`     | E2E tests (Playwright, apps/web)     |
-| `bun run test:integration` | Integration tests                |
 
 ### Test file conventions
 
 - Unit tests: `*.test.ts` (co-located with source files)
-- Integration tests: `*.integration-test.ts`
 - E2E tests: `*.e2e.ts` (in `apps/web/tests/`)
 - Component tests use `@testing-library/svelte` + `happy-dom`
 - Svelte compilation handled by `svelte-test-setup.ts` (Bun plugin preloaded via `bunfig.toml`)
