@@ -1,42 +1,28 @@
 import { defineConfig, devices } from "@playwright/test";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const composeFile = join(__dirname, "tests/docker-compose.e2e.yml");
 
 const PORT = 3000;
 const BASE_URL = `http://localhost:${PORT}`;
+const E2E_DATA_DIR = join(__dirname, "tests/.data");
 
-/**
- * Start/stop the e2e database container at config-load time so it is ready
- * before Playwright boots the webServer plugin.
- */
-if (!process.env.CI && !process.env.TEST_WORKER_INDEX) {
-  console.log("🐳 Starting e2e database container...");
-  execSync(
-    `docker compose -f ${composeFile} down -v 2>/dev/null || true`,
-    {
-      stdio: "inherit",
-    }
-  );
-  execSync(`docker compose -f ${composeFile} up -d --wait`, {
-    stdio: "inherit",
-  });
-  console.log("✅ Database container started\n");
+if (!process.env.TEST_WORKER_INDEX) {
+  rmSync(E2E_DATA_DIR, { recursive: true, force: true });
+  mkdirSync(E2E_DATA_DIR, { recursive: true });
 
   const buildEntry = join(__dirname, "build/index.js");
   if (!existsSync(buildEntry)) {
-    console.log("🔨 Building app for e2e tests...");
+    console.log("Building app for e2e tests...");
     execSync("bun run build", { stdio: "inherit", cwd: __dirname });
-    console.log("✅ Build complete\n");
+    console.log("Build complete\n");
   }
 }
 
 export default defineConfig({
-  globalTeardown: "./tests/config/docker.teardown.ts",
   testDir: "./tests",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -76,6 +62,9 @@ export default defineConfig({
     env: {
       PORT: String(PORT),
       ORIGIN: BASE_URL,
+      DATA_DIR: E2E_DATA_DIR,
+      BETTER_AUTH_SECRET: "e2e-test-secret-key-for-testing-only",
+      BETTER_AUTH_BASE_URL: BASE_URL,
     },
   },
 });
