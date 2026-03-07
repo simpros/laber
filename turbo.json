@@ -50,7 +50,8 @@
       "cache": false
     },
     "db:studio": {
-      "cache": false
+      "cache": false,
+      "persistent": true
     },
     "auth:generate": {
       "cache": false
