@@ -1,9 +1,10 @@
-import { resolve } from "path";
 import { db, stacks, repositories } from "@laber/db";
+import { resolveDataDir } from "@laber/db/paths";
 import { eq } from "drizzle-orm";
 import { error } from "@sveltejs/kit";
+import { resolve } from "path";
 
-export const DATA_DIR = process.env.DATA_DIR ?? "./data";
+export const DATA_DIR = resolveDataDir();
 
 export function getRepoDir(repoId: string) {
   return resolve(DATA_DIR, "repos", repoId);
