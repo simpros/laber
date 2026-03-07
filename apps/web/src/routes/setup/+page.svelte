@@ -2,6 +2,7 @@
   import { signUp } from "@laber/auth/client";
   import { goto } from "$app/navigation";
   import { AuthLayout, Button } from "@laber/ui";
+  import { resolve } from "$app/paths";
 
   let name = $state("");
   let email = $state("");
@@ -27,7 +28,7 @@
       return;
     }
 
-    await goto("/");
+    await goto(resolve("/"));
   }
 </script>
 

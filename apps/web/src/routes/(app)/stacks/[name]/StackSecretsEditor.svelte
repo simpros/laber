@@ -24,11 +24,10 @@
       services: s.services,
       value: s.hasValue ? "••••••••" : "",
       hadValue: s.hasValue,
-    })),
+    }))
   );
   let saving = $state(false);
 
-  let allSet = $derived(entries.every((e) => e.value !== ""));
   let unsetCount = $derived(entries.filter((e) => e.value === "").length);
 
   async function handleSave() {
@@ -66,7 +65,7 @@
       </div>
     {/if}
 
-    {#each entries as entry, i (entry.name)}
+    {#each entries as entry (entry.name)}
       <div class="bg-surface-2 border-border rounded-lg border p-3">
         <div class="mb-2 flex items-center gap-2">
           <Icon class="text-accent shrink-0">
@@ -106,7 +105,8 @@
           {#if entry.value !== "" && entry.value !== "••••••••"}
             <button
               type="button"
-              onclick={() => (entry.value = entry.hadValue ? "••••••••" : "")}
+              onclick={() =>
+                (entry.value = entry.hadValue ? "••••••••" : "")}
               class="text-text-muted hover:text-danger p-1 transition-colors"
               aria-label="Reset"
               title="Undo changes"
@@ -125,7 +125,9 @@
           {/if}
         </div>
 
-        <div class="text-text-muted mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+        <div
+          class="text-text-muted mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]"
+        >
           <span class="font-mono">{entry.filePath}</span>
           {#if entry.services.length > 0}
             <span>
