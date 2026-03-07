@@ -10,11 +10,6 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in your .env file}
       BETTER_AUTH_BASE_URL: ${BETTER_AUTH_BASE_URL:-http://localhost:3000}
       DATA_DIR: /data
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@example.com}
     volumes:
       - laber_data:/data
       - /var/run/docker.sock:/var/run/docker.sock

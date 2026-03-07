@@ -8,12 +8,7 @@
         "DATABASE_PATH",
         "DATA_DIR",
         "BETTER_AUTH_SECRET",
-        "BETTER_AUTH_BASE_URL",
-        "SMTP_HOST",
-        "SMTP_PORT",
-        "SMTP_USER",
-        "SMTP_PASS",
-        "EMAIL_FROM"
+        "BETTER_AUTH_BASE_URL"
       ]
     },
     "build": {
