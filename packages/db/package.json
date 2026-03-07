@@ -14,8 +14,7 @@
     "db:studio": "drizzle-kit studio",
     "check": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "bun test ./**/*.test.ts --timeout 60000",
-    "test:integration": "INTEGRATION=1 bun test ./**/*.integration-test.ts --timeout 120000"
+    "test": "bun test ./**/*.test.ts --timeout 60000"
   },
   "dependencies": {
     "nanoid": "^5.1.6",
