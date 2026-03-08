@@ -22,6 +22,7 @@ export async function loginAsUser(
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /sign in/i }).click();
   await page.waitForURL(/(?!.*login).*/, { timeout: 10_000 });
+  await page.waitForLoadState("load");
 }
 
 export async function logout(page: Page): Promise<void> {

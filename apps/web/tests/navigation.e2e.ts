@@ -1,9 +1,7 @@
-import { expect, loginAsUser, test, TEST_USER } from "./fixtures";
+import { expect, STORAGE_STATE_USER, test } from "./fixtures";
 
 test.describe("Navigation", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsUser(page, TEST_USER.email, TEST_USER.password);
-  });
+  test.use({ storageState: STORAGE_STATE_USER });
 
   test("should navigate to dashboard", async ({ page }) => {
     await page.goto("/");
