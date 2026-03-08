@@ -25,13 +25,17 @@ test.describe("Dashboard", () => {
   test("should display Core Services section", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page.getByText("Core Services")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Core Services" })
+    ).toBeVisible();
   });
 
   test("should display Recent Activity section", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page.getByText("Recent Activity")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Recent Activity" })
+    ).toBeVisible();
   });
 
   test("should show core stack not configured message", async ({ page }) => {
