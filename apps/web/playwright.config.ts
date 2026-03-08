@@ -44,6 +44,11 @@ export default defineConfig({
       teardown: "teardown",
     },
     {
+      name: "auth setup",
+      testMatch: /auth\.setup\.ts/,
+      dependencies: ["setup"],
+    },
+    {
       name: "teardown",
       testMatch: /config\/global\.teardown\.ts/,
     },
@@ -51,7 +56,7 @@ export default defineConfig({
       name: "chromium",
       testMatch: /\.e2e\.ts$/,
       use: { ...devices["Desktop Chrome"] },
-      dependencies: ["setup"],
+      dependencies: ["auth setup"],
     },
   ],
   webServer: {
