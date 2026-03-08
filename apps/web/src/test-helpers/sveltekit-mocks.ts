@@ -1,9 +1,5 @@
 import { mock } from "bun:test";
 
-/**
- * Creates a mock for SvelteKit remote `form()` functions.
- * Simulates .for(), .enhance(), .pending, and .fields properties.
- */
 export function createFormMock(returnValue: unknown = { error: null }) {
   const fn = mock(() => Promise.resolve(returnValue));
 
@@ -35,23 +31,14 @@ export function createFormMock(returnValue: unknown = { error: null }) {
   return addFormApi(fn);
 }
 
-/**
- * Creates a mock for SvelteKit remote `query()` functions.
- */
 export function createQueryMock(returnValue: unknown = []) {
   return mock(() => Promise.resolve(returnValue));
 }
 
-/**
- * Creates a mock for SvelteKit remote `command()` functions.
- */
 export function createCommandMock(returnValue: unknown = { success: true }) {
   return mock(() => Promise.resolve(returnValue));
 }
 
-/**
- * Registers common $app/* module mocks.
- */
 export function mockSvelteKitModules() {
   const mockGoto = mock(() => Promise.resolve());
   const mockInvalidate = mock(() => Promise.resolve());

@@ -1,22 +1,15 @@
-import { test as setup } from "@playwright/test";
-import { execSync } from "child_process";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { test as setup, expect } from "@playwright/test";
+import { TEST_USER } from "../fixtures/credentials";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+setup("create test user via setup page", async ({ page }) => {
+  await page.goto("/login");
+  await page.waitForURL(/setup/, { timeout: 10_000 });
 
-/**
- * Project-based setup: run migrations and seed test data.
- * Docker is already running via config-level setup in playwright.config.ts.
- */
-setup("global setup", async () => {
-  console.log("\n🚀 Running E2E setup...\n");
+  await page.locator("#name").fill(TEST_USER.name);
+  await page.locator("#email").fill(TEST_USER.email);
+  await page.locator("#password").fill(TEST_USER.password);
+  await page.getByRole("button", { name: /create account/i }).click();
 
-  const setupScript = join(__dirname, "setup-db.ts");
-  execSync(`bun run ${setupScript}`, {
-    stdio: "inherit",
-    env: { ...process.env },
-  });
-
-  console.log("🎉 E2E test setup complete!\n");
+  await page.waitForURL(/(?!.*setup).*/, { timeout: 10_000 });
+  await expect(page).not.toHaveURL(/setup/);
 });

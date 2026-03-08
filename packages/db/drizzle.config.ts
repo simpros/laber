@@ -1,14 +1,13 @@
 import { defineConfig } from "drizzle-kit";
+import { resolveDatabasePath } from "./src/paths";
 
-const databaseUrl =
-  process.env.DATABASE_URL ??
-  "postgresql://postgres:postgres@localhost:5432/laber";
+const dbPath = resolveDatabasePath();
 
 export default defineConfig({
   schema: "./src/schema.ts",
   out: "./drizzle",
-  dialect: "postgresql",
+  dialect: "sqlite",
   dbCredentials: {
-    url: databaseUrl,
+    url: dbPath,
   },
 });

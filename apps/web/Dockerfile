@@ -31,17 +31,22 @@ FROM base AS runner
 
 ARG COMMIT_SHA
 
-RUN apk add --no-cache curl && \
+RUN apk add --no-cache curl git openssh-client docker-cli docker-cli-compose && \
     addgroup --system --gid 1001 app && \
-    adduser --system --uid 1001 -G app app
+    adduser --system --uid 1001 -G app app && \
+    mkdir -p /data && chown app:app /data
 USER app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV COMMIT_SHA=${COMMIT_SHA}
+ENV DATABASE_PATH=/data/laber.db
+ENV DATA_DIR=/data
 
 COPY --from=builder --chown=app:app /app/apps/web/build ./
 COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
+
+VOLUME /data
 
 EXPOSE 3000/tcp
 
