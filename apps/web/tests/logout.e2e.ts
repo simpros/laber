@@ -1,10 +1,16 @@
-import { expect, STORAGE_STATE_USER, test } from "./fixtures";
+import {
+  expect,
+  loginAsUser,
+  STORAGE_STATE_GUEST,
+  test,
+  TEST_USER,
+} from "./fixtures";
 
 test.describe("Logout", () => {
-  test.use({ storageState: STORAGE_STATE_USER });
+  test.use({ storageState: STORAGE_STATE_GUEST });
 
   test("should show sign out button", async ({ page }) => {
-    await page.goto("/");
+    await loginAsUser(page, TEST_USER.email, TEST_USER.password);
 
     await expect(
       page.locator("button[title='Sign out']")
@@ -12,7 +18,7 @@ test.describe("Logout", () => {
   });
 
   test("should redirect to login after signing out", async ({ page }) => {
-    await page.goto("/");
+    await loginAsUser(page, TEST_USER.email, TEST_USER.password);
 
     await page.locator("button[title='Sign out']").click();
 
