@@ -38,7 +38,7 @@ function getComposePath(): string {
   return join(getComposeDir(), "docker-compose.yaml");
 }
 
-function getCoreComposeContent(config: CoreConfig): string {
+export function getCoreComposeContent(config: CoreConfig): string {
   const acmeEmail = config.acmeEmail ?? `admin@${config.rootDomain}`;
   const logLevel = config.logLevel ?? "ERROR";
   const httpTimeout = config.httpTimeout ?? "180";
