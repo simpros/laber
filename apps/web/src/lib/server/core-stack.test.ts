@@ -39,7 +39,9 @@ describe("getCoreComposeContent", () => {
     it("sets restart policy to unless-stopped", () => {
       const result = getCoreComposeContent(minimalConfig);
       const parsed = parse(result);
-      expect(parsed.services["reverse-proxy"].restart).toBe("unless-stopped");
+      expect(parsed.services["reverse-proxy"].restart).toBe(
+        "unless-stopped"
+      );
     });
 
     it("sets no-new-privileges security opt", () => {
@@ -79,7 +81,9 @@ describe("getCoreComposeContent", () => {
     it("exposes port 8080", () => {
       const result = getCoreComposeContent(minimalConfig);
       const parsed = parse(result);
-      expect(parsed.services["reverse-proxy"].ports).toContain("8080:8080");
+      expect(parsed.services["reverse-proxy"].ports).toContain(
+        "8080:8080"
+      );
     });
   });
 
@@ -95,7 +99,9 @@ describe("getCoreComposeContent", () => {
     it("mounts acme volume", () => {
       const result = getCoreComposeContent(minimalConfig);
       const parsed = parse(result);
-      expect(parsed.services["reverse-proxy"].volumes).toContain("acme:/acme");
+      expect(parsed.services["reverse-proxy"].volumes).toContain(
+        "acme:/acme"
+      );
     });
 
     it("mounts traefik volume", () => {
@@ -116,11 +122,42 @@ describe("getCoreComposeContent", () => {
   });
 
   describe("environment", () => {
-    it("sets CF_DNS_API_TOKEN from config", () => {
+    it("references CF_DNS_API_TOKEN instead of embedding the secret", () => {
       const result = getCoreComposeContent(minimalConfig);
       const parsed = parse(result);
-      expect(parsed.services["reverse-proxy"].environment.CF_DNS_API_TOKEN).toBe(
-        "test-token-123"
+      expect(
+        parsed.services["reverse-proxy"].environment.CF_DNS_API_TOKEN
+      ).toBe("${CF_DNS_API_TOKEN}");
+    });
+
+    it("never embeds secret values in the compose file", () => {
+      const result = getCoreComposeContent({
+        ...minimalConfig,
+        tunnelToken: "super-secret-tunnel",
+        zoneId: "super-secret-zone",
+      });
+      expect(result).not.toContain("test-token-123");
+      expect(result).not.toContain("super-secret-tunnel");
+    });
+  });
+
+  describe("injection resistance", () => {
+    it("round-trips a hostile rootDomain without breaking YAML structure", () => {
+      const hostile = 'example.com"\n  evil: injected';
+      const result = getCoreComposeContent({
+        ...minimalConfig,
+        rootDomain: hostile,
+      });
+      const parsed = parse(result);
+      expect(parsed.services["reverse-proxy"]).toBeDefined();
+      expect(parsed.evil).toBeUndefined();
+      const command = parsed.services["reverse-proxy"].command as string[];
+      expect(
+        command.find((c) =>
+          c.startsWith("--entrypoints.websecure.http.tls.domains[0].main=")
+        )
+      ).toBe(
+        `--entrypoints.websecure.http.tls.domains[0].main=${hostile}`
       );
     });
   });
@@ -163,7 +200,8 @@ describe("getCoreComposeContent", () => {
       const result = getCoreComposeContent(minimalConfig);
       const parsed = parse(result);
       const emailCommand = parsed.services["reverse-proxy"].command.find(
-        (c: string) => c.startsWith("--certificatesresolvers.letsencrypt.acme.email=")
+        (c: string) =>
+          c.startsWith("--certificatesresolvers.letsencrypt.acme.email=")
       );
       expect(emailCommand).toBe(
         "--certificatesresolvers.letsencrypt.acme.email=admin@example.com"
@@ -236,7 +274,8 @@ describe("getCoreComposeContent", () => {
       const result = getCoreComposeContent(config);
       const parsed = parse(result);
       const emailCommand = parsed.services["reverse-proxy"].command.find(
-        (c: string) => c.startsWith("--certificatesresolvers.letsencrypt.acme.email=")
+        (c: string) =>
+          c.startsWith("--certificatesresolvers.letsencrypt.acme.email=")
       );
       expect(emailCommand).toBe(
         "--certificatesresolvers.letsencrypt.acme.email=custom@mysite.org"
@@ -302,11 +341,11 @@ describe("getCoreComposeContent", () => {
       expect(parsed.services.tunnel.command).toBe("tunnel run");
     });
 
-    it("sets TUNNEL_TOKEN environment variable", () => {
+    it("references TUNNEL_TOKEN instead of embedding the secret", () => {
       const result = getCoreComposeContent(tunnelConfig);
       const parsed = parse(result);
       expect(parsed.services.tunnel.environment.TUNNEL_TOKEN).toBe(
-        "my-tunnel-token"
+        "${TUNNEL_TOKEN}"
       );
     });
 
@@ -351,12 +390,12 @@ describe("getCoreComposeContent", () => {
       );
     });
 
-    it("sets CF_TOKEN from cfDnsApiToken", () => {
+    it("references the API token for CF_TOKEN instead of embedding it", () => {
       const result = getCoreComposeContent(zoneConfig);
       const parsed = parse(result);
       expect(
         parsed.services["cloudflare-companion"].environment.CF_TOKEN
-      ).toBe("test-token-123");
+      ).toBe("${CF_DNS_API_TOKEN}");
     });
 
     it("sets TARGET_DOMAIN from rootDomain", () => {
@@ -391,12 +430,13 @@ describe("getCoreComposeContent", () => {
       ).toBe("true");
     });
 
-    it("sets CF_DNS_API_TOKEN in companion", () => {
+    it("references the API token in the companion instead of embedding it", () => {
       const result = getCoreComposeContent(zoneConfig);
       const parsed = parse(result);
       expect(
-        parsed.services["cloudflare-companion"].environment.CF_DNS_API_TOKEN
-      ).toBe("test-token-123");
+        parsed.services["cloudflare-companion"].environment
+          .CF_DNS_API_TOKEN
+      ).toBe("${CF_DNS_API_TOKEN}");
     });
 
     it("defaults HTTP_TIMEOUT to 180", () => {
@@ -411,7 +451,8 @@ describe("getCoreComposeContent", () => {
       const result = getCoreComposeContent(zoneConfig);
       const parsed = parse(result);
       expect(
-        parsed.services["cloudflare-companion"].environment.POLLING_INTERVAL
+        parsed.services["cloudflare-companion"].environment
+          .POLLING_INTERVAL
       ).toBe("30");
     });
 
@@ -480,7 +521,8 @@ describe("getCoreComposeContent", () => {
       const result = getCoreComposeContent(config);
       const parsed = parse(result);
       expect(
-        parsed.services["cloudflare-companion"].environment.POLLING_INTERVAL
+        parsed.services["cloudflare-companion"].environment
+          .POLLING_INTERVAL
       ).toBe("10");
     });
 

@@ -7,6 +7,7 @@
     key: string;
     value: string;
     isSecret: boolean;
+    hasValue: boolean;
   };
 
   type Props = {
@@ -23,8 +24,10 @@
   let envEntries = $state(
     untrack(() => initialEnvVars).map((v) => ({
       key: v.key,
-      value: v.value,
+      value: v.isSecret ? "" : v.value,
       isSecret: v.isSecret,
+      hadSecretValue: v.isSecret && v.hasValue,
+      valueTouched: false,
     }))
   );
   let saving = $state(false);
@@ -40,6 +43,8 @@
       key: "",
       value: "",
       isSecret: false,
+      hadSecretValue: false,
+      valueTouched: true,
     });
   }
 
@@ -48,12 +53,20 @@
       key: name,
       value: "",
       isSecret: false,
+      hadSecretValue: false,
+      valueTouched: true,
     });
   }
 
   function addAllMissing() {
     for (const name of missingVars) {
-      envEntries.push({ key: name, value: "", isSecret: false });
+      envEntries.push({
+        key: name,
+        value: "",
+        isSecret: false,
+        hadSecretValue: false,
+        valueTouched: true,
+      });
     }
   }
 
@@ -64,7 +77,14 @@
   async function handleSave() {
     saving = true;
     try {
-      await saveStackEnv({ name: stackName, entries: envEntries });
+      await saveStackEnv({
+        name: stackName,
+        entries: envEntries.map((e) => ({
+          key: e.key,
+          value: !e.valueTouched && e.hadSecretValue ? null : e.value,
+          isSecret: e.isSecret,
+        })),
+      });
     } finally {
       saving = false;
     }
@@ -82,7 +102,10 @@
       />
       <input
         bind:value={entry.value}
-        placeholder="value"
+        oninput={() => (entry.valueTouched = true)}
+        placeholder={entry.hadSecretValue && !entry.valueTouched
+          ? "Hidden — leave empty to keep"
+          : "value"}
         type={entry.isSecret ? "password" : "text"}
         class="flex-1 font-mono text-xs"
       />
@@ -134,9 +157,13 @@
 </div>
 
 {#if detectedEnvVars.length > 0}
-  <div class="bg-surface-1 border-border fixed inset-x-0 bottom-0 z-10 border-t px-4 py-3 sm:px-6 md:px-8">
+  <div
+    class="bg-surface-1 border-border fixed inset-x-0 bottom-0 z-10 border-t px-4 py-3 sm:px-6 md:px-8"
+  >
     <div class="flex items-center gap-3">
-      <span class="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase">
+      <span
+        class="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase"
+      >
         Detected
       </span>
       <div class="flex flex-wrap items-center gap-1.5">
@@ -151,7 +178,9 @@
               + {name}
             </button>
           {:else}
-            <span class="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs">
+            <span
+              class="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs"
+            >
               {name}
             </span>
           {/if}

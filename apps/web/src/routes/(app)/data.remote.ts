@@ -7,9 +7,11 @@ import {
   coreConfig,
 } from "@laber/db";
 import { count, desc, eq } from "drizzle-orm";
-import { getContainersByLabel } from "$lib/server/docker";
+import { listContainers } from "$lib/server/docker";
+import { requireUser } from "$lib/server/auth";
 
 export const getDashboard = query(async () => {
+  requireUser();
   const [stackCount] = await db.select({ count: count() }).from(stacks);
   const [repoCount] = await db
     .select({ count: count() })
@@ -36,10 +38,7 @@ export const getDashboard = query(async () => {
     image: string;
   }> = [];
   try {
-    const containers = await getContainersByLabel(
-      "com.docker.compose.project",
-      "laber-core",
-    );
+    const containers = await listContainers("laber-core");
     coreServices = containers.map((c) => ({
       name: c.name,
       state: c.state,

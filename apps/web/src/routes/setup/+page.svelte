@@ -88,7 +88,7 @@
         bind:value={password}
         required
         minlength="8"
-        placeholder="••••••••"
+        placeholder="Choose a password (min. 8 characters)"
         class="w-full"
       />
     </div>

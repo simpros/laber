@@ -121,17 +121,6 @@ export async function connectContainerToNetwork(
   }
 }
 
-export async function getContainersByLabel(
-  labelKey: string,
-  labelValue: string
-): Promise<ContainerInfo[]> {
-  const containers = await getDocker().listContainers({
-    all: true,
-    filters: { label: [`${labelKey}=${labelValue}`] },
-  });
-  return containers.map(mapContainer);
-}
-
 export async function execCompose(options: {
   composePath: string;
   command: string;
@@ -160,7 +149,9 @@ export async function execCompose(options: {
   if (options.onOutput) {
     const onOutput = options.onOutput;
 
-    async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
+    async function readStream(
+      stream: ReadableStream<Uint8Array>
+    ): Promise<string> {
       const reader = stream.getReader();
       const decoder = new TextDecoder();
       let full = "";
@@ -189,4 +180,50 @@ export async function execCompose(options: {
   const exitCode = await proc.exited;
 
   return { stdout, stderr, exitCode };
+}
+
+export async function runComposeCommand(
+  composePath: string,
+  command: string,
+  projectName?: string,
+  onOutput?: (chunk: string) => void
+): Promise<{ success: boolean; output: string }> {
+  const result = await execCompose({
+    composePath,
+    command,
+    projectName,
+    onOutput,
+  });
+
+  return {
+    success: result.exitCode === 0,
+    output: result.stdout + result.stderr,
+  };
+}
+
+export async function connectTraefikToNetwork(
+  networkName: string
+): Promise<void> {
+  const containers = await getDocker().listContainers({
+    all: true,
+    filters: {
+      name: ["laber-reverse-proxy"],
+    },
+  });
+
+  const traefik =
+    containers.find((c) =>
+      c.Names.some((n) => n === "/laber-reverse-proxy")
+    ) ??
+    containers.find(
+      (c) => c.Labels["com.docker.compose.service"] === "reverse-proxy"
+    );
+
+  if (!traefik) {
+    throw new Error(
+      "Traefik container not found. Is the core stack running?"
+    );
+  }
+
+  await connectContainerToNetwork(traefik.Id, networkName);
 }

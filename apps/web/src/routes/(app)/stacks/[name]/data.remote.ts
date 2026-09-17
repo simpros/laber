@@ -30,13 +30,11 @@ import {
   getComposePath,
   getRepoDir,
 } from "$lib/server/config";
-import {
-  createActivity,
-  appendOutput,
-  finishActivity,
-} from "$lib/server/activity";
+import { runLoggedAction } from "$lib/server/logged-action";
+import { requireUser } from "$lib/server/auth";
 
 export const getStackDetail = query(v.string(), async (name) => {
+  requireUser();
   const [stack] = await db
     .select()
     .from(stacks)
@@ -84,7 +82,7 @@ export const getStackDetail = query(v.string(), async (name) => {
       const composePath = getComposePath(
         repo.id,
         stack.relativePath,
-        stack.composeFile,
+        stack.composeFile
       );
       const compose = parseComposeFile(composePath);
       services = extractServices(compose);
@@ -102,7 +100,8 @@ export const getStackDetail = query(v.string(), async (name) => {
     stack,
     envVars: envVars.map((ev) => ({
       ...ev,
-      value: ev.isSecret ? "••••••••" : ev.value,
+      value: ev.isSecret ? "" : ev.value,
+      hasValue: ev.value !== "",
     })),
     secrets: detectedSecrets.map((ds) => ({
       name: ds.name,
@@ -119,9 +118,9 @@ export const getStackDetail = query(v.string(), async (name) => {
 });
 
 export const deployStackCmd = command(v.string(), async (name) => {
+  requireUser();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
-  const activity = createActivity(`Deploying ${name}`);
 
   const envVars = await db
     .select()
@@ -142,91 +141,65 @@ export const deployStackCmd = command(v.string(), async (name) => {
         .where(eq(stackSecrets.stackId, stack.id));
       const secretMap = new Map(dbSecrets.map((s) => [s.name, s.value]));
       secretFiles = defs
-        .filter((d) => secretMap.has(d.name) && secretMap.get(d.name) !== "")
-        .map((d) => ({ filePath: d.filePath, value: secretMap.get(d.name)! }));
+        .filter(
+          (d) => secretMap.has(d.name) && secretMap.get(d.name) !== ""
+        )
+        .map((d) => ({
+          filePath: d.filePath,
+          value: secretMap.get(d.name)!,
+        }));
     }
   } catch {
     // Compose parsing failed, skip secrets
   }
 
-  const result = await deployStack({
-    composePath,
-    envVars: envMap,
-    secretFiles,
-    networkName: stack.networkName ?? undefined,
-    projectName: stack.name,
-    onOutput: (chunk) => appendOutput(activity.id, chunk),
-  });
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    stackId: stack.id,
+  const result = await runLoggedAction({
+    title: `Deploying ${name}`,
     action: "deploy",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    stackId: stack.id,
+    statusOnSuccess: "deployed",
+    run: (onOutput) =>
+      deployStack({
+        composePath,
+        envVars: envMap,
+        secretFiles,
+        networkName: stack.networkName ?? undefined,
+        projectName: stack.name,
+        onOutput,
+      }),
   });
-
-  if (result.success) {
-    await db
-      .update(stacks)
-      .set({ status: "deployed", updatedAt: new Date() })
-      .where(eq(stacks.id, stack.id));
-  }
 
   getStackDetail(name).refresh();
   return { success: result.success, output: result.output };
 });
 
 export const stopStackCmd = command(v.string(), async (name) => {
+  requireUser();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
-  const activity = createActivity(`Stopping ${name}`);
 
-  const result = await stopStack(
-    composePath,
-    stack.name,
-    (chunk) => appendOutput(activity.id, chunk),
-  );
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    stackId: stack.id,
+  const result = await runLoggedAction({
+    title: `Stopping ${name}`,
     action: "stop",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    stackId: stack.id,
+    statusOnSuccess: "stopped",
+    run: (onOutput) => stopStack(composePath, stack.name, onOutput),
   });
-
-  if (result.success) {
-    await db
-      .update(stacks)
-      .set({ status: "stopped", updatedAt: new Date() })
-      .where(eq(stacks.id, stack.id));
-  }
 
   getStackDetail(name).refresh();
   return { success: result.success, output: result.output };
 });
 
 export const restartStackCmd = command(v.string(), async (name) => {
+  requireUser();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
-  const activity = createActivity(`Restarting ${name}`);
 
-  const result = await restartStack(
-    composePath,
-    stack.name,
-    (chunk) => appendOutput(activity.id, chunk),
-  );
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    stackId: stack.id,
+  const result = await runLoggedAction({
+    title: `Restarting ${name}`,
     action: "restart",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    stackId: stack.id,
+    run: (onOutput) => restartStack(composePath, stack.name, onOutput),
   });
 
   getStackDetail(name).refresh();
@@ -234,23 +207,15 @@ export const restartStackCmd = command(v.string(), async (name) => {
 });
 
 export const pullStackCmd = command(v.string(), async (name) => {
+  requireUser();
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
-  const activity = createActivity(`Pulling images for ${name}`);
 
-  const result = await pullStack(
-    composePath,
-    stack.name,
-    (chunk) => appendOutput(activity.id, chunk),
-  );
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    stackId: stack.id,
+  const result = await runLoggedAction({
+    title: `Pulling images for ${name}`,
     action: "pull",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    stackId: stack.id,
+    run: (onOutput) => pullStack(composePath, stack.name, onOutput),
   });
 
   getStackDetail(name).refresh();
@@ -263,12 +228,13 @@ export const saveStackEnv = command(
     entries: v.array(
       v.object({
         key: v.string(),
-        value: v.string(),
+        value: v.nullable(v.string()),
         isSecret: v.boolean(),
-      }),
+      })
     ),
   }),
   async ({ name, entries }) => {
+    requireUser();
     const lookup = await getStackAndRepo(name);
     const { stack } = lookup;
 
@@ -278,24 +244,23 @@ export const saveStackEnv = command(
       .where(eq(stackEnvVars.stackId, stack.id));
     const existingByKey = new Map(existing.map((e) => [e.key, e.value]));
 
-    await db.delete(stackEnvVars).where(eq(stackEnvVars.stackId, stack.id));
+    db.transaction((tx) => {
+      tx.delete(stackEnvVars).where(eq(stackEnvVars.stackId, stack.id));
 
-    if (entries.length > 0) {
-      await db.insert(stackEnvVars).values(
-        entries.map((e) => ({
-          stackId: stack.id,
-          key: e.key,
-          value:
-            e.isSecret && e.value === "••••••••"
-              ? (existingByKey.get(e.key) ?? e.value)
-              : e.value,
-          isSecret: e.isSecret,
-        })),
-      );
-    }
+      if (entries.length > 0) {
+        tx.insert(stackEnvVars).values(
+          entries.map((e) => ({
+            stackId: stack.id,
+            key: e.key,
+            value: e.value ?? existingByKey.get(e.key) ?? "",
+            isSecret: e.isSecret,
+          }))
+        );
+      }
+    });
 
     getStackDetail(name).refresh();
-  },
+  }
 );
 
 export const saveStackSecrets = command(
@@ -304,11 +269,12 @@ export const saveStackSecrets = command(
     entries: v.array(
       v.object({
         name: v.string(),
-        value: v.string(),
-      }),
+        value: v.nullable(v.string()),
+      })
     ),
   }),
   async ({ name, entries }) => {
+    requireUser();
     const lookup = await getStackAndRepo(name);
     const { stack } = lookup;
 
@@ -318,21 +284,20 @@ export const saveStackSecrets = command(
       .where(eq(stackSecrets.stackId, stack.id));
     const existingByName = new Map(existing.map((s) => [s.name, s.value]));
 
-    await db.delete(stackSecrets).where(eq(stackSecrets.stackId, stack.id));
+    db.transaction((tx) => {
+      tx.delete(stackSecrets).where(eq(stackSecrets.stackId, stack.id));
 
-    if (entries.length > 0) {
-      await db.insert(stackSecrets).values(
-        entries.map((e) => ({
-          stackId: stack.id,
-          name: e.name,
-          value:
-            e.value === "••••••••"
-              ? (existingByName.get(e.name) ?? e.value)
-              : e.value,
-        })),
-      );
-    }
+      if (entries.length > 0) {
+        tx.insert(stackSecrets).values(
+          entries.map((e) => ({
+            stackId: stack.id,
+            name: e.name,
+            value: e.value ?? existingByName.get(e.name) ?? "",
+          }))
+        );
+      }
+    });
 
     getStackDetail(name).refresh();
-  },
+  }
 );

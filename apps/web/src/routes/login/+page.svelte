@@ -66,7 +66,7 @@
         type="password"
         bind:value={password}
         required
-        placeholder="••••••••"
+        placeholder="Enter your password"
         class="w-full"
       />
     </div>

@@ -5,9 +5,10 @@ import {
   execCompose,
   ensureNetwork,
   listContainers,
+  runComposeCommand,
+  connectTraefikToNetwork,
   type ContainerInfo,
 } from "./docker";
-import { connectTraefikToNetwork } from "./core-stack";
 
 type SecretFile = {
   filePath: string;
@@ -28,10 +29,20 @@ type DeployResult = {
   output: string;
 };
 
+export function escapeEnvValue(value: string): string {
+  if (!/[\s#"'\\]/.test(value)) return value;
+  return `"${value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")}"`;
+}
+
 function writeEnvFile(envVars: Record<string, string>): string {
   const envPath = join(tmpdir(), `laber-env-${Date.now()}.env`);
   const content = Object.entries(envVars)
-    .map(([k, v]) => `${k}=${v}`)
+    .map(([k, v]) => `${k}=${escapeEnvValue(v)}`)
     .join("\n");
   writeFileSync(envPath, content, { encoding: "utf-8", mode: 0o600 });
   return envPath;
@@ -76,8 +87,11 @@ export async function deployStack(
     if (result.exitCode === 0 && options.networkName) {
       try {
         await connectTraefikToNetwork(options.networkName);
-      } catch {
-        // traefik may not be running yet
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        options.onOutput?.(
+          `Warning: could not attach Traefik to network ${options.networkName}: ${reason}\n`
+        );
       }
     }
 
@@ -99,55 +113,25 @@ export async function deployStack(
 export async function stopStack(
   composePath: string,
   projectName?: string,
-  onOutput?: (chunk: string) => void,
+  onOutput?: (chunk: string) => void
 ): Promise<DeployResult> {
-  const result = await execCompose({
-    composePath,
-    command: "down",
-    projectName,
-    onOutput,
-  });
-
-  return {
-    success: result.exitCode === 0,
-    output: result.stdout + result.stderr,
-  };
+  return runComposeCommand(composePath, "down", projectName, onOutput);
 }
 
 export async function restartStack(
   composePath: string,
   projectName?: string,
-  onOutput?: (chunk: string) => void,
+  onOutput?: (chunk: string) => void
 ): Promise<DeployResult> {
-  const result = await execCompose({
-    composePath,
-    command: "restart",
-    projectName,
-    onOutput,
-  });
-
-  return {
-    success: result.exitCode === 0,
-    output: result.stdout + result.stderr,
-  };
+  return runComposeCommand(composePath, "restart", projectName, onOutput);
 }
 
 export async function pullStack(
   composePath: string,
   projectName?: string,
-  onOutput?: (chunk: string) => void,
+  onOutput?: (chunk: string) => void
 ): Promise<DeployResult> {
-  const result = await execCompose({
-    composePath,
-    command: "pull",
-    projectName,
-    onOutput,
-  });
-
-  return {
-    success: result.exitCode === 0,
-    output: result.stdout + result.stderr,
-  };
+  return runComposeCommand(composePath, "pull", projectName, onOutput);
 }
 
 export async function getStackContainers(

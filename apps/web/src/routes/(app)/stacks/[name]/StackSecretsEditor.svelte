@@ -22,21 +22,32 @@
       name: s.name,
       filePath: s.filePath,
       services: s.services,
-      value: s.hasValue ? "••••••••" : "",
       hadValue: s.hasValue,
+      value: "",
+      dirty: false,
     }))
   );
   let saving = $state(false);
 
-  let unsetCount = $derived(entries.filter((e) => e.value === "").length);
+  let unsetCount = $derived(
+    entries.filter((e) => (e.dirty ? e.value === "" : !e.hadValue)).length
+  );
 
   async function handleSave() {
     saving = true;
     try {
       await saveStackSecrets({
         name: stackName,
-        entries: entries.map((e) => ({ name: e.name, value: e.value })),
+        entries: entries.map((e) => ({
+          name: e.name,
+          value: e.dirty ? e.value : null,
+        })),
       });
+      for (const e of entries) {
+        e.hadValue = e.dirty ? e.value !== "" : e.hadValue;
+        e.value = "";
+        e.dirty = false;
+      }
     } finally {
       saving = false;
     }
@@ -74,11 +85,17 @@
             />
           </Icon>
           <span class="font-mono text-sm font-medium">{entry.name}</span>
-          {#if entry.value !== "" && entry.value !== "••••••••"}
+          {#if entry.dirty && entry.value !== ""}
             <span
               class="bg-success/15 text-success rounded px-1.5 py-0.5 text-[10px] font-medium"
             >
               modified
+            </span>
+          {:else if entry.dirty && entry.hadValue}
+            <span
+              class="bg-warning/15 text-warning rounded px-1.5 py-0.5 text-[10px] font-medium"
+            >
+              will clear
             </span>
           {:else if entry.hadValue}
             <span
@@ -98,15 +115,20 @@
         <div class="flex items-center gap-2">
           <input
             bind:value={entry.value}
-            placeholder="Enter secret value…"
+            oninput={() => (entry.dirty = true)}
+            placeholder={entry.hadValue && !entry.dirty
+              ? "Leave empty to keep the current value…"
+              : "Enter secret value…"}
             type="password"
             class="flex-1 font-mono text-xs"
           />
-          {#if entry.value !== "" && entry.value !== "••••••••"}
+          {#if entry.dirty}
             <button
               type="button"
-              onclick={() =>
-                (entry.value = entry.hadValue ? "••••••••" : "")}
+              onclick={() => {
+                entry.value = "";
+                entry.dirty = false;
+              }}
               class="text-text-muted hover:text-danger p-1 transition-colors"
               aria-label="Reset"
               title="Undo changes"

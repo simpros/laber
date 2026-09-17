@@ -1,8 +1,10 @@
 import { query } from "$app/server";
 import { db, stacks, repositories, stackEnvVars } from "@laber/db";
 import { eq, count } from "drizzle-orm";
+import { requireUser } from "$lib/server/auth";
 
 export const getStacks = query(async () => {
+  requireUser();
   const allStacks = await db
     .select({
       id: stacks.id,
@@ -20,15 +22,16 @@ export const getStacks = query(async () => {
     .from(stacks)
     .leftJoin(repositories, eq(stacks.repositoryId, repositories.id));
 
-  const stacksWithEnvCount = await Promise.all(
-    allStacks.map(async (stack) => {
-      const [envCount] = await db
-        .select({ count: count() })
-        .from(stackEnvVars)
-        .where(eq(stackEnvVars.stackId, stack.id));
-      return { ...stack, envVarCount: envCount.count };
-    }),
+  const envCounts = await db
+    .select({ stackId: stackEnvVars.stackId, count: count() })
+    .from(stackEnvVars)
+    .groupBy(stackEnvVars.stackId);
+  const countByStackId = new Map(
+    envCounts.map((r) => [r.stackId, r.count])
   );
 
-  return stacksWithEnvCount;
+  return allStacks.map((stack) => ({
+    ...stack,
+    envVarCount: countByStackId.get(stack.id) ?? 0,
+  }));
 });

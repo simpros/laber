@@ -1,7 +1,8 @@
+import * as v from "valibot";
 import { error } from "@sveltejs/kit";
 import { query, command } from "$app/server";
-import { db, coreConfig, deploymentLogs } from "@laber/db";
-import { eq } from "drizzle-orm";
+import { db, coreConfig } from "@laber/db";
+import { sql } from "drizzle-orm";
 import {
   deployCoreStack,
   stopCoreStack,
@@ -10,15 +11,19 @@ import {
   type CoreConfig,
 } from "$lib/server/core-stack";
 import { CORE_KEYS } from "$lib/core-keys";
-import {
-  createActivity,
-  appendOutput,
-  finishActivity,
-} from "$lib/server/activity";
+import { runLoggedAction } from "$lib/server/logged-action";
+import { requireUser } from "$lib/server/auth";
+
+const saveCoreConfigSchema = v.record(
+  v.picklist(CORE_KEYS.map((k) => k.key) as [string, ...string[]]),
+  v.optional(v.string())
+);
 
 export const getCoreData = query(async () => {
+  requireUser();
   const config = await db.select().from(coreConfig);
-  const configMap: Record<string, { value: string; isSecret: boolean }> = {};
+  const configMap: Record<string, { value: string; isSecret: boolean }> =
+    {};
   for (const c of config) {
     configMap[c.key] = {
       value: c.isSecret ? "" : c.value,
@@ -41,38 +46,37 @@ export const getCoreData = query(async () => {
 });
 
 export const saveCoreConfig = command(
-  "unchecked",
-  async (values: Record<string, string>) => {
-    for (const keyDef of CORE_KEYS) {
+  saveCoreConfigSchema,
+  async (values: Record<string, string | undefined>) => {
+    requireUser();
+    const rows = CORE_KEYS.flatMap((keyDef) => {
       const value = values[keyDef.key];
-      if (value === undefined || value === null) continue;
-      if (keyDef.secret && value === "") continue;
+      if (value === undefined || value === null) return [];
+      if (keyDef.secret && value === "") return [];
+      return [{ key: keyDef.key, value, isSecret: keyDef.secret }];
+    });
 
-      const existing = await db
-        .select()
-        .from(coreConfig)
-        .where(eq(coreConfig.key, keyDef.key));
-
-      if (existing.length > 0) {
-        await db
-          .update(coreConfig)
-          .set({ value, isSecret: keyDef.secret, updatedAt: new Date() })
-          .where(eq(coreConfig.key, keyDef.key));
-      } else {
-        await db.insert(coreConfig).values({
-          key: keyDef.key,
-          value,
-          isSecret: keyDef.secret,
+    if (rows.length > 0) {
+      await db
+        .insert(coreConfig)
+        .values(rows)
+        .onConflictDoUpdate({
+          target: coreConfig.key,
+          set: {
+            value: sql`excluded.value`,
+            isSecret: sql`excluded.is_secret`,
+            updatedAt: new Date(),
+          },
         });
-      }
     }
 
     getCoreData().refresh();
     return { success: true, message: "Configuration saved" };
-  },
+  }
 );
 
 export const deployCore = command(async () => {
+  requireUser();
   const config = await db.select().from(coreConfig);
   const configMap: Record<string, string> = {};
   for (const c of config) configMap[c.key] = c.value;
@@ -80,8 +84,6 @@ export const deployCore = command(async () => {
   if (!configMap.ROOT_DOMAIN || !configMap.CF_DNS_API_TOKEN) {
     error(400, "ROOT_DOMAIN and CF_DNS_API_TOKEN are required");
   }
-
-  const activity = createActivity("Deploying core services");
 
   const coreConf: CoreConfig = {
     rootDomain: configMap.ROOT_DOMAIN,
@@ -96,18 +98,11 @@ export const deployCore = command(async () => {
     acmeEmail: configMap.ACME_EMAIL,
   };
 
-  const result = await deployCoreStack(
-    coreConf,
-    (chunk) => appendOutput(activity.id, chunk),
-  );
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    isCore: true,
+  const result = await runLoggedAction({
+    title: "Deploying core services",
     action: "deploy",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    isCore: true,
+    run: (onOutput) => deployCoreStack(coreConf, onOutput),
   });
 
   getCoreData().refresh();
@@ -115,18 +110,12 @@ export const deployCore = command(async () => {
 });
 
 export const stopCore = command(async () => {
-  const activity = createActivity("Stopping core services");
-  const result = await stopCoreStack(
-    (chunk) => appendOutput(activity.id, chunk),
-  );
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    isCore: true,
+  requireUser();
+  const result = await runLoggedAction({
+    title: "Stopping core services",
     action: "stop",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    isCore: true,
+    run: (onOutput) => stopCoreStack(onOutput),
   });
 
   getCoreData().refresh();
@@ -134,18 +123,12 @@ export const stopCore = command(async () => {
 });
 
 export const restartCore = command(async () => {
-  const activity = createActivity("Restarting core services");
-  const result = await restartCoreStack(
-    (chunk) => appendOutput(activity.id, chunk),
-  );
-
-  finishActivity(activity.id, result.success ? "success" : "error");
-
-  await db.insert(deploymentLogs).values({
-    isCore: true,
+  requireUser();
+  const result = await runLoggedAction({
+    title: "Restarting core services",
     action: "restart",
-    status: result.success ? "success" : "error",
-    output: result.output,
+    isCore: true,
+    run: (onOutput) => restartCoreStack(onOutput),
   });
 
   getCoreData().refresh();

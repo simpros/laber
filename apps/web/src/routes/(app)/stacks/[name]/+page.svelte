@@ -17,22 +17,23 @@
   import { useSearchParams } from "runed/kit";
   import * as v from "valibot";
 
-  const tabIds = ["services", "env", "secrets", "compose", "logs"] as const;
+  const tabIds = [
+    "services",
+    "env",
+    "secrets",
+    "compose",
+    "logs",
+  ] as const;
 
   const searchParams = useSearchParams(
     v.object({
       tab: v.fallback(v.picklist([...tabIds]), "services"),
     }),
-    { showDefaults: false, pushHistory: false },
+    { showDefaults: false, pushHistory: false }
   );
 
   const stackName = $derived(page.params.name!);
   const data = $derived(await getStackDetail(stackName));
-  let activeTab = $derived.by(() => {
-    const tab = page.url.searchParams.get("tab");
-    if (tab === "env" || tab === "secrets" || tab === "compose" || tab === "logs") return tab;
-    return "services" as const;
-  });
   let actionLoading = $state("");
   let result = $state<{ success?: boolean; output?: string } | null>(null);
 
@@ -45,15 +46,20 @@
   ] as const;
 
   async function handleAction(
-    action: (name: string) => Promise<{ success: boolean; output: string }>,
-    name: string,
+    action: (
+      name: string
+    ) => Promise<{ success: boolean; output: string }>,
+    name: string
   ) {
     actionLoading = name;
     result = null;
     try {
       result = await action(stackName);
     } catch (e) {
-      result = { success: false, output: e instanceof Error ? e.message : "Unknown error" };
+      result = {
+        success: false,
+        output: e instanceof Error ? e.message : "Unknown error",
+      };
     } finally {
       actionLoading = "";
     }
@@ -132,7 +138,7 @@
     {#each tabs as tab (tab.id)}
       <button
         onclick={() => (searchParams.tab = tab.id)}
-        class="border-b-2 px-4 py-2 text-sm font-medium transition-colors {activeTab ===
+        class="border-b-2 px-4 py-2 text-sm font-medium transition-colors {searchParams.tab ===
         tab.id
           ? 'border-accent text-text-primary'
           : 'text-text-muted hover:text-text-secondary border-transparent'}"
@@ -142,14 +148,21 @@
     {/each}
   </div>
 
-  {#if activeTab === "services"}
+  {#if searchParams.tab === "services"}
     <StackServices containers={data.containers} services={data.services} />
-  {:else if activeTab === "env"}
-    <StackEnvEditor envVars={data.envVars} stackName={stackName} detectedEnvVars={data.detectedEnvVars} />
-  {:else if activeTab === "secrets"}
-    <StackSecretsEditor secrets={data.secrets} stackName={stackName} />
-  {:else if activeTab === "compose"}
-    <StackComposeView content={data.composeRaw} fileName={data.stack.composeFile} />
+  {:else if searchParams.tab === "env"}
+    <StackEnvEditor
+      envVars={data.envVars}
+      {stackName}
+      detectedEnvVars={data.detectedEnvVars}
+    />
+  {:else if searchParams.tab === "secrets"}
+    <StackSecretsEditor secrets={data.secrets} {stackName} />
+  {:else if searchParams.tab === "compose"}
+    <StackComposeView
+      content={data.composeRaw}
+      fileName={data.stack.composeFile}
+    />
   {:else}
     <StackDeploymentLogs logs={data.logs} />
   {/if}
