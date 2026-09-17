@@ -28,3 +28,4 @@ vite.config.ts.timestamp-*
 /playwright-report/
 /blob-report/
 /tests/.auth/
+/tests/.data/

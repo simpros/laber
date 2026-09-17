@@ -1,4 +1,8 @@
-import { configure, getConsoleSink, getLogger as getLogTapeLogger } from "@logtape/logtape";
+import {
+  configure,
+  getConsoleSink,
+  getLogger as getLogTapeLogger,
+} from "@logtape/logtape";
 
 export async function configureLogging() {
   await configure({
