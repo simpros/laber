@@ -2,7 +2,8 @@ import * as v from "valibot";
 import { error } from "@sveltejs/kit";
 import { query, command } from "$app/server";
 import { db, repositories, stacks } from "@laber/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { cloneRepo, pullRepo, discoverStacks } from "$lib/server/git";
 import { getRepoDir, getComposePath } from "$lib/server/config";
 import { existsSync, rmSync } from "fs";
@@ -33,11 +34,31 @@ export async function reconcileDiscoveredStacks(
         prev.networkName !== s.networkName)
     );
   });
-  const removed = existing
-    .filter((s) => !discoveredByName.has(s.name))
+  const removed = existing.filter((s) => !discoveredByName.has(s.name));
+  const removedNames = removed.map((s) => s.name);
+
+  // Removal policy: refuse to silently orphan a deployed stack; otherwise
+  // delete the stale rows (env/secrets cascade, logs detach) in the same
+  // transaction as the adds/updates so sync never leaves zombies behind.
+  const deployedRemoved = removed
+    .filter((s) => s.status === "deployed")
     .map((s) => s.name);
+  if (deployedRemoved.length > 0) {
+    error(
+      409,
+      `Cannot sync: stack(s) no longer in repo but still deployed: ${deployedRemoved.join(", ")}. Stop them before syncing.`
+    );
+  }
 
   db.transaction((tx) => {
+    if (removedNames.length > 0) {
+      tx.delete(stacks).where(
+        and(
+          eq(stacks.repositoryId, repoId),
+          inArray(stacks.name, removedNames)
+        )
+      );
+    }
     if (added.length > 0) {
       tx.insert(stacks).values(
         added.map((s) => ({
@@ -63,7 +84,11 @@ export async function reconcileDiscoveredStacks(
     }
   });
 
-  return { added: added.length, updated: changed.length, removed };
+  return {
+    added: added.length,
+    updated: changed.length,
+    removed: removedNames,
+  };
 }
 
 export const getRepositories = query(async () => {
@@ -84,12 +109,10 @@ export const addRepository = command(
   }),
   async ({ name, url, branch, stacksPath, sshPrivateKey }) => {
     requireUser();
-    const [repo] = await db
-      .insert(repositories)
-      .values({ name, url, branch, stacksPath, sshPrivateKey })
-      .returning();
-
-    const repoDir = getRepoDir(repo.id);
+    // Clone first with a pre-generated id; the DB row is only inserted
+    // after the clone succeeds, so a failed clone leaves no ghost repo.
+    const repoId = randomUUID();
+    const repoDir = getRepoDir(repoId);
     let discoveredCount = 0;
 
     const result = await runLoggedAction({
@@ -104,21 +127,27 @@ export const addRepository = command(
             branch,
             sshPrivateKey ?? undefined
           );
-          await db
-            .update(repositories)
-            .set({ lastSyncedAt: new Date() })
-            .where(eq(repositories.id, repo.id));
           onOutput("Clone complete. Discovering stacks...\n");
         } catch (e) {
-          await db
-            .delete(repositories)
-            .where(eq(repositories.id, repo.id));
+          rmSync(repoDir, { recursive: true, force: true });
           const message = `Failed to clone repository: ${e instanceof Error ? e.message : "Unknown error"}`;
           onOutput(`${message}\n`);
           return { success: false, output: message };
         }
 
         const discovered = await discoverStacks(repoDir, stacksPath);
+        const [repo] = await db
+          .insert(repositories)
+          .values({
+            id: repoId,
+            name,
+            url,
+            branch,
+            stacksPath,
+            sshPrivateKey,
+            lastSyncedAt: new Date(),
+          })
+          .returning();
         const { added, updated, removed } =
           await reconcileDiscoveredStacks(repo.id, discovered);
         discoveredCount = discovered.length;
@@ -179,16 +208,19 @@ export const syncRepository = command(v.string(), async (repoId) => {
 
       onOutput("Pull complete. Discovering stacks...\n");
 
+      const discovered = await discoverStacks(repoDir, repo.stacksPath);
+      let reconciled;
+      try {
+        reconciled = await reconcileDiscoveredStacks(repo.id, discovered);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        onOutput(`Sync failed: ${message}\n`);
+        return { success: false, output: message };
+      }
       await db
         .update(repositories)
         .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
         .where(eq(repositories.id, repo.id));
-
-      const discovered = await discoverStacks(repoDir, repo.stacksPath);
-      const reconciled = await reconcileDiscoveredStacks(
-        repo.id,
-        discovered
-      );
       counts = reconciled;
       const summary =
         `Found ${reconciled.added} new, ${reconciled.updated} updated stack(s)` +

@@ -31,7 +31,8 @@
       successMsg = `Repository added. Discovered ${result.discovered} stack(s).`;
       (e.target as HTMLFormElement).reset();
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : "Failed to add repository";
+      errorMsg =
+        e instanceof Error ? e.message : "Failed to add repository";
     }
   }
 
@@ -41,9 +42,19 @@
     successMsg = "";
     try {
       const result = await syncRepository(repoId);
-      successMsg = `Synced. Found ${result.newStacks} new stack(s).`;
+      const parts = [
+        `${result.newStacks} new`,
+        `${result.updatedStacks} updated`,
+      ];
+      if (result.removedStacks.length > 0) {
+        parts.push(
+          `${result.removedStacks.length} removed (${result.removedStacks.join(", ")})`
+        );
+      }
+      successMsg = `Synced. Found ${parts.join(", ")} stack(s).`;
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : "Failed to sync repository";
+      errorMsg =
+        e instanceof Error ? e.message : "Failed to sync repository";
     } finally {
       syncLoading = null;
     }
@@ -55,7 +66,8 @@
     try {
       await removeRepository(repoId);
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : "Failed to remove repository";
+      errorMsg =
+        e instanceof Error ? e.message : "Failed to remove repository";
     }
   }
 </script>

@@ -183,7 +183,7 @@ export type SecretDefinition = {
 
 export function extractSecrets(
   compose: ComposeFile,
-  composePath?: string
+  composePath: string
 ): SecretDefinition[] {
   if (!compose.secrets) return [];
 
@@ -201,10 +201,9 @@ export function extractSecrets(
     .filter(([, def]) => def.file)
     .map(([name, def]) => ({
       name,
-      filePath:
-        composePath && !isAbsolute(def.file!)
-          ? resolve(dirname(composePath), def.file!)
-          : def.file!,
+      filePath: !isAbsolute(def.file!)
+        ? resolve(dirname(composePath), def.file!)
+        : def.file!,
       services: serviceMap.get(name) ?? [],
     }));
 }

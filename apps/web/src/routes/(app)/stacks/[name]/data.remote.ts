@@ -10,6 +10,7 @@ import {
   deploymentLogs,
 } from "@laber/db";
 import { eq, desc } from "drizzle-orm";
+import { relative } from "path";
 import { getStackContainers } from "$lib/server/stack-manager";
 import {
   deployStack,
@@ -88,7 +89,10 @@ export const getStackDetail = query(v.string(), async (name) => {
       const compose = parseComposeFile(composePath);
       services = extractServices(compose);
       detectedEnvVars = extractAllEnvVarNames(compose);
-      detectedSecrets = extractSecrets(compose);
+      detectedSecrets = extractSecrets(compose, composePath).map((d) => ({
+        ...d,
+        filePath: relative(getRepoDir(repo.id), d.filePath),
+      }));
       composeRaw = readComposeRaw(composePath);
     }
   } catch {
@@ -131,29 +135,40 @@ export const deployStackCmd = command(v.string(), async (name) => {
   const envMap: Record<string, string> = {};
   for (const ev of envVars) envMap[ev.key] = ev.value;
 
-  let secretFiles: { filePath: string; value: string }[] = [];
-  let networkName = stack.networkName ?? undefined;
+  // Deploy parses the compose file fresh and fails instead of falling back
+  // to cached DB values: a broken compose or a missing secret must not
+  // produce a secret-less deploy with a stale network name.
+  let compose;
   try {
-    const compose = parseComposeFile(composePath);
-    networkName = extractNetworkName(compose) ?? networkName;
-    const defs = extractSecrets(compose, composePath);
-    if (defs.length > 0) {
-      const dbSecrets = await db
-        .select()
-        .from(stackSecrets)
-        .where(eq(stackSecrets.stackId, stack.id));
-      const secretMap = new Map(dbSecrets.map((s) => [s.name, s.value]));
-      secretFiles = defs
-        .filter(
-          (d) => secretMap.has(d.name) && secretMap.get(d.name) !== ""
-        )
-        .map((d) => ({
-          filePath: d.filePath,
-          value: secretMap.get(d.name)!,
-        }));
+    compose = parseComposeFile(composePath);
+  } catch (e) {
+    error(
+      400,
+      `Cannot deploy: failed to parse compose file (${e instanceof Error ? e.message : "unknown error"})`
+    );
+  }
+  const networkName = extractNetworkName(compose);
+  const defs = extractSecrets(compose, composePath);
+  let secretFiles: { filePath: string; value: string }[] = [];
+  if (defs.length > 0) {
+    const dbSecrets = await db
+      .select()
+      .from(stackSecrets)
+      .where(eq(stackSecrets.stackId, stack.id));
+    const secretMap = new Map(dbSecrets.map((s) => [s.name, s.value]));
+    const missing = defs
+      .filter((d) => (secretMap.get(d.name) ?? "") === "")
+      .map((d) => d.name);
+    if (missing.length > 0) {
+      error(
+        400,
+        `Cannot deploy: missing values for secret(s): ${missing.join(", ")}`
+      );
     }
-  } catch {
-    // Compose parsing failed, skip secrets
+    secretFiles = defs.map((d) => ({
+      filePath: d.filePath,
+      value: secretMap.get(d.name)!,
+    }));
   }
 
   const result = await runLoggedAction({

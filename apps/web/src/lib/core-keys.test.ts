@@ -36,4 +36,18 @@ describe("CORE_KEYS", () => {
       expect(entry.placeholder.length).toBeGreaterThan(0);
     }
   });
+
+  it("every key maps to a config prop", () => {
+    for (const entry of CORE_KEYS) {
+      expect(entry.prop.length).toBeGreaterThan(0);
+    }
+    const props = CORE_KEYS.map((k) => k.prop);
+    expect(new Set(props).size).toBe(CORE_KEYS.length);
+  });
+
+  it("marks ROOT_DOMAIN and CF_DNS_API_TOKEN as required", () => {
+    const required = CORE_KEYS.filter((k) => k.required).map((k) => k.key);
+    expect(required).toContain("ROOT_DOMAIN");
+    expect(required).toContain("CF_DNS_API_TOKEN");
+  });
 });

@@ -259,9 +259,11 @@ describe("extractNetworkName", () => {
 });
 
 describe("extractSecrets", () => {
+  const COMPOSE_PATH = "/data/repos/abc/stacks/myapp/docker-compose.yaml";
+
   it("returns empty array when no secrets defined", () => {
     const compose = { services: {} };
-    expect(extractSecrets(compose)).toEqual([]);
+    expect(extractSecrets(compose, COMPOSE_PATH)).toEqual([]);
   });
 
   it("extracts file-based secrets", () => {
@@ -273,10 +275,12 @@ describe("extractSecrets", () => {
         db_password: { file: "./secrets/db_password.txt" },
       },
     };
-    const result = extractSecrets(compose);
+    const result = extractSecrets(compose, COMPOSE_PATH);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("db_password");
-    expect(result[0].filePath).toBe("./secrets/db_password.txt");
+    expect(result[0].filePath).toBe(
+      "/data/repos/abc/stacks/myapp/secrets/db_password.txt"
+    );
     expect(result[0].services).toEqual(["web"]);
   });
 
@@ -290,7 +294,7 @@ describe("extractSecrets", () => {
         shared_key: { file: "./secrets/key.txt" },
       },
     };
-    const result = extractSecrets(compose);
+    const result = extractSecrets(compose, COMPOSE_PATH);
     expect(result[0].services).toEqual(["web", "worker"]);
   });
 
@@ -303,7 +307,7 @@ describe("extractSecrets", () => {
         ext_secret: { external: true },
       },
     };
-    const result = extractSecrets(compose);
+    const result = extractSecrets(compose, COMPOSE_PATH);
     expect(result).toHaveLength(0);
   });
 
@@ -314,22 +318,9 @@ describe("extractSecrets", () => {
         unused: { file: "./secrets/unused.txt" },
       },
     };
-    const result = extractSecrets(compose);
+    const result = extractSecrets(compose, COMPOSE_PATH);
     expect(result).toHaveLength(1);
     expect(result[0].services).toEqual([]);
-  });
-
-  it("leaves paths untouched when no compose path is given", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["db_password"] },
-      },
-      secrets: {
-        db_password: { file: "./secrets/db_password.txt" },
-      },
-    };
-    const result = extractSecrets(compose);
-    expect(result[0].filePath).toBe("./secrets/db_password.txt");
   });
 
   it("resolves relative secret paths against the compose directory", () => {

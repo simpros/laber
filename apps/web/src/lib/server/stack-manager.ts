@@ -1,5 +1,5 @@
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
-import { join, dirname, isAbsolute, resolve } from "path";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
   execCompose,
@@ -48,19 +48,6 @@ function writeEnvFile(envVars: Record<string, string>): string {
   return envPath;
 }
 
-function resolveSecretFiles(
-  composePath: string,
-  files: SecretFile[]
-): SecretFile[] {
-  const composeDir = dirname(composePath);
-  return files.map((f) => ({
-    ...f,
-    filePath: isAbsolute(f.filePath)
-      ? f.filePath
-      : resolve(composeDir, f.filePath),
-  }));
-}
-
 function writeSecretFiles(files: SecretFile[]): void {
   for (const { filePath, value } of files) {
     mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
@@ -78,9 +65,9 @@ export async function deployStack(
   let envFilePath: string | undefined;
   try {
     if (options.secretFiles?.length) {
-      writeSecretFiles(
-        resolveSecretFiles(options.composePath, options.secretFiles)
-      );
+      // Secret paths are already absolute (resolved by extractSecrets
+      // against the compose file); write them in exactly one place here.
+      writeSecretFiles(options.secretFiles);
     }
 
     const envArgs: string[] = [];

@@ -15,18 +15,23 @@ import { requireUser } from "$lib/server/auth";
 
 const saveCoreConfigSchema = v.record(
   v.picklist(CORE_KEYS.map((k) => k.key) as [string, ...string[]]),
-  v.optional(v.string())
+  v.optional(v.nullable(v.string()))
 );
 
 export const getCoreData = query(async () => {
   requireUser();
   const config = await db.select().from(coreConfig);
-  const configMap: Record<string, { value: string; isSecret: boolean }> =
-    {};
-  for (const c of config) {
-    configMap[c.key] = {
-      value: c.isSecret ? "" : c.value,
-      isSecret: c.isSecret,
+  const storedByKey = new Map(config.map((c) => [c.key, c]));
+  const configMap: Record<
+    string,
+    { value: string; isSecret: boolean; hasValue: boolean }
+  > = {};
+  for (const keyDef of CORE_KEYS) {
+    const stored = storedByKey.get(keyDef.key);
+    configMap[keyDef.key] = {
+      value: stored && !stored.isSecret ? stored.value : "",
+      isSecret: stored?.isSecret ?? keyDef.secret,
+      hasValue: (stored?.value ?? "") !== "",
     };
   }
 
@@ -46,12 +51,12 @@ export const getCoreData = query(async () => {
 
 export const saveCoreConfig = command(
   saveCoreConfigSchema,
-  async (values: Record<string, string | undefined>) => {
+  async (values: Record<string, string | null | undefined>) => {
     requireUser();
+    // null / undefined = leave unchanged; "" = clear; string = set.
     const rows = CORE_KEYS.flatMap((keyDef) => {
       const value = values[keyDef.key];
       if (value === undefined || value === null) return [];
-      if (keyDef.secret && value === "") return [];
       return [{ key: keyDef.key, value, isSecret: keyDef.secret }];
     });
 

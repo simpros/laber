@@ -6,19 +6,9 @@ import { db, coreConfig } from "@laber/db";
 import { listContainers, runComposeCommand } from "./docker";
 import { deployStack } from "./stack-manager";
 import { DATA_DIR } from "./config";
+import { CORE_KEYS, type CoreConfigShape } from "$lib/core-keys";
 
-export type CoreConfig = {
-  rootDomain: string;
-  cfDnsApiToken: string;
-  zoneId?: string;
-  tunnelToken?: string;
-  httpTimeout?: string;
-  pollingInterval?: string;
-  propagationTimeout?: string;
-  ttl?: string;
-  logLevel?: string;
-  acmeEmail?: string;
-};
+export type CoreConfig = CoreConfigShape;
 
 type CoreServiceStatus = {
   name: string;
@@ -31,24 +21,23 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
   const rows = await db.select().from(coreConfig);
   const configMap = new Map(rows.map((r) => [r.key, r.value]));
 
-  const rootDomain = configMap.get("ROOT_DOMAIN");
-  const cfDnsApiToken = configMap.get("CF_DNS_API_TOKEN");
-  if (!rootDomain || !cfDnsApiToken) {
-    error(400, "ROOT_DOMAIN and CF_DNS_API_TOKEN are required");
+  const missing = CORE_KEYS.filter(
+    (k) => k.required && !configMap.get(k.key)
+  ).map((k) => k.key);
+  if (missing.length > 0) {
+    error(
+      400,
+      `${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} required`
+    );
   }
 
-  return {
-    rootDomain,
-    cfDnsApiToken,
-    zoneId: configMap.get("ZONE_ID") || undefined,
-    tunnelToken: configMap.get("TUNNEL_TOKEN") || undefined,
-    httpTimeout: configMap.get("HTTP_TIMEOUT"),
-    pollingInterval: configMap.get("POLLING_INTERVAL"),
-    propagationTimeout: configMap.get("PROPAGATION_TIMEOUT"),
-    ttl: configMap.get("TTL"),
-    logLevel: configMap.get("LOG_LEVEL"),
-    acmeEmail: configMap.get("ACME_EMAIL"),
-  };
+  const config: Record<string, string | undefined> = {};
+  for (const field of CORE_KEYS) {
+    const value = configMap.get(field.key);
+    if (value !== undefined && value !== "") config[field.prop] = value;
+  }
+
+  return config as CoreConfig;
 }
 
 function getComposeDir(): string {
