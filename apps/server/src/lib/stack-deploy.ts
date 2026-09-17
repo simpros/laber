@@ -4,7 +4,7 @@ import { loadCompose } from "./compose-parse";
 import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
 import { runLoggedDeploy } from "./deploy";
-import { getStackAndRepo, withLockedStack } from "./stack-context";
+import { type getStackAndRepo, withLockedStack } from "./stack-context";
 import { ValidationError } from "./errors";
 
 type StackRow = Awaited<ReturnType<typeof getStackAndRepo>>["stack"];
