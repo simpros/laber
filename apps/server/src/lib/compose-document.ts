@@ -71,7 +71,7 @@ export type ComposeDocument = v.InferOutput<typeof composeDocumentSchema>;
 export function parseComposeDocument(
   content: string,
   composePathHint = "."
-): ComposeDocument {
+): { doc: ComposeDocument; secrets: SecretDefinition[] } {
   let parsed: unknown;
   try {
     parsed = parse(content);
@@ -113,9 +113,10 @@ export function parseComposeDocument(
   }
   // Secret-ref validation is part of the parse gate (not a second pass the
   // caller must remember): save/detail/deploy all reject dangling refs,
-  // long-form refs, and file-less referenced secrets alike.
-  extractSecrets(result.output, composePathHint);
-  return result.output;
+  // long-form refs, and file-less referenced secrets alike. The gate returns
+  // what it computed — one extract, no discard-and-reextract downstream.
+  const secrets = extractSecrets(result.output, composePathHint);
+  return { doc: result.output, secrets };
 }
 
 export type ServiceInfo = {
@@ -375,7 +376,6 @@ export function loadComposeDocument(composePath: string): {
   secrets: SecretDefinition[];
 } {
   const raw = readFileSync(composePath, "utf-8");
-  const doc = parseComposeDocument(raw, composePath);
-  const secrets = extractSecrets(doc, composePath);
+  const { doc, secrets } = parseComposeDocument(raw, composePath);
   return { raw, doc, secrets };
 }

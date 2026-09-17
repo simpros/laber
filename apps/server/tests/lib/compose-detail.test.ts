@@ -229,7 +229,7 @@ describe("extractAllEnvVarNames", () => {
 
 describe("parseComposeDocument", () => {
   it("parses a valid compose document", () => {
-    const doc = parseComposeDocument(
+    const { doc } = parseComposeDocument(
       "services:\n  web:\n    image: nginx:latest\n"
     );
     expect(Object.keys(doc.services)).toEqual(["web"]);
@@ -261,7 +261,7 @@ describe("parseComposeDocument", () => {
   });
 
   it("tolerates exotic but valid shapes (numeric ports, extension fields)", () => {
-    const doc = parseComposeDocument(
+    const { doc } = parseComposeDocument(
       [
         "services:",
         "  web:",
@@ -277,7 +277,7 @@ describe("parseComposeDocument", () => {
   });
 
   it("keeps networks and secrets visible to deploy-side extractors", () => {
-    const doc = parseComposeDocument(
+    const { doc } = parseComposeDocument(
       [
         "services:",
         "  web:",

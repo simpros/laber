@@ -17,7 +17,7 @@ import { getRepoDir, getComposePath } from "./config";
 import { downProject } from "./compose-cli";
 import { assertStackRemovable } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
-import { runLoggedAction } from "./logged-action";
+import { runActivity } from "./logged-action";
 import { NotFoundError, ActionFailedError } from "./errors";
 
 export type AddRepositoryInput = {
@@ -34,19 +34,42 @@ type RemoteTree = Pick<
 >;
 
 /**
- * Ensure the local git tree exists (fresh clone, or clone-if-missing /
- * pull). Throws `ActionFailedError` on operational git failures — the
- * detail line is already streamed, so `runLoggedAction` maps the throw to
- * the contextual failure message. Domain errors are never produced here.
+ * Shared git-failure mapping: the detail line is already streamed, so the
+ * throw maps to the contextual failure message at the edge. Domain errors
+ * are never produced here.
  */
-async function ensureRemoteTree(
+function gitFailure(onOutput: (chunk: string) => void, e: unknown): never {
+  const message = e instanceof Error ? e.message : "Unknown error";
+  onOutput(`Sync failed: ${message}\n`);
+  throw new ActionFailedError("Sync failed");
+}
+
+/** Fresh clone: register path (fails if the remote cannot be cloned). */
+async function cloneRemoteTree(
   repoDir: string,
   remote: RemoteTree,
-  onOutput: (chunk: string) => void,
-  fresh: boolean
+  onOutput: (chunk: string) => void
 ): Promise<void> {
   try {
-    if (fresh || !existsSync(repoDir)) {
+    await cloneRepo(
+      remote.url,
+      repoDir,
+      remote.branch,
+      remote.sshPrivateKey ?? undefined
+    );
+  } catch (e) {
+    gitFailure(onOutput, e);
+  }
+}
+
+/** Clone-if-missing, else pull: sync path. */
+async function pullOrCloneRemoteTree(
+  repoDir: string,
+  remote: RemoteTree,
+  onOutput: (chunk: string) => void
+): Promise<void> {
+  try {
+    if (!existsSync(repoDir)) {
       await cloneRepo(
         remote.url,
         repoDir,
@@ -57,16 +80,14 @@ async function ensureRemoteTree(
       await pullRepo(repoDir, remote.sshPrivateKey ?? undefined);
     }
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Unknown error";
-    onOutput(`Sync failed: ${message}\n`);
-    throw new ActionFailedError("Sync failed");
+    gitFailure(onOutput, e);
   }
 }
 
 /**
  * Shared reconcile → summarize step inside the caller's transaction.
  * Reconcile failures propagate (a deliberate `ConflictError` must not be
- * flattened into a 500); `runLoggedAction` finishes the activity on throw.
+ * flattened into a 500); `runActivity` finishes the activity on throw.
  */
 function reconcileAndSummarizeTx(
   tx: StackTx,
@@ -109,20 +130,18 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
   };
 
   try {
-    const { value } = await runLoggedAction<{
+    const { value } = await runActivity<{
       reconciled: ReconcileCounts;
       total: number;
     }>({
       title: `Cloning ${input.name}`,
-      action: "clone",
-      identity: { kind: "none" },
       failureMessage: `Failed to clone repository ${input.name}`,
       run: async (onOutput) => {
         // Long I/O outside the lock; filesystem discovery is cheap, so it
         // is sampled inside the lock below — the tx commits the fresh tree,
         // never a stale pre-lock snapshot.
         onOutput(`Cloning ${input.url} (branch: ${input.branch})...\n`);
-        await ensureRemoteTree(repoDir, remote, onOutput, true);
+        await cloneRemoteTree(repoDir, remote, onOutput);
         onOutput("Clone complete. Discovering stacks...\n");
 
         // Fresh id: no contention possible, but the insert + reconcile
@@ -172,12 +191,10 @@ export async function syncRepository(id: string) {
     .limit(1);
   if (!repo) throw new NotFoundError("Repository not found");
 
-  const { value } = await runLoggedAction<{
+  const { value } = await runActivity<{
     reconciled: ReconcileCounts;
   }>({
     title: `Syncing ${repo.name}`,
-    action: "sync",
-    identity: { kind: "none" },
     failureMessage: `Failed to sync repository ${repo.name}`,
     run: async (onOutput) => {
       // Long I/O outside the lock; discovery is re-sampled inside the lock
@@ -185,7 +202,7 @@ export async function syncRepository(id: string) {
       // B removes, A re-inserts).
       onOutput(`Pulling latest changes from ${repo.url}...\n`);
       const repoDir = getRepoDir(repo.id);
-      await ensureRemoteTree(repoDir, repo, onOutput, false);
+      await pullOrCloneRemoteTree(repoDir, repo, onOutput);
       onOutput("Pull complete. Discovering stacks...\n");
 
       // Serialized per repo: the Docker-aware removable probe and the
@@ -275,10 +292,8 @@ export async function deleteRepository(id: string) {
   // `repo-lock.ts`) so a sync probe→commit window cannot interleave the
   // teardown or the row delete.
   const { value } = await withRepoLock(id, () =>
-    runLoggedAction<{ warnings: string[] }>({
+    runActivity<{ warnings: string[] }>({
       title: `Deleting repository ${repo.name}`,
-      action: "delete",
-      identity: { kind: "none" },
       failureMessage: `Failed to delete repository ${repo.name}`,
       run: async (onOutput) => {
         // Re-read inside the lock: a sync may have added/removed stack rows

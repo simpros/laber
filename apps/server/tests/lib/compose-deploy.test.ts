@@ -202,7 +202,7 @@ describe("extractSecrets", () => {
 
 describe("parseComposeDocument", () => {
   it("parses a valid compose document", () => {
-    const compose = parseComposeDocument(
+    const { doc: compose } = parseComposeDocument(
       "services:\n  web:\n    image: nginx:latest\n"
     );
     expect(Object.keys(compose.services)).toEqual(["web"]);
@@ -254,7 +254,7 @@ describe("parseComposeDocument", () => {
   });
 
   it("tolerates exotic but valid shapes (numeric ports, extension fields)", () => {
-    const compose = parseComposeDocument(
+    const { doc: compose } = parseComposeDocument(
       [
         "services:",
         "  web:",

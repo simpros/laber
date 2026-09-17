@@ -3,8 +3,8 @@ import * as v from "valibot";
 import {
   listStacks,
   getStackDetail,
-  deployStackByName,
 } from "../lib/stacks";
+import { deployStackByName } from "../lib/stack-deploy";
 import { runStackOp } from "../lib/compose-actions";
 import {
   replaceStackEnv,

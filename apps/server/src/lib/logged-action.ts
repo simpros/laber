@@ -4,28 +4,25 @@ import { createActivity, appendOutput, finishActivity } from "./activity";
 import { ActionFailedError } from "./errors";
 
 /**
- * Success-only transitions. There is no `"error"` member: callers declare
- * only the success transition for actions that own runtime intent
- * (deploy/stop). A tracked failure of those same actions moves the stack to
- * `"error"` automatically. Actions that do not change desired runtime
- * (pull/restart) carry the stack identity (log attribution) but no
- * `statusOnSuccess` and never touch `stacks.status` — last-action outcome
- * already lives in `deployment_logs` / activity.
- */
-export type StackStatusOnSuccess = "deployed" | "stopped";
-
-/**
- * Discriminated lifecycle identity: exactly one variant is legal, so
+ * Exhaustive lifecycle identity: every variant is fully specified, so
  * attribution (`deployment_logs.stackId` / `isCore`) and the status
- * transition cannot drift into double/empty combinations by construction.
- * Stack ops always carry `stackId`; `statusOnSuccess` is present only for
- * actions that own runtime intent (deploy/stop). Core ops carry no stack
- * row. Repo-level ops (clone/sync) carry neither.
+ * transition cannot drift into half-specified combinations by construction.
+ * - `stack`: deploy/stop (own runtime intent) — carries the success
+ *   transition (`onSuccess`).
+ * - `stack-log`: pull/restart — carries the stack identity for log
+ *   attribution but never touches `stacks.status` (last-action outcome
+ *   already lives in `deployment_logs` / activity).
+ * - `core`: core ops carry no stack row and never touch the column.
+ *
+ * There is no optional `statusOnSuccess?` and no `kind: "none"`: repo-level
+ * ops (clone/sync/delete) are not deployments — they use `runActivity`
+ * (transcript only) instead of writing orphan `deployment_logs` rows with
+ * `stackId = null` that the dashboard would mistake for deploy history.
  */
 export type ActionIdentity =
-  | { kind: "stack"; stackId: string; statusOnSuccess?: StackStatusOnSuccess }
-  | { kind: "core" }
-  | { kind: "none" };
+  | { kind: "stack"; stackId: string; onSuccess: "deployed" | "stopped" }
+  | { kind: "stack-log"; stackId: string }
+  | { kind: "core" };
 
 async function recordActionOutcome(options: {
   activityId: string;
@@ -45,7 +42,8 @@ async function recordActionOutcome(options: {
   try {
     db.transaction((tx) => {
       const stackId =
-        options.identity.kind === "stack"
+        options.identity.kind === "stack" ||
+        options.identity.kind === "stack-log"
           ? options.identity.stackId
           : undefined;
       tx.insert(deploymentLogs)
@@ -58,19 +56,15 @@ async function recordActionOutcome(options: {
         })
         .run();
 
-      // The one status state machine: only stack actions that own runtime
-      // intent (deploy/stop, the ones carrying `statusOnSuccess`) move the
-      // column, and the column is UI/history only — sync/delete never read
-      // it (removal is the fail-closed Docker probe). Pull/restart carry no
-      // transition and leave the column alone on success *and* failure, so
-      // a failed pull does not paint the UI `"error"` while containers keep
-      // running.
-      if (
-        options.identity.kind === "stack" &&
-        options.identity.statusOnSuccess !== undefined
-      ) {
+      // The one status state machine: only `stack` actions (deploy/stop, the
+      // ones carrying `onSuccess`) move the column, and the column is
+      // UI/history only — sync/delete never read it (removal is the
+      // fail-closed Docker probe). `stack-log` (pull/restart) leaves the
+      // column alone on success *and* failure, so a failed pull does not
+      // paint the UI `"error"` while containers keep running.
+      if (options.identity.kind === "stack") {
         const next = options.result.success
-          ? options.identity.statusOnSuccess
+          ? options.identity.onSuccess
           : "error";
         const stackId = options.identity.stackId;
         tx.update(stacks)
@@ -120,8 +114,8 @@ type LoggedActionBase = {
  *
  * A throwing `run` never leaves the activity stuck on "running": the
  * streamed transcript plus the error line is persisted to the deployment
- * log, the stack (when the action owns runtime intent — see
- * `statusOnSuccess` on the stack identity) moves to `"error"`, then
+ * log, the stack (when the action owns runtime intent — the `stack`
+ * identity variant) moves to `"error"`, then
  * operational failures (`ActionFailedError`) are mapped to the contextual
  * `failureMessage` while domain errors keep their kind at the edge. The full
  * transcript stays in the deployment log and activity stream; the wire
@@ -202,5 +196,62 @@ export async function runLoggedAction<T>(
     action: options.action,
     result: { success: true, output: runOutput! },
   });
+  return { output: runOutput!, value: runValue };
+}
+
+type ActivityActionBase = {
+  title: string;
+  failureMessage?: string;
+};
+
+/**
+ * Transcript-only shell for repo-level ops (clone/sync/delete): SSE
+ * activity transcript with the same throw-on-failure contract, but no
+ * `deployment_logs` row and no status write. Those ops are not deployments —
+ * routing them through `runLoggedAction` wrote orphan deploy rows
+ * (`stackId = null`) that the dashboard mistook for deploy history.
+ */
+export async function runActivity(
+  options: ActivityActionBase & { run: LoggedActionRunVoid }
+): Promise<{ output: string }>;
+export async function runActivity<T>(
+  options: ActivityActionBase & { run: LoggedActionRun<T> }
+): Promise<{ output: string; value: T }>;
+export async function runActivity<T>(
+  options: ActivityActionBase & {
+    run: (onOutput: (chunk: string) => void) => Promise<{
+      output: string;
+      value?: T;
+    }>;
+  }
+): Promise<{ output: string; value?: T }> {
+  const failureMessage = options.failureMessage ?? `${options.title} failed`;
+  const activity = createActivity(options.title);
+
+  let transcript = "";
+  const onOutput = (chunk: string) => {
+    transcript += chunk;
+    appendOutput(activity.id, chunk);
+  };
+
+  let runOutput: string;
+  let runValue: T | undefined;
+  try {
+    const result = await options.run(onOutput);
+    runOutput = result.output;
+    runValue = result.value;
+  } catch (runError) {
+    const detail =
+      runError instanceof Error ? runError.message : "Unknown error";
+    transcript += `\n${detail}\n`;
+    appendOutput(activity.id, `\n${detail}\n`);
+    finishActivity(activity.id, "error");
+    if (runError instanceof ActionFailedError) {
+      throw new ActionFailedError(failureMessage);
+    }
+    throw runError;
+  }
+
+  finishActivity(activity.id, "success");
   return { output: runOutput!, value: runValue };
 }

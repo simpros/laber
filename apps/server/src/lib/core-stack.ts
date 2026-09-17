@@ -3,8 +3,7 @@ import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainersSoft } from "./docker-engine";
-import { runLoggedAction } from "./logged-action";
-import { deployStack } from "./deploy";
+import { runLoggedDeploy } from "./compose-actions";
 import { type ConfigValue } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
 import { getCoreComposeContent } from "./core-compose";
@@ -172,19 +171,15 @@ export async function deployCore() {
     envVars.TUNNEL_TOKEN = config.tunnelToken;
   }
 
-  return runLoggedAction({
+  return runLoggedDeploy({
     title: "Deploying core services",
     action: "deploy",
     identity: { kind: "core" },
     failureMessage: "Deploying core services failed",
-    run: async (onOutput) => {
-      const result = await deployStack({
-        composePath,
-        envVars,
-        projectName: CORE_PROJECT,
-        onOutput,
-      });
-      return { output: result.output };
+    deploy: {
+      composePath,
+      envVars,
+      projectName: CORE_PROJECT,
     },
   });
 }

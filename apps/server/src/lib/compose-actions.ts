@@ -1,9 +1,9 @@
 import { runComposeCommand } from "./compose-cli";
 import { downProject } from "./compose-cli";
+import { deployStack, type DeployOptions } from "./deploy";
 import {
   runLoggedAction,
   type ActionIdentity,
-  type StackStatusOnSuccess,
 } from "./logged-action";
 import {
   getStackAndRepo,
@@ -20,7 +20,10 @@ type OpCtx = {
 
 type OpDef = {
   action: string;
-  statusOnSuccess?: StackStatusOnSuccess;
+  /** Present only for ops that own runtime intent (stop). The identity the
+   * op needs is derived from this: `onSuccess` → `stack` variant, absent →
+   * `stack-log` variant — callers never hand-build the union. */
+  onSuccess?: "deployed" | "stopped";
   title: (label: string) => string;
   failureMessage: (label: string) => string;
   run: (ctx: OpCtx, onOutput: (chunk: string) => void) => Promise<{
@@ -37,7 +40,7 @@ type OpDef = {
 const OPS: Record<LifecycleOp, OpDef> = {
   stop: {
     action: "stop",
-    statusOnSuccess: "stopped",
+    onSuccess: "stopped",
     title: (label) => `Stopping ${label}`,
     failureMessage: (label) => `Stopping ${label} failed`,
     run: (ctx, onOutput) =>
@@ -91,9 +94,10 @@ function runLifecycleOp(
 
 /**
  * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
- * near-identical wrappers. Restart and pull carry the stack identity but no
- * `statusOnSuccess`, so they never touch `stacks.status` (they do not
- * change desired runtime).
+ * near-identical wrappers. The table row decides the identity variant:
+ * stop (owns runtime intent) → `stack` with `onSuccess`; restart/pull →
+ * `stack-log` (attribution, no status write — they do not change desired
+ * runtime).
  *
  * No per-repo lock: lifecycle ops never change the removable inputs the
  * sync/delete lock owns — the removable gate is the fail-closed Docker
@@ -107,13 +111,14 @@ export async function runStackOp(
 ): Promise<{ output: string }> {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
+  const def = OPS[op];
+  const identity: ActionIdentity =
+    def.onSuccess !== undefined
+      ? { kind: "stack", stackId: stack.id, onSuccess: def.onSuccess }
+      : { kind: "stack-log", stackId: stack.id };
   return runLifecycleOp(
     op,
-    {
-      kind: "stack",
-      stackId: stack.id,
-      statusOnSuccess: OPS[op].statusOnSuccess,
-    },
+    identity,
     { projectName: stack.name, composePath, label: stack.name }
   );
 }
@@ -130,5 +135,31 @@ export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
     projectName: CORE_PROJECT,
     composePath: getCoreComposePath(),
     label: "core services",
+  });
+}
+
+/**
+ * The one logged-deploy shell, next to the other lifecycle verbs: stack
+ * `deployStackByName` and `deployCore` only resolve inputs + identity, then
+ * run through here — so deploy is a table peer, not a hand-rolled twin that
+ * open-codes `runLoggedAction` + `deployStack` twice. `deploy.ts` stays the
+ * Docker/compensation policy.
+ */
+export function runLoggedDeploy(options: {
+  title: string;
+  action: string;
+  identity: ActionIdentity;
+  failureMessage?: string;
+  deploy: Omit<DeployOptions, "onOutput">;
+}): Promise<{ output: string }> {
+  return runLoggedAction({
+    title: options.title,
+    action: options.action,
+    identity: options.identity,
+    failureMessage: options.failureMessage,
+    run: async (onOutput) => {
+      const result = await deployStack({ ...options.deploy, onOutput });
+      return { output: result.output };
+    },
   });
 }
