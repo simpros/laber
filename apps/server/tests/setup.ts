@@ -27,6 +27,8 @@ if (!process.env.BETTER_AUTH_BASE_URL) {
 mock.module("../src/lib/docker-engine.ts", () => ({
   listContainers: (projectLabel?: string) =>
     dockerStub.listContainers(projectLabel),
+  listContainersSoft: (projectLabel?: string) =>
+    dockerStub.listContainersSoft(projectLabel),
   getContainerLogs: (options: {
     containerId: string;
     tail?: number;

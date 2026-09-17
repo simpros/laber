@@ -9,7 +9,7 @@ import {
   deploymentLogs,
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
-import { listContainers } from "./docker-engine";
+import { listContainersSoft } from "./docker-engine";
 import { loggedDeployAction } from "./compose-actions";
 import {
   readComposeFile,
@@ -24,7 +24,6 @@ import {
   assertStackName,
 } from "./config";
 import { ValidationError } from "./errors";
-import type { ContainerInfo } from "./types";
 
 export async function listStacks() {
   const [allStacks, envCounts] = await Promise.all([
@@ -91,6 +90,8 @@ export async function getStackDetail(name: string) {
   const { stack, repo, composePath } = await getStackAndRepo(name);
 
   // Independent reads, fetched together: env, secrets, logs, Docker state.
+  // Container state is the soft contract: an unreadable daemon reads as
+  // "unknown" (empty), never a 500 on a read path.
   const [envVars, secrets, logs, containers] = await Promise.all([
     db
       .select()
@@ -103,11 +104,7 @@ export async function getStackDetail(name: string) {
       .where(eq(deploymentLogs.stackId, stack.id))
       .orderBy(desc(deploymentLogs.createdAt))
       .limit(20),
-    // The docker stub throws synchronously (no promise), so the call is
-    // wrapped lazily — .catch on a sync throw would never attach.
-    Promise.resolve()
-      .then(() => listContainers(stack.name))
-      .catch((): ContainerInfo[] => []),
+    listContainersSoft(stack.name),
   ]);
 
   const {

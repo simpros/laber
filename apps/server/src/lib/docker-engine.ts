@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import type { ContainerInfo } from "./types";
+import { TRAEFIK_CONTAINER, TRAEFIK_SERVICE } from "./core-identity";
 
 export type { ContainerInfo };
 
@@ -42,6 +43,22 @@ export async function listContainers(
     filters,
   });
   return containers.map(mapContainer);
+}
+
+/**
+ * Named soft contract for read paths (detail, dashboard, overview): Docker
+ * unreadable means "unknown", so an empty list. Commit gates
+ * (sync/delete/teardown) must use `listContainers` and fail closed —
+ * never this.
+ */
+export async function listContainersSoft(
+  projectLabel?: string
+): Promise<ContainerInfo[]> {
+  try {
+    return await listContainers(projectLabel);
+  } catch {
+    return [];
+  }
 }
 
 export function getContainerLogs(options: {
@@ -131,17 +148,18 @@ export async function connectTraefikToNetwork(
   const containers = await getDocker().listContainers({
     all: true,
     filters: {
-      name: ["laber-reverse-proxy"],
+      name: [TRAEFIK_CONTAINER],
     },
   });
 
-  const traefik =
-    containers.find((c) =>
-      c.Names.some((n) => n === "/laber-reverse-proxy")
-    ) ??
-    containers.find(
-      (c) => c.Labels["com.docker.compose.service"] === "reverse-proxy"
-    );
+  // One discovery predicate: exact container name or the compose service
+  // label. Both describe the same Traefik instance; a rename touches
+  // `core-identity`, not two heuristics here.
+  const traefik = containers.find(
+    (c) =>
+      c.Names.some((n) => n === `/${TRAEFIK_CONTAINER}`) ||
+      c.Labels["com.docker.compose.service"] === TRAEFIK_SERVICE
+  );
 
   if (!traefik) {
     throw new Error(

@@ -214,7 +214,15 @@ export function extractAllEnvVarNames(doc: ComposeDocument): string[] {
 export function extractNetworkName(doc: ComposeDocument): string | undefined {
   if (!doc.networks) return undefined;
 
-  for (const net of Object.values(doc.networks)) {
+  // `default` wins over other external networks: check it first, then the
+  // rest in document order. (A single loop over all values cannot prefer
+  // `default` — whichever external net comes first would win.)
+  const { default: defaultNet, ...rest } = doc.networks;
+  const ordered = [
+    ...(defaultNet ? [defaultNet] : []),
+    ...Object.values(rest),
+  ];
+  for (const net of ordered) {
     if (
       net.external === true &&
       typeof net.name === "string" &&
@@ -222,15 +230,6 @@ export function extractNetworkName(doc: ComposeDocument): string | undefined {
     ) {
       return net.name;
     }
-  }
-
-  const defaultNet = doc.networks.default;
-  if (
-    defaultNet?.external === true &&
-    typeof defaultNet.name === "string" &&
-    defaultNet.name !== ""
-  ) {
-    return defaultNet.name;
   }
 
   return undefined;

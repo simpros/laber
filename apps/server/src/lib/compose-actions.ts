@@ -5,7 +5,12 @@ import {
   runLoggedAction,
   type StackStatusOnSuccess,
 } from "./logged-action";
-import { getStackAndRepo, assertStackName } from "./config";
+import {
+  getStackAndRepo,
+  getComposePath,
+  assertStackName,
+} from "./config";
+import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
 
 type LifecycleMeta = {
   title: string;
@@ -79,46 +84,59 @@ export function loggedDeployAction(
 
 type StackOp = "stop" | "restart" | "pull";
 
-const STACK_OPS: Record<
-  StackOp,
-  {
-    title: (name: string) => string;
-    action: string;
-    statusOnSuccess?: StackStatusOnSuccess;
-    failureMessage: (name: string) => string;
-  }
-> = {
+type StackOpCtx = {
+  stackName: string;
+  composePath: string;
+};
+
+type StackOpDef = {
+  title: (name: string) => string;
+  action: string;
+  statusOnSuccess?: StackStatusOnSuccess;
+  failureMessage: (name: string) => string;
+  run: (ctx: StackOpCtx, onOutput: (chunk: string) => void) => Promise<{
+    output: string;
+  }>;
+};
+
+// One teardown protocol for every stoppable project: `downProject` by name
+// (compose file optional, label fallback). Restart/pull are plain compose
+// argv. Each op owns its `run`, so `runStackOp` has no `if (op === ...)`
+// branch — the table is the discriminator.
+const STACK_OPS: Record<StackOp, StackOpDef> = {
   stop: {
     title: (name) => `Stopping ${name}`,
     action: "stop",
     statusOnSuccess: "stopped",
     failureMessage: (name) => `Stopping ${name} failed`,
+    run: (ctx, onOutput) =>
+      downProject({
+        projectName: ctx.stackName,
+        composePath: ctx.composePath,
+        onOutput,
+      }),
   },
   restart: {
     title: (name) => `Restarting ${name}`,
     action: "restart",
     failureMessage: (name) => `Restarting ${name} failed`,
+    run: (ctx, onOutput) =>
+      runComposeCommand(ctx.composePath, ["restart"], ctx.stackName, onOutput),
   },
   pull: {
     title: (name) => `Pulling images for ${name}`,
     action: "pull",
     failureMessage: (name) => `Pulling images for ${name} failed`,
+    run: (ctx, onOutput) =>
+      runComposeCommand(ctx.composePath, ["pull"], ctx.stackName, onOutput),
   },
-};
-
-// Only restart/pull are compose-argv invocations. Stop is project teardown
-// by name — there is exactly one "bring it down" protocol, shared with repo
-// delete, and it needs no compose file.
-const STACK_ARGV: Record<"restart" | "pull", string[]> = {
-  restart: ["restart"],
-  pull: ["pull"],
 };
 
 /**
  * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
- * near-identical wrappers. Compose argv lives here, not in routes; restart
- * and pull carry `stackId` but no `statusOnSuccess`, so they never touch
- * `stacks.status` (they do not change desired runtime).
+ * near-identical wrappers. Restart and pull carry `stackId` but no
+ * `statusOnSuccess`, so they never touch `stacks.status` (they do not
+ * change desired runtime).
  */
 export async function runStackOp(
   name: string,
@@ -127,72 +145,102 @@ export async function runStackOp(
   assertStackName(name);
   const def = STACK_OPS[op];
   const { stack, composePath } = await getStackAndRepo(name);
-  const meta = {
+  return runLoggedAction({
     title: def.title(name),
     action: def.action,
     stackId: stack.id,
     statusOnSuccess: def.statusOnSuccess,
     failureMessage: def.failureMessage(name),
-  };
-  if (op === "stop") {
-    return runLoggedAction({
-      ...meta,
-      run: async (onOutput) => {
-        const result = await downProject({
-          projectName: stack.name,
-          composePath,
-          onOutput,
-        });
-        return { output: result.output };
-      },
-    });
-  }
-  return loggedComposeAction({
-    ...meta,
-    composePath,
-    projectName: stack.name,
-    argv: STACK_ARGV[op],
+    run: async (onOutput) =>
+      def.run({ stackName: stack.name, composePath }, onOutput),
+  });
+}
+
+export type StackRowLike = {
+  id: string;
+  name: string;
+  repositoryId: string;
+  relativePath: string;
+  composeFile: string;
+};
+
+/**
+ * Stop for an already-loaded stack row: the same logged `downProject` stop
+ * as `runStackOp(name, "stop")`, without re-entering `getStackAndRepo`.
+ * Repo delete tears down N known rows; re-looking each up by name would be
+ * N redundant queries for rows the caller already holds.
+ */
+export function stopStackRow(stack: StackRowLike): Promise<{
+  output: string;
+}> {
+  const def = STACK_OPS.stop;
+  const composePath = getComposePath(
+    stack.repositoryId,
+    stack.relativePath,
+    stack.composeFile
+  );
+  return runLoggedAction({
+    title: def.title(stack.name),
+    action: def.action,
+    stackId: stack.id,
+    statusOnSuccess: def.statusOnSuccess,
+    failureMessage: def.failureMessage(stack.name),
+    run: async (onOutput) =>
+      def.run({ stackName: stack.name, composePath }, onOutput),
   });
 }
 
 type CoreOp = "stop" | "restart";
 
-const CORE_OPS: Record<
-  CoreOp,
-  {
-    title: string;
-    action: string;
-    argv: string[];
-    failureMessage: string;
-  }
-> = {
+type CoreOpDef = {
+  title: string;
+  action: string;
+  failureMessage: string;
+  run: (
+    composePath: string,
+    onOutput: (chunk: string) => void
+  ) => Promise<{ output: string }>;
+};
+
+// Core shares the one teardown protocol: stop is `downProject` by project
+// name (recovers when the core compose file vanished out of band), restart
+// is compose argv. Each op owns its `run`; the compose path is resolved
+// here, never in routes.
+const CORE_OPS: Record<CoreOp, CoreOpDef> = {
   stop: {
     title: "Stopping core services",
     action: "stop",
-    argv: ["down"],
     failureMessage: "Stopping core services failed",
+    run: (composePath, onOutput) =>
+      downProject({
+        projectName: CORE_PROJECT,
+        composePath,
+        onOutput,
+      }),
   },
   restart: {
     title: "Restarting core services",
     action: "restart",
-    argv: ["restart"],
     failureMessage: "Restarting core services failed",
+    run: (composePath, onOutput) =>
+      runComposeCommand(
+        composePath,
+        ["restart"],
+        CORE_PROJECT,
+        onOutput
+      ),
   },
 };
 
-/** Table-driven core lifecycle: `runCoreOp("stop", composePath)`. */
-export function runCoreOp(
-  op: CoreOp,
-  composePath: string
-): Promise<{ output: string }> {
+/** Table-driven core lifecycle: `runCoreOp("stop")`. */
+export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
   const def = CORE_OPS[op];
-  return loggedComposeAction({
+  const composePath = getCoreComposePath();
+  return runLoggedAction({
     title: def.title,
     action: def.action,
     isCore: true,
     failureMessage: def.failureMessage,
-    composePath,
-    projectName: "laber-core",
-    argv: def.argv,
+    run: async (onOutput) => def.run(composePath, onOutput),
   });
 }

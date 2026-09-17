@@ -2,7 +2,6 @@ import { Elysia } from "elysia";
 import * as v from "valibot";
 import {
   getCoreOverview,
-  getCoreComposePath,
   saveCoreConfig,
   deployCore,
 } from "../lib/core-stack";
@@ -29,8 +28,8 @@ export const coreRoutes = new Elysia()
     return deployCore();
   })
   .post("/api/core/stop", async () => {
-    return runCoreOp("stop", getCoreComposePath());
+    return runCoreOp("stop");
   })
   .post("/api/core/restart", async () => {
-    return runCoreOp("restart", getCoreComposePath());
+    return runCoreOp("restart");
   });

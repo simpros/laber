@@ -8,6 +8,17 @@ const defaults = {
   listContainers: unavailable as (
     _projectLabel?: string
   ) => Promise<ContainerInfo[]>,
+  listContainersSoft: async (
+    _projectLabel?: string
+  ): Promise<ContainerInfo[]> => {
+    // Soft by default, and follows `listContainers` overrides: tests stub
+    // the hard probe, and read paths degrade to empty on Docker failure.
+    try {
+      return await dockerStub.listContainers(_projectLabel);
+    } catch {
+      return [];
+    }
+  },
   getContainerLogs: unavailable as (_options: {
     containerId: string;
     tail?: number;

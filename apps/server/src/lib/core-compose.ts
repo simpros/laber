@@ -1,5 +1,6 @@
 import { stringify } from "yaml";
 import type { CoreConfigShape } from "./core-keys";
+import { TRAEFIK_CONTAINER } from "./core-identity";
 
 /**
  * Traefik compose-template construction for the core stack. This file owns
@@ -19,7 +20,7 @@ export function buildCoreCompose(
   const services: Record<string, unknown> = {
     "reverse-proxy": {
       image: "traefik:v3",
-      container_name: "laber-reverse-proxy",
+      container_name: TRAEFIK_CONTAINER,
       restart: "unless-stopped",
       security_opt: ["no-new-privileges:true"],
       ports: ["80:80", "443:443", "8080:8080"],
