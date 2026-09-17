@@ -4,6 +4,7 @@ import {
   isUnset,
   valueForSave,
   markSaved,
+  setRowSecret,
 } from "./masked-secret";
 
 describe("secretStatus", () => {
@@ -58,5 +59,66 @@ describe("isUnset / markSaved", () => {
       value: "",
       dirty: false,
     });
+  });
+});
+
+describe("setRowSecret", () => {
+  const fold = <T extends { hadValue: boolean; value: string; dirty: boolean }>(
+    entry: T,
+  ) => ({ ...entry, ...markSaved(entry) });
+
+  it("promote-to-secret converges through save (badge says set)", () => {
+    const plain = {
+      key: "TOKEN",
+      value: "carried-plaintext",
+      isSecret: false,
+      hadValue: false,
+      dirty: false,
+    };
+    const promoted = setRowSecret(plain, true);
+    // The carried value is sent, not dropped…
+    expect(valueForSave(promoted)).toBe("carried-plaintext");
+    // …and the post-save fold lands on the untouched snapshot with the
+    // server holding the value.
+    const saved = fold(promoted);
+    expect(saved.hadValue).toBe(true);
+    expect(secretStatus(saved)).toBe("set");
+  });
+
+  it("promote of an empty plain row stays unset", () => {
+    const plain = {
+      key: "TOKEN",
+      value: "",
+      isSecret: false,
+      hadValue: false,
+      dirty: false,
+    };
+    const promoted = setRowSecret(plain, true);
+    expect(valueForSave(promoted)).toBe("");
+    expect(secretStatus(fold(promoted))).toBe("unset");
+  });
+
+  it("demote of an untouched secret keeps (null) instead of clearing", () => {
+    const secret = {
+      key: "TOKEN",
+      value: "",
+      isSecret: true,
+      hadValue: true,
+      dirty: false,
+    };
+    const demoted = setRowSecret(secret, false);
+    expect(valueForSave(demoted)).toBeNull();
+  });
+
+  it("demote of a typed secret sends the typed value as plain", () => {
+    const secret = {
+      key: "TOKEN",
+      value: "typed",
+      isSecret: true,
+      hadValue: true,
+      dirty: true,
+    };
+    const demoted = setRowSecret(secret, false);
+    expect(valueForSave(demoted)).toBe("typed");
   });
 });

@@ -2,22 +2,14 @@ import { Link } from "@tanstack/react-router";
 import { Card, CardHeader, StatusBadge } from "@laber/ui";
 import { statusColor, timeAgo } from "@/lib/utils";
 import { useDashboard } from "@/lib/queries/dashboard";
+import QueryStatus from "@/components/QueryStatus";
 
 export default function DashboardPage() {
-  const { data, isLoading, isError, error } = useDashboard();
-
-  if (isLoading)
-    return <p className="text-text-muted text-sm">Loading…</p>;
-  if (isError || !data)
-    return (
-      <p className="text-danger text-sm">
-        {error instanceof Error
-          ? error.message
-          : "Failed to load dashboard"}
-      </p>
-    );
+  const query = useDashboard();
 
   return (
+    <QueryStatus query={query} failedMessage="Failed to load dashboard">
+      {(data) => (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
@@ -121,7 +113,9 @@ export default function DashboardPage() {
             )}
           </div>
         </Card>
+        </div>
       </div>
-    </div>
+      )}
+    </QueryStatus>
   );
 }

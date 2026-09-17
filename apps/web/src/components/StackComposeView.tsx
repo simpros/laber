@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@laber/ui";
+import { toErrorMessage } from "@/lib/queries/actions";
 import { useSaveStackCompose } from "@/lib/queries/stacks";
 import { Icon } from "@laber/ui";
 
@@ -26,9 +27,11 @@ export function StackComposeView({
     onSaved: () => setEditing(false),
   });
 
-  const error = saveMutation.result?.success
-    ? ""
-    : (saveMutation.result?.message ?? "");
+  function toggleEditing() {
+    setDraft(content);
+    saveMutation.reset();
+    setEditing((v) => !v);
+  }
 
   async function copyToClipboard() {
     await navigator.clipboard.writeText(content);
@@ -45,11 +48,7 @@ export function StackComposeView({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              setDraft(content);
-              saveMutation.clearResult();
-              setEditing((v) => !v);
-            }}
+            onClick={toggleEditing}
             className="text-text-muted hover:text-text-secondary flex items-center gap-1 text-xs transition-colors"
           >
             {editing ? "Cancel" : "Edit"}
@@ -78,7 +77,11 @@ export function StackComposeView({
             rows={24}
             className="w-full font-mono text-xs"
           />
-          {error && <p className="text-danger mt-2 text-xs">{error}</p>}
+          {saveMutation.isError && (
+            <p className="text-danger mt-2 text-xs">
+              {toErrorMessage(saveMutation.error, "Save failed")}
+            </p>
+          )}
           <div className="mt-2 flex justify-end">
             <Button
               variant="primary"

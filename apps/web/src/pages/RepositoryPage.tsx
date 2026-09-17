@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { Card, Button, Alert, Icon } from "@laber/ui";
+import { Card, Button, Icon } from "@laber/ui";
 import { timeAgo } from "@/lib/utils";
 import {
   useAddRepository,
@@ -8,9 +8,11 @@ import {
   useRepositories,
   useSyncRepository,
 } from "@/lib/queries/repositories";
+import MutationNotice from "@/components/MutationNotice";
+import QueryStatus from "@/components/QueryStatus";
 
 export default function RepositoryPage() {
-  const { data, isLoading, isError, error } = useRepositories();
+  const query = useRepositories();
   const [showAddForm, setShowAddForm] = useState(false);
 
   const addMutation = useAddRepository({
@@ -19,10 +21,13 @@ export default function RepositoryPage() {
   const syncMutation = useSyncRepository();
   const removeMutation = useRemoveRepository();
 
-  // One Alert owns the page feedback: every attempt clears the sibling
-  // channels first, so at most one result is ever visible.
-  const result =
-    addMutation.result ?? syncMutation.result ?? removeMutation.result;
+  // Sibling reset before every attempt: at most one notice is ever visible,
+  // with no shared channel to choreograph.
+  function resetAll() {
+    addMutation.reset();
+    syncMutation.reset();
+    removeMutation.reset();
+  }
 
   const form = useForm({
     defaultValues: {
@@ -33,8 +38,8 @@ export default function RepositoryPage() {
       sshPrivateKey: "",
     },
     onSubmit: async ({ value }) => {
-      clearAll();
-      await addMutation.mutateAsync({
+      resetAll();
+      addMutation.mutate({
         name: value.name,
         url: value.url,
         branch: value.branch || "main",
@@ -46,34 +51,19 @@ export default function RepositoryPage() {
 
   const syncingRepoId = syncMutation.syncingRepoId;
 
-  function clearAll() {
-    addMutation.clearResult();
-    syncMutation.clearResult();
-    removeMutation.clearResult();
-  }
-
-  if (isLoading)
-    return <p className="text-text-muted text-sm">Loading…</p>;
-  if (isError || !data)
-    return (
-      <p className="text-danger text-sm">
-        {error instanceof Error
-          ? error.message
-          : "Failed to load repositories"}
-      </p>
-    );
-
   function handleSync(repoId: string) {
-    clearAll();
+    resetAll();
     syncMutation.mutate(repoId);
   }
 
   function handleRemove(repoId: string) {
-    clearAll();
+    resetAll();
     removeMutation.mutate(repoId);
   }
 
   return (
+    <QueryStatus query={query} failedMessage="Failed to load repositories">
+      {(data) => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -89,11 +79,18 @@ export default function RepositoryPage() {
         )}
       </div>
 
-      {result && (
-        <Alert variant={result.success ? "success" : "error"}>
-          {result.message}
-        </Alert>
-      )}
+      <MutationNotice
+        mutation={addMutation}
+        errorFallback="Failed to add repository"
+      />
+      <MutationNotice
+        mutation={syncMutation}
+        errorFallback="Failed to sync repository"
+      />
+      <MutationNotice
+        mutation={removeMutation}
+        errorFallback="Failed to remove repository"
+      />
 
       {(showAddForm || data.repositories.length === 0) && (
         <form
@@ -302,6 +299,8 @@ export default function RepositoryPage() {
           </div>
         </Card>
       ))}
-    </div>
+      </div>
+      )}
+    </QueryStatus>
   );
 }

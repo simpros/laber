@@ -83,14 +83,39 @@ function NavLink({
 }
 
 /** Sidebar entry point for the activity stream (badge = running work). */
-export function ActivityLauncher({ onNavigate }: { onNavigate?: () => void }) {
+export function ActivityLauncher({
+  onNavigate,
+  iconOnly,
+}: {
+  onNavigate?: () => void;
+  /** Compact header variant: icon button with the running badge. */
+  iconOnly?: boolean;
+}) {
   const { hasRunning, setOpen } = useActivity();
+  const openPanel = () => {
+    setOpen(true);
+    onNavigate?.();
+  };
+  if (iconOnly) {
+    return (
+      <button
+        onClick={openPanel}
+        className="text-text-secondary hover:text-text-primary relative ml-auto rounded-md p-1 transition-colors"
+        aria-label="Open activity panel"
+      >
+        <Icon>
+          <path d="M8 1.5v5l3 1.5" />
+          <circle cx="8" cy="8" r="6.5" />
+        </Icon>
+        {hasRunning && (
+          <span className="bg-accent absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full"></span>
+        )}
+      </button>
+    );
+  }
   return (
     <button
-      onClick={() => {
-        setOpen(true);
-        onNavigate?.();
-      }}
+      onClick={openPanel}
       className="text-text-secondary hover:bg-surface-2 hover:text-text-primary relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors"
     >
       <Icon className="opacity-60">

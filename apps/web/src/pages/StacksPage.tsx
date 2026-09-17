@@ -2,20 +2,14 @@ import { Link } from "@tanstack/react-router";
 import { Card, Icon } from "@laber/ui";
 import { statusBadge } from "@/lib/utils";
 import { useStacks } from "@/lib/queries/stacks";
+import QueryStatus from "@/components/QueryStatus";
 
 export default function StacksPage() {
-  const { data: stacks, isLoading, isError, error } = useStacks();
-
-  if (isLoading)
-    return <p className="text-text-muted text-sm">Loading…</p>;
-  if (isError || !stacks)
-    return (
-      <p className="text-danger text-sm">
-        {error instanceof Error ? error.message : "Failed to load stacks"}
-      </p>
-    );
+  const query = useStacks();
 
   return (
+    <QueryStatus query={query} failedMessage="Failed to load stacks">
+      {(stacks) => (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Stacks</h1>
@@ -73,6 +67,8 @@ export default function StacksPage() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+      )}
+    </QueryStatus>
   );
 }

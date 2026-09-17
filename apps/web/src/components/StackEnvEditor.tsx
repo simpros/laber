@@ -1,8 +1,15 @@
 import { Button, Icon } from "@laber/ui";
-import { valueForSave, type MaskedSecretState } from "@/lib/masked-secret";
+import {
+  markSaved,
+  setRowSecret,
+  useMaskedEntries,
+  valueForSave,
+  type MaskedSecretState,
+} from "@/lib/masked-secret";
 import { useSaveStackEnv } from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
-import { MaskedSecretField, useMaskedEntries } from "@/components/MaskedSecretField";
+import MutationNotice from "@/components/MutationNotice";
+import { MaskedSecretField } from "@/components/MaskedSecretField";
 
 type EnvEntry = {
   key: string;
@@ -48,33 +55,35 @@ export default function StackEnvEditor({
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
   const { entries, setEntries, update, applySaved } = useMaskedEntries<Row>(
-    () => envVars.map(rowFor)
+    () => envVars.map(rowFor),
   );
 
   const missingVars = detectedEnvVars.filter(
-    (name) => !entries.some((e) => e.key === name)
+    (name) => !entries.some((e) => e.key === name),
   );
 
-  const saveMutation = useSaveStackEnv(stackName);
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    await saveMutation.mutateAsync(
-      entries.map((entry) => ({
-        key: entry.key,
-        // Untouched secrets send null (keep); an untouched row that *was*
-        // secret still sends null after unchecking — we hold no value to
-        // send, and "" would wrongly clear it.
-        value:
-          entry.isSecret || (entry.hadValue && !entry.dirty)
-            ? valueForSave(entry)
-            : entry.value,
-        isSecret: entry.isSecret,
-      }))
-    );
+  const saveMutation = useSaveStackEnv(stackName, {
     // Secrets clear back to the untouched snapshot; plain rows keep their
     // local values (the refetch converges underneath).
-    applySaved((entry) => entry.isSecret);
+    onSaved: () =>
+      applySaved((entry) =>
+        entry.isSecret ? { ...entry, ...markSaved(entry) } : entry,
+      ),
+  });
+
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    // `valueForSave` keys off `hadValue`/`dirty` — "the server still holds a
+    // masked value we never echoed → null (keep)" — and never looks at
+    // `isSecret`, so both toggle directions save correctly with no branch.
+    saveMutation.reset();
+    saveMutation.mutate(
+      entries.map((entry) => ({
+        key: entry.key,
+        value: valueForSave(entry),
+        isSecret: entry.isSecret,
+      })),
+    );
   }
 
   function addEnvVar() {
@@ -115,6 +124,7 @@ export default function StackEnvEditor({
                     editPlaceholder="value"
                     onInput={(value) => update(i, { value, dirty: true })}
                     onUndo={() => update(i, { value: "", dirty: false })}
+                    onClear={() => update(i, { value: "", dirty: true })}
                   />
                 ) : (
                   <input
@@ -145,7 +155,7 @@ export default function StackEnvEditor({
                   type="checkbox"
                   checked={entry.isSecret}
                   onChange={(e) =>
-                    update(i, { isSecret: e.target.checked })
+                    update(i, setRowSecret(entry, e.target.checked))
                   }
                   className="rounded"
                 />
@@ -166,11 +176,9 @@ export default function StackEnvEditor({
         })}
       </div>
 
-      {saveMutation.result && !saveMutation.result.success && (
-        <p className="text-danger mt-2 text-sm">
-          {saveMutation.result.message}
-        </p>
-      )}
+      <div className="mt-2">
+        <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
+      </div>
 
       <div className="mt-4 flex gap-2">
         <Button

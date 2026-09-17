@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Alert, Button } from "@laber/ui";
 import { useActivity } from "@/lib/activity";
+import { toErrorMessage } from "@/lib/queries/actions";
 import {
   useStackAction,
   useStackDetail,
@@ -11,6 +12,7 @@ import StackEnvEditor from "@/components/StackEnvEditor";
 import StackSecretsEditor from "@/components/StackSecretsEditor";
 import StackComposeView from "@/components/StackComposeView";
 import StackDeploymentLogs from "@/components/StackDeploymentLogs";
+import QueryStatus from "@/components/QueryStatus";
 
 const tabs = [
   { id: "services", label: "Services" },
@@ -37,7 +39,7 @@ export default function StackDetailPage({
   tab: StackTab;
   onTabChange: (tab: StackTab) => void;
 }) {
-  const { data, isLoading, isError, error } = useStackDetail(name);
+  const query = useStackDetail(name);
   const { setOpen } = useActivity();
 
   const actionMutation = useStackAction(name);
@@ -45,25 +47,19 @@ export default function StackDetailPage({
   const pendingAction = actionMutation.pendingAction;
 
   function handleAction(action: StackAction) {
-    actionMutation.clearResult();
+    actionMutation.reset();
     actionMutation.mutate(action);
   }
 
-  if (isLoading)
-    return <p className="text-text-muted text-sm">Loading…</p>;
-  if (isError || !data)
-    return (
-      <p className="text-danger text-sm">
-        {error instanceof Error ? error.message : "Failed to load stack"}
-      </p>
-    );
-
-  const isRunning =
-    data.containers.length > 0
-      ? data.containers.some((c) => c.state === "running")
-      : data.stack.status === "deployed";
-
   return (
+    <QueryStatus query={query} failedMessage="Failed to load stack">
+      {(data) => {
+        const isRunning =
+          data.containers.length > 0
+            ? data.containers.some((c) => c.state === "running")
+            : data.stack.status === "deployed";
+
+        return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -126,20 +122,21 @@ export default function StackDetailPage({
         </div>
       </div>
 
-      {actionMutation.result?.message && (
-        <Alert
-          variant={actionMutation.result?.success ? "success" : "error"}
-        >
-          {actionMutation.result.message}{" "}
-          {actionMutation.result?.success && (
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              className="underline underline-offset-2"
-            >
-              View activity
-            </button>
-          )}
+      {actionMutation.data && (
+        <Alert variant="success">
+          {actionMutation.data}{" "}
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="underline underline-offset-2"
+          >
+            View activity
+          </button>
+        </Alert>
+      )}
+      {actionMutation.isError && (
+        <Alert variant="error">
+          {toErrorMessage(actionMutation.error)}
         </Alert>
       )}
 
@@ -189,6 +186,9 @@ export default function StackDetailPage({
         />
       )}
       {tab === "logs" && <StackDeploymentLogs logs={data.logs} />}
-    </div>
+        </div>
+        );
+      }}
+    </QueryStatus>
   );
 }

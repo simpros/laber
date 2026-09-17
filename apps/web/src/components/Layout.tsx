@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Icon } from "@laber/ui";
-import { useActivity } from "@/lib/activity";
 import ActivityPanel from "@/components/ActivityPanel";
-import AppSidebar from "@/components/AppSidebar";
+import AppSidebar, { ActivityLauncher } from "@/components/AppSidebar";
 
 export default function Layout({
   children,
@@ -11,7 +10,6 @@ export default function Layout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { hasRunning, setOpen } = useActivity();
   // The drawer is navigation chrome: close it whenever the route changes
   // (in addition to per-link close) so it never survives a navigation.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -61,19 +59,7 @@ export default function Layout({
           <span className="font-mono text-sm font-bold tracking-tight">
             laber
           </span>
-          <button
-            onClick={() => setOpen(true)}
-            className="text-text-secondary hover:text-text-primary relative ml-auto rounded-md p-1 transition-colors"
-            aria-label="Open activity panel"
-          >
-            <Icon>
-              <path d="M8 1.5v5l3 1.5" />
-              <circle cx="8" cy="8" r="6.5" />
-            </Icon>
-            {hasRunning && (
-              <span className="bg-accent absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full"></span>
-            )}
-          </button>
+          <ActivityLauncher iconOnly />
         </header>
 
         <main className="flex-1 overflow-y-auto">

@@ -49,20 +49,79 @@ const ActivityContext = createContext<ActivityContextValue>({
   clear: () => {},
 });
 
-function applyEvent(prev: Activity[], event: ActivityEvent): Activity[] {
-  if (event.type === "init") return event.activities;
-  if (event.type === "start")
-    return [event.activity, ...prev].slice(0, 50);
-  if (event.type === "output") {
-    return prev.map((a) =>
-      a.id === event.id ? { ...a, output: a.output + event.chunk } : a
-    );
-  }
-  return prev.map((a) =>
-    a.id === event.id
-      ? { ...a, status: event.status, finishedAt: event.finishedAt }
-      : a
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isActivity(value: unknown): value is Activity {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    (value.status === "running" ||
+      value.status === "success" ||
+      value.status === "error") &&
+    typeof value.output === "string" &&
+    typeof value.startedAt === "number" &&
+    (value.finishedAt === undefined || typeof value.finishedAt === "number")
   );
+}
+
+/**
+ * Narrow the wire before it touches domain state: the SSE stream is `any`
+ * JSON, so an unknown `type` must be ignored loudly, never applied. (A wrong
+ * `type` falling through to the finish arm would patch rows with `undefined`
+ * fields and stall the panel while a deploy runs.)
+ */
+function isActivityEvent(value: unknown): value is ActivityEvent {
+  if (!isRecord(value)) return false;
+  switch (value.type) {
+    case "init":
+      return (
+        Array.isArray(value.activities) &&
+        value.activities.every(isActivity)
+      );
+    case "start":
+      return isActivity(value.activity);
+    case "output":
+      return typeof value.id === "string" && typeof value.chunk === "string";
+    case "finish":
+      return (
+        typeof value.id === "string" &&
+        (value.status === "running" ||
+          value.status === "success" ||
+          value.status === "error") &&
+        typeof value.finishedAt === "number"
+      );
+    default:
+      return false;
+  }
+}
+
+function applyEvent(prev: Activity[], event: ActivityEvent): Activity[] {
+  switch (event.type) {
+    case "init":
+      return event.activities;
+    case "start":
+      return [event.activity, ...prev].slice(0, 50);
+    case "output":
+      return prev.map((a) =>
+        a.id === event.id ? { ...a, output: a.output + event.chunk } : a,
+      );
+    case "finish":
+      return prev.map((a) =>
+        a.id === event.id
+          ? { ...a, status: event.status, finishedAt: event.finishedAt }
+          : a,
+      );
+    default: {
+      // Exhaustive: a new event variant fails to compile here until it gets
+      // its own arm above — it can never silently ride the finish path.
+      const _exhaustive: never = event;
+      void _exhaustive;
+      return prev;
+    }
+  }
 }
 
 export function ActivityProvider({ children }: { children: ReactNode }) {
@@ -77,17 +136,21 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handle = (raw: MessageEvent) => {
+      let parsed: unknown;
       try {
-        const event = JSON.parse(raw.data) as ActivityEvent;
-        setActivities((prev) => applyEvent(prev, event));
-        if (event.type === "start" && !openRef.current) setOpen(true);
+        parsed = JSON.parse(raw.data);
       } catch {
         // Malformed frames mean a server/stream bug: silent stalls look
-        // like idle deploys, so say so loudly in dev instead of swallowing.
-        if (import.meta.env.DEV) {
-          console.warn("[activity] ignoring malformed frame", raw.data);
-        }
+        // like idle deploys, so say so loudly instead of swallowing.
+        console.warn("[activity] ignoring malformed frame", raw.data);
+        return;
       }
+      if (!isActivityEvent(parsed)) {
+        console.warn("[activity] ignoring unknown event shape", raw.data);
+        return;
+      }
+      setActivities((prev) => applyEvent(prev, parsed));
+      if (parsed.type === "start" && !openRef.current) setOpen(true);
     };
 
     const connect = () => {

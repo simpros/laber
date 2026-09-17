@@ -1,20 +1,17 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
-import {
-  useActionResult,
-  useInvalidate,
-} from "./actions";
+import { queryKeys, useApiMutation, useLifecycleAction } from "./actions";
 
 export function useStacks() {
   return useQuery({
-    queryKey: ["stacks"],
+    queryKey: queryKeys.stacks,
     queryFn: async () => unwrap(await api.api.stacks.get()),
   });
 }
 
 export function useStackDetail(name: string) {
   return useQuery({
-    queryKey: ["stack", name],
+    queryKey: queryKeys.stack(name),
     queryFn: async () => unwrap(await api.api.stacks({ name }).get()),
   });
 }
@@ -40,33 +37,11 @@ export const STACK_ACTION_LABEL: Record<StackAction, string> = {
 };
 
 export function useStackAction(name: string) {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
-    mutationFn: async (action: StackAction) => {
-      return unwrap(await stackEndpoints(name)[action]());
-    },
-    onSuccess: (_res, action) => {
-      // Throw-on-failure server contract: reaching here means success. The
-      // full transcript streams to Activity; the page keeps a pointer only.
-      feedback.setResult({
-        success: true,
-        message: `${STACK_ACTION_LABEL[action]} finished — full log in Activity.`,
-      });
-      invalidate([
-        ["stack", name],
-        ["stacks"],
-        ["dashboard"],
-      ]);
-    },
-    onError: (e) => feedback.fail(e),
+  return useLifecycleAction({
+    endpoints: stackEndpoints(name),
+    labels: STACK_ACTION_LABEL,
+    invalidate: [queryKeys.stack(name), queryKeys.stacks, queryKeys.dashboard],
   });
-  return {
-    ...mutation,
-    result: feedback.result,
-    clearResult: feedback.clearResult,
-    pendingAction: mutation.isPending ? mutation.variables : undefined,
-  };
 }
 
 export type StackEnvPayload = Array<{
@@ -75,22 +50,21 @@ export type StackEnvPayload = Array<{
   isSecret: boolean;
 }>;
 
-export function useSaveStackEnv(stackName: string) {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
+export function useSaveStackEnv(
+  stackName: string,
+  opts?: { onSaved?: () => void },
+) {
+  return useApiMutation({
     mutationFn: async (entries: StackEnvPayload) => {
       const res = await api.api
         .stacks({ name: stackName })
         .env.put({ entries });
-      return unwrap(res);
+      unwrap(res);
+      return null;
     },
-    onSuccess: () => {
-      invalidate([["stack", stackName]]);
-    },
-    onError: (e) => feedback.fail(e, "Save failed"),
+    invalidate: [queryKeys.stack(stackName)],
+    onSuccess: () => opts?.onSaved?.(),
   });
-  return { ...mutation, result: feedback.result, clearResult: feedback.clearResult };
 }
 
 export type StackSecretPayload = Array<{
@@ -98,42 +72,36 @@ export type StackSecretPayload = Array<{
   value: string | null;
 }>;
 
-export function useSaveStackSecrets(stackName: string) {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
+export function useSaveStackSecrets(
+  stackName: string,
+  opts?: { onSaved?: () => void },
+) {
+  return useApiMutation({
     mutationFn: async (entries: StackSecretPayload) => {
       const res = await api.api
         .stacks({ name: stackName })
         .secrets.put({ entries });
-      return unwrap(res);
+      unwrap(res);
+      return null;
     },
-    onSuccess: () => {
-      invalidate([["stack", stackName]]);
-    },
-    onError: (e) => feedback.fail(e, "Save failed"),
+    invalidate: [queryKeys.stack(stackName)],
+    onSuccess: () => opts?.onSaved?.(),
   });
-  return { ...mutation, result: feedback.result, clearResult: feedback.clearResult };
 }
 
 export function useSaveStackCompose(
   stackName: string,
-  opts?: { onSaved?: () => void }
+  opts?: { onSaved?: () => void },
 ) {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
+  return useApiMutation({
     mutationFn: async (content: string) => {
       const res = await api.api
         .stacks({ name: stackName })
         .compose.put({ content });
-      return unwrap(res);
+      unwrap(res);
+      return null;
     },
-    onSuccess: () => {
-      opts?.onSaved?.();
-      invalidate([["stack", stackName]]);
-    },
-    onError: (e) => feedback.fail(e, "Save failed"),
+    invalidate: [queryKeys.stack(stackName)],
+    onSuccess: () => opts?.onSaved?.(),
   });
-  return { ...mutation, result: feedback.result, clearResult: feedback.clearResult };
 }

@@ -1,8 +1,14 @@
 import { Button, Icon } from "@laber/ui";
-import { isUnset, valueForSave, type MaskedSecretState } from "@/lib/masked-secret";
+import {
+  isUnset,
+  useMaskedEntries,
+  valueForSave,
+  type MaskedSecretState,
+} from "@/lib/masked-secret";
 import { useSaveStackSecrets } from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
-import { MaskedSecretField, useMaskedEntries } from "@/components/MaskedSecretField";
+import MutationNotice from "@/components/MutationNotice";
+import { MaskedSecretField } from "@/components/MaskedSecretField";
 
 type SecretEntry = {
   name: string;
@@ -40,19 +46,21 @@ export default function StackSecretsEditor({
 
   const unsetCount = entries.filter(isUnset).length;
 
-  const saveMutation = useSaveStackSecrets(stackName);
+  const saveMutation = useSaveStackSecrets(stackName, {
+    // The server now holds what we sent: secrets clear back to the
+    // untouched snapshot instead of waiting for the refetch.
+    onSaved: () => applySaved(),
+  });
 
-  async function handleSave(e: React.FormEvent) {
+  function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    await saveMutation.mutateAsync(
+    saveMutation.reset();
+    saveMutation.mutate(
       entries.map((entry) => ({
         name: entry.name,
         value: valueForSave(entry),
-      }))
+      })),
     );
-    // The server now holds what we sent: secrets clear back to the
-    // untouched snapshot instead of waiting for the refetch.
-    applySaved();
   }
 
   if (entries.length === 0) {
@@ -98,6 +106,7 @@ export default function StackSecretsEditor({
               entry={entry}
               onInput={(value) => update(i, { value, dirty: true })}
               onUndo={() => update(i, { value: "", dirty: false })}
+              onClear={() => update(i, { value: "", dirty: true })}
             />
 
             <div className="text-text-muted mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
@@ -110,11 +119,7 @@ export default function StackSecretsEditor({
         ))}
       </div>
 
-      {saveMutation.result && !saveMutation.result.success && (
-        <p className="text-danger mt-2 text-sm">
-          {saveMutation.result.message}
-        </p>
-      )}
+      <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
 
       <div className="mt-4">
         <Button

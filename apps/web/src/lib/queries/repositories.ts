@@ -1,13 +1,10 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
-import {
-  useActionResult,
-  useInvalidate,
-} from "./actions";
+import { queryKeys, useApiMutation } from "./actions";
 
 export function useRepositories() {
   return useQuery({
-    queryKey: ["repositories"],
+    queryKey: queryKeys.repositories,
     queryFn: async () => unwrap(await api.api.repositories.get()),
   });
 }
@@ -20,79 +17,53 @@ export type AddRepositoryInput = {
   sshPrivateKey: string | null;
 };
 
-export function useAddRepository(
-  opts?: { onAdded?: () => void }
-) {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
+export function useAddRepository(opts?: { onAdded?: () => void }) {
+  return useApiMutation({
     mutationFn: async (input: AddRepositoryInput) => {
       const res = await api.api.repositories.post(input);
-      return unwrap(res);
+      const created = unwrap(res);
+      return `Repository added. Discovered ${created.discovered} stack(s).`;
     },
-    onSuccess: (res) => {
-      opts?.onAdded?.();
-      feedback.setResult({
-        success: true,
-        message: `Repository added. Discovered ${res.discovered} stack(s).`,
-      });
-      invalidate([
-        ["repositories"],
-        ["stacks"],
-        ["dashboard"],
-      ]);
-    },
-    onError: (e) => feedback.fail(e, "Failed to add repository"),
+    invalidate: [
+      queryKeys.repositories,
+      queryKeys.stacks,
+      queryKeys.dashboard,
+    ],
+    onSuccess: () => opts?.onAdded?.(),
   });
-  return { ...mutation, result: feedback.result, clearResult: feedback.clearResult };
 }
 
 export function useSyncRepository() {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
+  const mutation = useApiMutation({
     mutationFn: async (repoId: string) => {
       const res = await api.api.repositories({ id: repoId }).sync.post();
-      return unwrap(res);
-    },
-    onSuccess: (res) => {
+      const synced = unwrap(res);
       const parts = [
-        `${res.newStacks} new`,
-        `${res.updatedStacks} updated`,
+        `${synced.newStacks} new`,
+        `${synced.updatedStacks} updated`,
       ];
-      if (res.removedStacks.length > 0) {
+      if (synced.removedStacks.length > 0) {
         parts.push(
-          `${res.removedStacks.length} removed (${res.removedStacks.join(", ")})`
+          `${synced.removedStacks.length} removed (${synced.removedStacks.join(", ")})`,
         );
       }
-      feedback.setResult({
-        success: true,
-        message: `Synced. Found ${parts.join(", ")} stack(s).`,
-      });
-      invalidate([["repositories"], ["stacks"]]);
+      return `Synced. Found ${parts.join(", ")} stack(s).`;
     },
-    onError: (e) => feedback.fail(e, "Failed to sync repository"),
+    invalidate: [queryKeys.repositories, queryKeys.stacks],
   });
   return {
     ...mutation,
-    result: feedback.result,
-    clearResult: feedback.clearResult,
     syncingRepoId: mutation.isPending ? mutation.variables : undefined,
   };
 }
 
 export function useRemoveRepository() {
-  const invalidate = useInvalidate();
-  const feedback = useActionResult();
-  const mutation = useMutation({
+  return useApiMutation({
     mutationFn: async (repoId: string) => {
       const res = await api.api.repositories({ id: repoId }).delete();
-      return unwrap(res);
+      unwrap(res);
+      return null;
     },
-    onSuccess: () => {
-      invalidate([["repositories"], ["stacks"]]);
-    },
-    onError: (e) => feedback.fail(e, "Failed to remove repository"),
+    invalidate: [queryKeys.repositories, queryKeys.stacks],
   });
-  return { ...mutation, result: feedback.result, clearResult: feedback.clearResult };
 }

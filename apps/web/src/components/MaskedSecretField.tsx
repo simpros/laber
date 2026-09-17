@@ -1,9 +1,5 @@
-import { useState } from "react";
 import { Icon } from "@laber/ui";
-import {
-  markSaved,
-  type MaskedSecretState,
-} from "@/lib/masked-secret";
+import type { MaskedSecretState } from "@/lib/masked-secret";
 
 /**
  * One secret input for every masked field in the SPA: the password input
@@ -79,29 +75,4 @@ export function MaskedSecretField({
       ) : null}
     </div>
   );
-}
-
-/**
- * List-editor state over the shared model: index updates plus the
- * post-save fold (`markSaved`) with an opt-out for rows that keep their
- * local value after save (plain-text env rows).
- */
-export function useMaskedEntries<T extends MaskedSecretState>(
-  init: () => T[]
-) {
-  const [entries, setEntries] = useState<T[]>(init);
-  return {
-    entries,
-    setEntries,
-    update: (index: number, patch: Partial<T>) =>
-      setEntries((prev) =>
-        prev.map((e, i) => (i === index ? { ...e, ...patch } : e))
-      ),
-    applySaved: (shouldReset: (entry: T) => boolean = () => true) =>
-      setEntries((prev) =>
-        prev.map((e) =>
-          shouldReset(e) ? { ...e, ...markSaved(e) } : e
-        )
-      ),
-  };
 }
