@@ -20,6 +20,38 @@ function isUniqueViolation(e: unknown): boolean {
 }
 
 /**
+ * Race between the pre-check above and the insert below: re-read inside the
+ * same tx to name only the rows another repo actually owns, instead of
+ * blaming the whole add batch. Falls back to a generic message when nothing
+ * is found (the UNIQUE failure came from somewhere — never invent names).
+ */
+function alreadyRegisteredConflict(
+  tx: StackTx,
+  repoId: string,
+  addedNames: string[]
+): ConflictError {
+  const rows = tx
+    .select({ name: stacks.name, repositoryId: stacks.repositoryId })
+    .from(stacks)
+    .where(inArray(stacks.name, addedNames))
+    .all();
+  const colliders = [
+    ...new Set(
+      rows
+        .filter((r) => r.repositoryId !== repoId)
+        .map((r) => r.name)
+    ),
+  ];
+  return colliders.length > 0
+    ? new ConflictError(
+        `Stack name(s) already registered: ${colliders.join(", ")}`
+      )
+    : new ConflictError(
+        "Stack name(s) already registered by another repository"
+      );
+}
+
+/**
  * Stack-table reconcile: apply filesystem discovery to the stacks table.
  * This is persistence policy, not VCS work — it lives here (next to
  * repositories, not in `git.ts`) so the VCS module never imports the stacks
@@ -119,9 +151,7 @@ export function reconcileStacksTx(
         .run();
     } catch (e) {
       if (isUniqueViolation(e)) {
-        throw new ConflictError(
-          `Stack name(s) already registered: ${addedNames.join(", ")}`
-        );
+        throw alreadyRegisteredConflict(tx, repoId, addedNames);
       }
       throw e;
     }

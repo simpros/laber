@@ -153,8 +153,72 @@ describe("repositories", () => {
     rmSync(fixtureDir, { recursive: true, force: true });
   });
 
-  it("returns 404 for unknown repositories", async () => {
-    const sync = await app.handle(
+  it("returns 409 when a second repo discovers an already-registered stack name", async () => {
+    const firstDir = initFixtureRepo(["collision-demo"]);
+    const firstRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "collision-first",
+          url: firstDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(firstRes.status).toBe(201);
+
+    const secondDir = initFixtureRepo(["collision-demo"]);
+    const secondRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "collision-second",
+          url: secondDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(secondRes.status).toBe(409);
+    const body = (await secondRes.json()) as { error: string };
+    expect(body.error).toMatch(/already registered/);
+    expect(body.error).toContain("collision-demo");
+
+    // The failed register leaves no repo row behind.
+    const ghosts = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.name, "collision-second"));
+    expect(ghosts).toHaveLength(0);
+
+    // Cleanup: delete the first repo (its stack was never deployed, so the
+    // down-first teardown is a no-op against the stub).
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const first = list.repositories.find(
+      (r) => r.name === "collision-first"
+    )!;
+    const delRes = await app.handle(
+      req(`/api/repositories/${first.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      })
+    );
+    expect(delRes.status).toBe(200);
+
+    rmSync(firstDir, { recursive: true, force: true });
+    rmSync(secondDir, { recursive: true, force: true });
+  });
+
+  it("returns 404 for unknown repositories", async () => {    const sync = await app.handle(
       jsonReq("/api/repositories/does-not-exist/sync", "POST", {}, cookie)
     );
     expect(sync.status).toBe(404);
