@@ -1,5 +1,5 @@
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, isAbsolute, resolve } from "path";
 import { tmpdir } from "os";
 import {
   execCompose,
@@ -48,6 +48,19 @@ function writeEnvFile(envVars: Record<string, string>): string {
   return envPath;
 }
 
+function resolveSecretFiles(
+  composePath: string,
+  files: SecretFile[]
+): SecretFile[] {
+  const composeDir = dirname(composePath);
+  return files.map((f) => ({
+    ...f,
+    filePath: isAbsolute(f.filePath)
+      ? f.filePath
+      : resolve(composeDir, f.filePath),
+  }));
+}
+
 function writeSecretFiles(files: SecretFile[]): void {
   for (const { filePath, value } of files) {
     mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
@@ -65,7 +78,9 @@ export async function deployStack(
   let envFilePath: string | undefined;
   try {
     if (options.secretFiles?.length) {
-      writeSecretFiles(options.secretFiles);
+      writeSecretFiles(
+        resolveSecretFiles(options.composePath, options.secretFiles)
+      );
     }
 
     const envArgs: string[] = [];
@@ -74,7 +89,7 @@ export async function deployStack(
       envArgs.push("--env-file", envFilePath);
     }
 
-    const command = [...envArgs, "up", "-d"].join(" ");
+    const command = [...envArgs, "up", "-d"];
 
     const result = await execCompose({
       composePath: options.composePath,
@@ -115,7 +130,7 @@ export async function stopStack(
   projectName?: string,
   onOutput?: (chunk: string) => void
 ): Promise<DeployResult> {
-  return runComposeCommand(composePath, "down", projectName, onOutput);
+  return runComposeCommand(composePath, ["down"], projectName, onOutput);
 }
 
 export async function restartStack(
@@ -123,7 +138,12 @@ export async function restartStack(
   projectName?: string,
   onOutput?: (chunk: string) => void
 ): Promise<DeployResult> {
-  return runComposeCommand(composePath, "restart", projectName, onOutput);
+  return runComposeCommand(
+    composePath,
+    ["restart"],
+    projectName,
+    onOutput
+  );
 }
 
 export async function pullStack(
@@ -131,7 +151,7 @@ export async function pullStack(
   projectName?: string,
   onOutput?: (chunk: string) => void
 ): Promise<DeployResult> {
-  return runComposeCommand(composePath, "pull", projectName, onOutput);
+  return runComposeCommand(composePath, ["pull"], projectName, onOutput);
 }
 
 export async function getStackContainers(

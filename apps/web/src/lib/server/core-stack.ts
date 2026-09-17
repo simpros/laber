@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { stringify } from "yaml";
+import { error } from "@sveltejs/kit";
+import { db, coreConfig } from "@laber/db";
 import { listContainers, runComposeCommand } from "./docker";
 import { deployStack } from "./stack-manager";
 import { DATA_DIR } from "./config";
@@ -24,6 +26,30 @@ type CoreServiceStatus = {
   state: string;
   image: string;
 };
+
+export async function loadCoreConfig(): Promise<CoreConfig> {
+  const rows = await db.select().from(coreConfig);
+  const configMap = new Map(rows.map((r) => [r.key, r.value]));
+
+  const rootDomain = configMap.get("ROOT_DOMAIN");
+  const cfDnsApiToken = configMap.get("CF_DNS_API_TOKEN");
+  if (!rootDomain || !cfDnsApiToken) {
+    error(400, "ROOT_DOMAIN and CF_DNS_API_TOKEN are required");
+  }
+
+  return {
+    rootDomain,
+    cfDnsApiToken,
+    zoneId: configMap.get("ZONE_ID") || undefined,
+    tunnelToken: configMap.get("TUNNEL_TOKEN") || undefined,
+    httpTimeout: configMap.get("HTTP_TIMEOUT"),
+    pollingInterval: configMap.get("POLLING_INTERVAL"),
+    propagationTimeout: configMap.get("PROPAGATION_TIMEOUT"),
+    ttl: configMap.get("TTL"),
+    logLevel: configMap.get("LOG_LEVEL"),
+    acmeEmail: configMap.get("ACME_EMAIL"),
+  };
+}
 
 function getComposeDir(): string {
   const dir = join(DATA_DIR, "core");
@@ -178,7 +204,7 @@ export async function stopCoreStack(
 }> {
   return runComposeCommand(
     getComposePath(),
-    "down",
+    ["down"],
     "laber-core",
     onOutput
   );
@@ -192,7 +218,7 @@ export async function restartCoreStack(
 }> {
   return runComposeCommand(
     getComposePath(),
-    "restart",
+    ["restart"],
     "laber-core",
     onOutput
   );

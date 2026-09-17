@@ -34,6 +34,13 @@
 
   const stackName = $derived(page.params.name!);
   const data = $derived(await getStackDetail(stackName));
+  // DB status is telemetry; the action gate follows live container state.
+  // Fall back to the stored status only when Docker reports nothing.
+  const isRunning = $derived(
+    data.containers.length > 0
+      ? data.containers.some((c) => c.state === "running")
+      : data.stack.status === "deployed"
+  );
   let actionLoading = $state("");
   let result = $state<{ success?: boolean; output?: string } | null>(null);
 
@@ -98,7 +105,7 @@
         {actionLoading === "pull" ? "Pulling..." : "Pull"}
       </Button>
 
-      {#if data.stack.status === "deployed"}
+      {#if isRunning}
         <Button
           variant="secondary"
           size="sm"

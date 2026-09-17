@@ -318,4 +318,51 @@ describe("extractSecrets", () => {
     expect(result).toHaveLength(1);
     expect(result[0].services).toEqual([]);
   });
+
+  it("leaves paths untouched when no compose path is given", () => {
+    const compose = {
+      services: {
+        web: { secrets: ["db_password"] },
+      },
+      secrets: {
+        db_password: { file: "./secrets/db_password.txt" },
+      },
+    };
+    const result = extractSecrets(compose);
+    expect(result[0].filePath).toBe("./secrets/db_password.txt");
+  });
+
+  it("resolves relative secret paths against the compose directory", () => {
+    const compose = {
+      services: {
+        web: { secrets: ["db_password"] },
+      },
+      secrets: {
+        db_password: { file: "./secrets/db_password.txt" },
+      },
+    };
+    const result = extractSecrets(
+      compose,
+      "/data/repos/abc/stacks/myapp/docker-compose.yaml"
+    );
+    expect(result[0].filePath).toBe(
+      "/data/repos/abc/stacks/myapp/secrets/db_password.txt"
+    );
+  });
+
+  it("keeps absolute secret paths as-is when resolving", () => {
+    const compose = {
+      services: {
+        web: { secrets: ["db_password"] },
+      },
+      secrets: {
+        db_password: { file: "/run/secrets/db_password" },
+      },
+    };
+    const result = extractSecrets(
+      compose,
+      "/data/repos/abc/stacks/myapp/docker-compose.yaml"
+    );
+    expect(result[0].filePath).toBe("/run/secrets/db_password");
+  });
 });

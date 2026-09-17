@@ -1,5 +1,4 @@
 import * as v from "valibot";
-import { error } from "@sveltejs/kit";
 import { query, command } from "$app/server";
 import { db, coreConfig } from "@laber/db";
 import { sql } from "drizzle-orm";
@@ -8,7 +7,7 @@ import {
   stopCoreStack,
   restartCoreStack,
   getCoreStatus,
-  type CoreConfig,
+  loadCoreConfig,
 } from "$lib/server/core-stack";
 import { CORE_KEYS } from "$lib/core-keys";
 import { runLoggedAction } from "$lib/server/logged-action";
@@ -77,26 +76,7 @@ export const saveCoreConfig = command(
 
 export const deployCore = command(async () => {
   requireUser();
-  const config = await db.select().from(coreConfig);
-  const configMap: Record<string, string> = {};
-  for (const c of config) configMap[c.key] = c.value;
-
-  if (!configMap.ROOT_DOMAIN || !configMap.CF_DNS_API_TOKEN) {
-    error(400, "ROOT_DOMAIN and CF_DNS_API_TOKEN are required");
-  }
-
-  const coreConf: CoreConfig = {
-    rootDomain: configMap.ROOT_DOMAIN,
-    cfDnsApiToken: configMap.CF_DNS_API_TOKEN,
-    zoneId: configMap.ZONE_ID || undefined,
-    tunnelToken: configMap.TUNNEL_TOKEN || undefined,
-    httpTimeout: configMap.HTTP_TIMEOUT,
-    pollingInterval: configMap.POLLING_INTERVAL,
-    propagationTimeout: configMap.PROPAGATION_TIMEOUT,
-    ttl: configMap.TTL,
-    logLevel: configMap.LOG_LEVEL,
-    acmeEmail: configMap.ACME_EMAIL,
-  };
+  const coreConf = await loadCoreConfig();
 
   const result = await runLoggedAction({
     title: "Deploying core services",

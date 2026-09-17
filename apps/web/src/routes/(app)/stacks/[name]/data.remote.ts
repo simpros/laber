@@ -21,6 +21,7 @@ import {
   parseComposeFile,
   extractServices,
   extractAllEnvVarNames,
+  extractNetworkName,
   extractSecrets,
   readComposeRaw,
   type SecretDefinition,
@@ -131,9 +132,11 @@ export const deployStackCmd = command(v.string(), async (name) => {
   for (const ev of envVars) envMap[ev.key] = ev.value;
 
   let secretFiles: { filePath: string; value: string }[] = [];
+  let networkName = stack.networkName ?? undefined;
   try {
     const compose = parseComposeFile(composePath);
-    const defs = extractSecrets(compose);
+    networkName = extractNetworkName(compose) ?? networkName;
+    const defs = extractSecrets(compose, composePath);
     if (defs.length > 0) {
       const dbSecrets = await db
         .select()
@@ -163,7 +166,7 @@ export const deployStackCmd = command(v.string(), async (name) => {
         composePath,
         envVars: envMap,
         secretFiles,
-        networkName: stack.networkName ?? undefined,
+        networkName,
         projectName: stack.name,
         onOutput,
       }),

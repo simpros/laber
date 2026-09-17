@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { dirname, isAbsolute, resolve } from "path";
 import { parse } from "yaml";
 
 type ComposeSecretDef = {
@@ -180,7 +181,10 @@ export type SecretDefinition = {
   services: string[];
 };
 
-export function extractSecrets(compose: ComposeFile): SecretDefinition[] {
+export function extractSecrets(
+  compose: ComposeFile,
+  composePath?: string
+): SecretDefinition[] {
   if (!compose.secrets) return [];
 
   const serviceMap = new Map<string, string[]>();
@@ -197,8 +201,10 @@ export function extractSecrets(compose: ComposeFile): SecretDefinition[] {
     .filter(([, def]) => def.file)
     .map(([name, def]) => ({
       name,
-      filePath: def.file!,
+      filePath:
+        composePath && !isAbsolute(def.file!)
+          ? resolve(dirname(composePath), def.file!)
+          : def.file!,
       services: serviceMap.get(name) ?? [],
     }));
 }
-

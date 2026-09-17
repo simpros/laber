@@ -49,40 +49,8 @@ export function getContainerLogs(options: {
   containerId: string;
   tail?: number;
   since?: number;
-  follow?: boolean;
-}): Promise<string | ReadableStream<string>> {
+}): Promise<string> {
   const container = getDocker().getContainer(options.containerId);
-
-  if (options.follow) {
-    return container
-      .logs({
-        stdout: true,
-        stderr: true,
-        follow: true,
-        tail: options.tail ?? 100,
-        since: options.since,
-      })
-      .then((stream) => {
-        return new ReadableStream<string>({
-          start(controller) {
-            (stream as NodeJS.ReadableStream).on("data", (chunk) => {
-              controller.enqueue(chunk.toString());
-            });
-            (stream as NodeJS.ReadableStream).on("end", () => {
-              controller.close();
-            });
-            (stream as NodeJS.ReadableStream).on("error", (err) => {
-              controller.error(err);
-            });
-          },
-          cancel() {
-            (
-              stream as NodeJS.ReadableStream & { destroy?: () => void }
-            ).destroy?.();
-          },
-        });
-      });
-  }
 
   return container
     .logs({
@@ -93,6 +61,43 @@ export function getContainerLogs(options: {
       since: options.since,
     })
     .then((buffer) => buffer.toString());
+}
+
+export function followContainerLogs(options: {
+  containerId: string;
+  tail?: number;
+  since?: number;
+}): Promise<ReadableStream<string>> {
+  const container = getDocker().getContainer(options.containerId);
+
+  return container
+    .logs({
+      stdout: true,
+      stderr: true,
+      follow: true,
+      tail: options.tail ?? 100,
+      since: options.since,
+    })
+    .then((stream) => {
+      return new ReadableStream<string>({
+        start(controller) {
+          (stream as NodeJS.ReadableStream).on("data", (chunk) => {
+            controller.enqueue(chunk.toString());
+          });
+          (stream as NodeJS.ReadableStream).on("end", () => {
+            controller.close();
+          });
+          (stream as NodeJS.ReadableStream).on("error", (err) => {
+            controller.error(err);
+          });
+        },
+        cancel() {
+          (
+            stream as NodeJS.ReadableStream & { destroy?: () => void }
+          ).destroy?.();
+        },
+      });
+    });
 }
 
 export async function ensureNetwork(networkName: string): Promise<void> {
@@ -123,7 +128,7 @@ export async function connectContainerToNetwork(
 
 export async function execCompose(options: {
   composePath: string;
-  command: string;
+  command: string[];
   envVars?: Record<string, string>;
   projectName?: string;
   onOutput?: (chunk: string) => void;
@@ -132,12 +137,15 @@ export async function execCompose(options: {
   if (options.projectName) {
     args.push("--project-name", options.projectName);
   }
-  args.push(...options.command.split(" "));
+  args.push(...options.command);
 
-  const env: Record<string, string> = {
-    ...process.env,
-    ...(options.envVars ?? {}),
-  } as Record<string, string>;
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[key] = value;
+  }
+  for (const [key, value] of Object.entries(options.envVars ?? {})) {
+    if (value !== undefined) env[key] = value;
+  }
 
   const proc = Bun.spawn(["docker", ...args], {
     env,
@@ -184,7 +192,7 @@ export async function execCompose(options: {
 
 export async function runComposeCommand(
   composePath: string,
-  command: string,
+  command: string[],
   projectName?: string,
   onOutput?: (chunk: string) => void
 ): Promise<{ success: boolean; output: string }> {

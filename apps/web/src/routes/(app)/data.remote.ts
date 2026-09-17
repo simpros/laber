@@ -7,7 +7,7 @@ import {
   coreConfig,
 } from "@laber/db";
 import { count, desc, eq } from "drizzle-orm";
-import { listContainers } from "$lib/server/docker";
+import { getCoreStatus } from "$lib/server/core-stack";
 import { requireUser } from "$lib/server/auth";
 
 export const getDashboard = query(async () => {
@@ -31,20 +31,9 @@ export const getDashboard = query(async () => {
   const coreSettings = await db.select().from(coreConfig);
   const coreConfigured = coreSettings.some((c) => c.key === "ROOT_DOMAIN");
 
-  let coreServices: Array<{
-    name: string;
-    state: string;
-    status: string;
-    image: string;
-  }> = [];
+  let coreServices: Awaited<ReturnType<typeof getCoreStatus>> = [];
   try {
-    const containers = await listContainers("laber-core");
-    coreServices = containers.map((c) => ({
-      name: c.name,
-      state: c.state,
-      status: c.status,
-      image: c.image,
-    }));
+    coreServices = await getCoreStatus();
   } catch {
     // Docker not available
   }

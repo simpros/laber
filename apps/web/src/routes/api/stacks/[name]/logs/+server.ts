@@ -1,4 +1,8 @@
-import { getContainerLogs, listContainers } from "$lib/server/docker";
+import {
+  getContainerLogs,
+  followContainerLogs,
+  listContainers,
+} from "$lib/server/docker";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async ({ params, url }) => {
@@ -15,11 +19,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
   const containerId = containers[0].id;
 
   if (follow) {
-    const stream = (await getContainerLogs({
+    const stream = await followContainerLogs({
       containerId,
       tail,
-      follow: true,
-    })) as ReadableStream<string>;
+    });
 
     const encoder = new TextEncoder();
     const sseStream = new ReadableStream({
@@ -49,11 +52,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
     });
   }
 
-  const logs = (await getContainerLogs({
+  const logs = await getContainerLogs({
     containerId,
     tail,
-    follow: false,
-  })) as string;
+  });
 
   return new Response(JSON.stringify({ logs }), {
     headers: { "Content-Type": "application/json" },
