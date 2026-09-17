@@ -39,20 +39,34 @@ async function recordActionOutcome(options: {
   }
 }
 
-export async function runLoggedAction(options: {
+export type LoggedActionRun<T> = (
+  onOutput: (chunk: string) => void
+) => Promise<LoggedActionResult & { value?: T }>;
+
+/**
+ * Single failure contract for logged actions: the run reports
+ * `{ success, output }` (plus an optional `value` on success) and this
+ * throws `ActionFailedError` with a short message on failure. The boolean
+ * lives only here for logging — callers get `{ success: true, output,
+ * value }` or an exception, never a second `ensureActionSuccess` step.
+ * The full transcript stays in the deployment log and activity stream.
+ */
+export async function runLoggedAction<T = void>(options: {
   title: string;
   action: string;
   stackId?: string;
   isCore?: boolean;
   statusOnSuccess?: "deployed" | "stopped" | "error";
-  run: (onOutput: (chunk: string) => void) => Promise<LoggedActionResult>;
-}): Promise<LoggedActionResult> {
+  failureMessage?: string;
+  run: LoggedActionRun<T>;
+}): Promise<{ success: true; output: string; value: T }> {
+  const failureMessage = options.failureMessage ?? `${options.title} failed`;
   const activity = createActivity(options.title);
 
   // A throwing `run` must never leave the activity stuck on "running":
   // finish the stream, persist the failure to the deployment log, then
   // rethrow so domain errors keep their status at the edge.
-  let result: LoggedActionResult;
+  let result: LoggedActionResult & { value?: T };
   try {
     result = await options.run((chunk) => appendOutput(activity.id, chunk));
   } catch (e) {
@@ -77,20 +91,9 @@ export async function runLoggedAction(options: {
     result,
   });
 
-  return result;
-}
-
-/**
- * Single failure contract for logged actions: a failed compose/git run is an
- * error, not a 200 `{ success: false }`. The message stays short — the full
- * transcript is already in the deployment log and the activity stream.
- */
-export function ensureActionSuccess(
-  result: LoggedActionResult,
-  fallbackMessage: string
-): { success: true; output: string } {
   if (!result.success) {
-    throw new ActionFailedError(fallbackMessage);
+    throw new ActionFailedError(failureMessage);
   }
-  return { success: true, output: result.output };
+
+  return { success: true, output: result.output, value: result.value as T };
 }

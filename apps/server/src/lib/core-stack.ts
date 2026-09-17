@@ -4,8 +4,8 @@ import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainers, runComposeCommand } from "./docker";
-import { deployStack } from "./stack-manager";
-import { runLoggedAction, ensureActionSuccess } from "./logged-action";
+import { deployStack } from "./deploy";
+import { runLoggedAction } from "./logged-action";
 import { DATA_DIR } from "./config";
 import { getCoreComposeContent } from "./core-compose";
 import { CORE_KEYS, type CoreConfigShape } from "./core-keys";
@@ -80,34 +80,6 @@ export async function deployCoreStack(
     projectName: "laber-core",
     onOutput,
   });
-}
-
-export async function stopCoreStack(
-  onOutput?: (chunk: string) => void
-): Promise<{
-  success: boolean;
-  output: string;
-}> {
-  return runComposeCommand(
-    getComposePath(),
-    ["down"],
-    "laber-core",
-    onOutput
-  );
-}
-
-export async function restartCoreStack(
-  onOutput?: (chunk: string) => void
-): Promise<{
-  success: boolean;
-  output: string;
-}> {
-  return runComposeCommand(
-    getComposePath(),
-    ["restart"],
-    "laber-core",
-    onOutput
-  );
 }
 
 export async function getCoreStatus(): Promise<CoreServiceStatus[]> {
@@ -197,45 +169,45 @@ export async function saveCoreConfig(
   return { success: true, message: "Configuration saved" };
 }
 
-export async function runCoreLifecycle(options: {
-  title: string;
-  action: string;
-  run: (onOutput: (chunk: string) => void) => Promise<{
-    success: boolean;
-    output: string;
-  }>;
-}) {
-  const result = await runLoggedAction({
-    title: options.title,
-    action: options.action,
+/**
+ * Core-side twin of `runStackLifecycle`: one call that looks the stack up,
+ * runs the compose command under logging, and throws `ActionFailedError`
+ * on failure. Core has no stack row, so this only flags `isCore`.
+ */
+async function runCoreCommand(
+  title: string,
+  action: string,
+  command: string[]
+) {
+  const { output } = await runLoggedAction({
+    title,
+    action,
     isCore: true,
-    run: options.run,
+    failureMessage: `${title} failed`,
+    run: (onOutput) =>
+      runComposeCommand(getComposePath(), command, "laber-core", onOutput),
   });
 
-  return ensureActionSuccess(result, `${options.title} failed`);
+  return { success: true as const, output };
 }
 
 export async function deployCore() {
   const config = await loadCoreConfig();
-  return runCoreLifecycle({
+  const { output } = await runLoggedAction({
     title: "Deploying core services",
     action: "deploy",
+    isCore: true,
+    failureMessage: "Deploying core services failed",
     run: (onOutput) => deployCoreStack(config, onOutput),
   });
+
+  return { success: true as const, output };
 }
 
 export async function stopCore() {
-  return runCoreLifecycle({
-    title: "Stopping core services",
-    action: "stop",
-    run: (onOutput) => stopCoreStack(onOutput),
-  });
+  return runCoreCommand("Stopping core services", "stop", ["down"]);
 }
 
 export async function restartCore() {
-  return runCoreLifecycle({
-    title: "Restarting core services",
-    action: "restart",
-    run: (onOutput) => restartCoreStack(onOutput),
-  });
+  return runCoreCommand("Restarting core services", "restart", ["restart"]);
 }

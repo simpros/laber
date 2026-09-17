@@ -1,5 +1,3 @@
-import { dirname } from "path";
-import { mkdirSync, writeFileSync } from "fs";
 import { relative } from "path";
 import {
   db,
@@ -11,19 +9,17 @@ import {
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
 import { listContainers, runComposeCommand } from "./docker";
-import { deployStack } from "./stack-manager";
+import { deployStack } from "./deploy";
 import {
   readComposeFile,
   extractServices,
   extractAllEnvVarNames,
   extractNetworkName,
   extractSecrets,
-  parseComposeContent,
 } from "./compose-parser";
 import { getStackAndRepo, getRepoDir, getComposePath } from "./config";
-import { runLoggedAction, ensureActionSuccess } from "./logged-action";
+import { runLoggedAction } from "./logged-action";
 import { ValidationError, NotFoundError } from "./errors";
-import type { StackTx } from "./git";
 import type { ContainerInfo } from "./types";
 
 function requireName(name: string): string {
@@ -198,11 +194,12 @@ export async function deployStackByName(name: string) {
     }));
   }
 
-  const result = await runLoggedAction({
+  const { output } = await runLoggedAction({
     title: `Deploying ${name}`,
     action: "deploy",
     stackId: stack.id,
     statusOnSuccess: "deployed",
+    failureMessage: `Deploying ${name} failed`,
     run: (onOutput) =>
       deployStack({
         composePath,
@@ -214,7 +211,7 @@ export async function deployStackByName(name: string) {
       }),
   });
 
-  return ensureActionSuccess(result, `Deploying ${name} failed`);
+  return { success: true as const, output };
 }
 
 export async function runStackLifecycle(options: {
@@ -228,16 +225,17 @@ export async function runStackLifecycle(options: {
   const lookup = await getStackAndRepo(options.name);
   const { stack, composePath } = lookup;
 
-  const result = await runLoggedAction({
+  const { output } = await runLoggedAction({
     title: options.title,
     action: options.action,
     stackId: stack.id,
     statusOnSuccess: options.statusOnSuccess,
+    failureMessage: `${options.title} failed`,
     run: (onOutput) =>
       runComposeCommand(composePath, options.command, stack.name, onOutput),
   });
 
-  return ensureActionSuccess(result, `${options.title} failed`);
+  return { success: true as const, output };
 }
 
 /** Compose argv lives here, not in the route module. */
@@ -268,141 +266,5 @@ export async function pullStack(name: string) {
     title: `Pulling images for ${name}`,
     action: "pull",
     command: ["pull"],
-  });
-}
-
-export async function saveComposeContent(name: string, content: string) {
-  requireName(name);
-  if (!content) {
-    throw new ValidationError("Compose content must not be empty");
-  }
-  // Reuse the single compose-shape gate: syntax errors and a missing
-  // `services` section are rejected before anything hits disk.
-  parseComposeContent(content);
-  const { composePath } = await getStackAndRepo(name);
-
-  mkdirSync(dirname(composePath), { recursive: true });
-  writeFileSync(composePath, content, "utf-8");
-
-  return { success: true };
-}
-
-/**
- * Shared replace-all for nullable keyed rows (stack env vars, stack secrets):
- * `null` means "leave unchanged" (keep the stored value, default ""),
- * anything else replaces the whole set in one transaction.
- */
-export function replaceNullableKeyedRows(
-  existingByKey: Map<string, string>,
-  entries: Array<{ key: string; value: string | null }>
-): Array<{ key: string; value: string }> {
-  return entries.map((e) => ({
-    key: e.key,
-    value: e.value ?? existingByKey.get(e.key) ?? "",
-  }));
-}
-
-export type EnvEntry = {
-  key: string;
-  value: string | null;
-  isSecret: boolean;
-};
-
-export type SecretEntry = {
-  name: string;
-  value: string | null;
-};
-
-/**
- * One replace-all for the nullable keyed-bag tables (stack env vars, stack
- * secrets): `null` means "leave unchanged" (keep the stored value, default
- * ""), anything else replaces the whole set. The snapshot read and the
- * delete+insert share one transaction, so concurrent PUTs merge against
- * committed state instead of clobbering each other's keys. Each table is
- * ~5 lines of column mapping; the load → merge → delete+insert shell lives
- * here exactly once.
- */
-async function replaceStackKeyedBag(options: {
-  name: string;
-  entries: Array<{ key: string; value: string | null }>;
-  loadExisting: (tx: StackTx, stackId: string) => Map<string, string>;
-  writeAll: (
-    tx: StackTx,
-    stackId: string,
-    merged: Array<{ key: string; value: string }>
-  ) => void;
-}): Promise<{ success: true }> {
-  requireName(options.name);
-  const { stack } = await getStackAndRepo(options.name);
-
-  db.transaction((tx) => {
-    const existingByKey = options.loadExisting(tx, stack.id);
-    const merged = replaceNullableKeyedRows(existingByKey, options.entries);
-    options.writeAll(tx, stack.id, merged);
-  });
-
-  return { success: true };
-}
-
-export async function replaceStackEnv(name: string, entries: EnvEntry[]) {
-  const isSecretByKey = new Map(entries.map((e) => [e.key, e.isSecret]));
-  return replaceStackKeyedBag({
-    name,
-    entries,
-    loadExisting: (tx, stackId) => {
-      const existing = tx
-        .select()
-        .from(stackEnvVars)
-        .where(eq(stackEnvVars.stackId, stackId))
-        .all();
-      return new Map(existing.map((e) => [e.key, e.value]));
-    },
-    writeAll: (tx, stackId, merged) => {
-      tx.delete(stackEnvVars).where(eq(stackEnvVars.stackId, stackId)).run();
-      if (merged.length > 0) {
-        tx.insert(stackEnvVars)
-          .values(
-            merged.map((e) => ({
-              stackId,
-              key: e.key,
-              value: e.value,
-              isSecret: isSecretByKey.get(e.key) ?? false,
-            }))
-          )
-          .run();
-      }
-    },
-  });
-}
-
-export async function replaceStackSecrets(
-  name: string,
-  entries: SecretEntry[]
-) {
-  return replaceStackKeyedBag({
-    name,
-    entries: entries.map((e) => ({ key: e.name, value: e.value })),
-    loadExisting: (tx, stackId) => {
-      const existing = tx
-        .select()
-        .from(stackSecrets)
-        .where(eq(stackSecrets.stackId, stackId))
-        .all();
-      return new Map(existing.map((s) => [s.name, s.value]));
-    },
-    writeAll: (tx, stackId, merged) => {
-      tx.delete(stackSecrets).where(eq(stackSecrets.stackId, stackId)).run();
-      if (merged.length > 0) {
-        tx.insert(stackSecrets)
-          .values(
-            merged.map((e) => ({
-              stackId,
-              name: e.key,
-              value: e.value,
-            }))
-          )
-          .run();
-      }
-    },
   });
 }

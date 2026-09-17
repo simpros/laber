@@ -4,62 +4,33 @@ import {
   listContainers,
 } from "./docker";
 import { NotFoundError } from "./errors";
-import { sseResponse, encodeEvent } from "./sse";
 
 /**
  * Stack-log domain: container selection plus snapshot-vs-follow branching.
- * The route module only parses `follow`/`tail` and returns this.
+ * Transport-agnostic: snapshot returns data, follow returns the raw log
+ * stream. The route module alone owns SSE framing (`sseResponse`).
  */
-export async function getStackLogs(
-  name: string,
-  options?: { follow?: boolean; tail?: number }
-): Promise<{ logs: string } | Response> {
-  const follow = options?.follow ?? false;
-  const tail = options?.tail ?? 100;
-
+async function resolveLogContainerId(name: string): Promise<string> {
   const containers = await listContainers(name);
   if (containers.length === 0) {
     throw new NotFoundError("No containers found for this stack");
   }
+  return containers[0].id;
+}
 
-  const containerId = containers[0].id;
-
-  if (follow) {
-    const stream = await followContainerLogs({
-      containerId,
-      tail,
-    });
-
-    return sseResponse(async (controller, onCleanup) => {
-      const reader = stream.getReader();
-      onCleanup(() => {
-        reader.cancel().catch(() => {
-          // already closed
-        });
-      });
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          controller.enqueue(encodeEvent(JSON.stringify(value)));
-        }
-        controller.close();
-      } catch {
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
-      } finally {
-        reader.releaseLock();
-      }
-    });
-  }
-
-  const logs = await getContainerLogs({
-    containerId,
-    tail,
-  });
-
+export async function getStackLogSnapshot(
+  name: string,
+  tail = 100
+): Promise<{ logs: string }> {
+  const containerId = await resolveLogContainerId(name);
+  const logs = await getContainerLogs({ containerId, tail });
   return { logs };
+}
+
+export async function followStackLogs(
+  name: string,
+  tail = 100
+): Promise<ReadableStream<string>> {
+  const containerId = await resolveLogContainerId(name);
+  return followContainerLogs({ containerId, tail });
 }

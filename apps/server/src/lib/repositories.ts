@@ -12,7 +12,7 @@ import {
 } from "./git";
 import { getRepoDir, getComposePath } from "./config";
 import { runComposeCommand } from "./docker";
-import { runLoggedAction, ensureActionSuccess } from "./logged-action";
+import { runLoggedAction } from "./logged-action";
 import { NotFoundError } from "./errors";
 
 export type AddRepositoryInput = {
@@ -78,11 +78,13 @@ async function materializeRepoTree<T>(options: {
     onOutput: (chunk: string) => void
   ) => { summary: string; result: T };
 }): Promise<T> {
-  let captured!: T;
-
-  const result = await runLoggedAction({
+  // The discovered value flows out through the run's return type — no
+  // out-of-band `captured` variable. A soft `{ success: false }` throws
+  // inside `runLoggedAction` before `value` is ever read.
+  const { value } = await runLoggedAction<T>({
     title: options.title,
     action: options.action,
+    failureMessage: options.failureMessage,
     run: async (onOutput) => {
       onOutput(
         options.fresh
@@ -111,19 +113,19 @@ async function materializeRepoTree<T>(options: {
         options.repoDir,
         options.stacksPath
       );
-      let summary = "";
+      // `db.transaction` runs the callback synchronously, so `applied` is
+      // assigned unless the callback threw — in which case this run throws
+      // too and the success return below is never reached.
+      let applied: { summary: string; result: T } | undefined;
       db.transaction((tx) => {
-        const applied = options.applyDiscovery(tx, discovered, onOutput);
-        captured = applied.result;
-        summary = applied.summary;
+        applied = options.applyDiscovery(tx, discovered, onOutput);
       });
-      return { success: true, output: summary };
+      const done = applied as { summary: string; result: T };
+      return { success: true, output: done.summary, value: done.result };
     },
   });
 
-  ensureActionSuccess(result, options.failureMessage);
-
-  return captured;
+  return value;
 }
 
 /**
@@ -262,6 +264,16 @@ export async function deleteRepository(id: string) {
     .from(stacks)
     .where(eq(stacks.repositoryId, id));
 
+  // One ordered state machine: the DB delete is authoritative and commits
+  // first; container shutdown and disk removal are best-effort cleanup after
+  // it. Every leftover is reported in `warnings` — nothing fails silently,
+  // and callers get one contract (`{ success: true, warnings }`) instead of
+  // three soft-fail loops with different visibility.
+  db.transaction((tx) => {
+    tx.delete(stacks).where(eq(stacks.repositoryId, id)).run();
+    tx.delete(repositories).where(eq(repositories.id, id)).run();
+  });
+
   const warnings: string[] = [];
   for (const stack of repoStacks) {
     try {
@@ -271,23 +283,20 @@ export async function deleteRepository(id: string) {
         stack.name
       );
     } catch (e) {
-      // A stack that is already down (or Docker being unavailable) must not
-      // block teardown; record it so the response says what was skipped.
+      // Containers may still be running, but the DB rows are already gone;
+      // say so explicitly instead of failing the delete after the fact.
       warnings.push(
         `Could not bring down stack ${stack.name}: ${e instanceof Error ? e.message : "unknown error"}`
       );
     }
   }
 
-  db.transaction((tx) => {
-    tx.delete(stacks).where(eq(stacks.repositoryId, id)).run();
-    tx.delete(repositories).where(eq(repositories.id, id)).run();
-  });
-
   try {
     rmSync(getRepoDir(id), { recursive: true, force: true });
-  } catch {
-    // Disk cleanup is best-effort once the DB rows are gone
+  } catch (e) {
+    warnings.push(
+      `Repository files were left on disk: ${e instanceof Error ? e.message : "unknown error"}`
+    );
   }
 
   return { success: true, warnings };

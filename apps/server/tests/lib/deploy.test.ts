@@ -1,6 +1,6 @@
 import "../setup";
 import { describe, it, expect } from "bun:test";
-import { escapeEnvValue } from "../../src/lib/stack-manager";
+import { escapeEnvValue } from "../../src/lib/deploy";
 
 describe("escapeEnvValue", () => {
   it("leaves plain values unquoted", () => {

@@ -7,10 +7,12 @@ import {
   stopStack,
   restartStack,
   pullStack,
+} from "../lib/stacks";
+import {
   replaceStackEnv,
   replaceStackSecrets,
   saveComposeContent,
-} from "../lib/stacks";
+} from "../lib/stack-config";
 
 const saveEnvBodySchema = v.object({
   entries: v.array(
