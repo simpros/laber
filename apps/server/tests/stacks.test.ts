@@ -424,6 +424,60 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
     expect(logs.some((l) => (l.output ?? "").includes("down blew up"))).toBe(
       true
     );
+
+    // Stop owns runtime intent, so its failure moves the stack to "error".
+    const [updated] = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.id, stack.id));
+    expect(updated.status).toBe("error");
+  });
+
+  it("leaves a deployed stack deployed when pull fails", async () => {
+    const { stack } = await seedStack("failed-pull", BASIC_COMPOSE);
+    await db
+      .update(stacks)
+      .set({ status: "deployed" })
+      .where(eq(stacks.id, stack.id));
+    dockerStub.runComposeCommand = async () => {
+      throw new ActionFailedError("Compose pull failed");
+    };
+
+    const res = await app.handle(
+      jsonReq("/api/stacks/failed-pull/pull", "POST", {}, cookie)
+    );
+    expect(res.status).toBe(500);
+
+    // Pull never touches `stacks.status`: containers keep running under the
+    // old deploy, so sync must still see "deployed" and refuse to
+    // reconcile the stack away.
+    const [updated] = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.id, stack.id));
+    expect(updated.status).toBe("deployed");
+  });
+
+  it("leaves status alone when restart fails", async () => {
+    const { stack } = await seedStack("failed-restart", BASIC_COMPOSE);
+    await db
+      .update(stacks)
+      .set({ status: "stopped" })
+      .where(eq(stacks.id, stack.id));
+    dockerStub.runComposeCommand = async () => {
+      throw new ActionFailedError("Compose restart failed");
+    };
+
+    const res = await app.handle(
+      jsonReq("/api/stacks/failed-restart/restart", "POST", {}, cookie)
+    );
+    expect(res.status).toBe(500);
+
+    const [updated] = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.id, stack.id));
+    expect(updated.status).toBe("stopped");
   });
 
   it("restarts and pulls without changing status", async () => {

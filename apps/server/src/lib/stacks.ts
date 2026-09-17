@@ -221,7 +221,7 @@ export async function deployStackByName(name: string) {
         projectName: stack.name,
         onOutput,
       });
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };
@@ -244,20 +244,22 @@ export async function stopStack(name: string) {
         stack.name,
         onOutput
       );
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };
 }
 
-/** Compose argv lives here, not in the route module. */
+/** Compose argv lives here, not in the route module. Pull/restart never touch
+ * `stacks.status` (no `stackId`/`statusOnSuccess`): they do not change
+ * desired runtime, so even a failure must keep the deploy/stop marker that
+ * sync gates on. */
 export async function restartStack(name: string) {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
   const { output } = await runLoggedAction({
     title: `Restarting ${name}`,
     action: "restart",
-    stackId: stack.id,
     failureMessage: `Restarting ${name} failed`,
     run: async (onOutput) => {
       const result = await runComposeCommand(
@@ -266,20 +268,19 @@ export async function restartStack(name: string) {
         stack.name,
         onOutput
       );
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };
 }
 
-/** Compose argv lives here, not in the route module. */
+/** Same status contract as restart: pull never touches `stacks.status`. */
 export async function pullStack(name: string) {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
   const { output } = await runLoggedAction({
     title: `Pulling images for ${name}`,
     action: "pull",
-    stackId: stack.id,
     failureMessage: `Pulling images for ${name} failed`,
     run: async (onOutput) => {
       const result = await runComposeCommand(
@@ -288,7 +289,7 @@ export async function pullStack(name: string) {
         stack.name,
         onOutput
       );
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };

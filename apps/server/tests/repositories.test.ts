@@ -166,7 +166,7 @@ describe("repositories", () => {
     expect(del.status).toBe(404);
   });
 
-  it("refuses to delete a repository with deployed stacks", async () => {
+  it("brings deployed stacks down instead of refusing the delete", async () => {
     const fixtureDir = initFixtureRepo(["doomed"]);
 
     const addRes = await app.handle(
@@ -200,20 +200,33 @@ describe("repositories", () => {
       .set({ status: "deployed" })
       .where(eq(stacks.id, repoStacks[0].id));
 
-    // Same rule as sync: a still-deployed stack is never orphaned.
+    // Delete is down-first: `down` is the gate, not the status column.
+    const downs: string[][] = [];
+    dockerStub.listContainers = async () => [];
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      command,
+      _projectName,
+      _onOutput
+    ) => {
+      downs.push(command);
+      return { output: "down" };
+    };
+
     const delRes = await app.handle(
       req(`/api/repositories/${repo.id}`, {
         method: "DELETE",
         headers: { cookie },
       })
     );
-    expect(delRes.status).toBe(409);
+    expect(delRes.status).toBe(200);
+    expect(downs).toEqual([["down"]]);
 
     const remaining = await db
       .select()
       .from(repositories)
       .where(eq(repositories.id, repo.id));
-    expect(remaining).toHaveLength(1);
+    expect(remaining).toHaveLength(0);
 
     rmSync(fixtureDir, { recursive: true, force: true });
   });
@@ -230,7 +243,7 @@ describe("repositories", () => {
     expect(res.status).toBe(500);
   });
 
-  it("refuses to delete when live containers exist even if status is stale", async () => {
+  it("brings live containers down instead of refusing on a stale status", async () => {
     const fixtureDir = initFixtureRepo(["stale"]);
     const addRes = await app.handle(
       jsonReq(
@@ -257,7 +270,8 @@ describe("repositories", () => {
       .select()
       .from(stacks)
       .where(eq(stacks.repositoryId, repo.id));
-    // Stale column says stopped, but Docker still runs the project.
+    // Stale column says stopped, but Docker still runs the project: the
+    // hard `down` (not a probe refuse) is what protects the containers.
     await db
       .update(stacks)
       .set({ status: "stopped" })
@@ -275,6 +289,16 @@ describe("repositories", () => {
         createdAt: new Date().toISOString(),
       },
     ];
+    const downs: string[][] = [];
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      command,
+      _projectName,
+      _onOutput
+    ) => {
+      downs.push(command);
+      return { output: "down" };
+    };
 
     const delRes = await app.handle(
       req(`/api/repositories/${repo.id}`, {
@@ -282,13 +306,159 @@ describe("repositories", () => {
         headers: { cookie },
       })
     );
-    expect(delRes.status).toBe(409);
+    expect(delRes.status).toBe(200);
+    expect(downs).toEqual([["down"]]);
 
-    // Nothing committed: rows survive the refused delete.
     const remaining = await db
       .select()
       .from(repositories)
       .where(eq(repositories.id, repo.id));
+    expect(remaining).toHaveLength(0);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("refuses to sync away a still-deployed stack", async () => {
+    const fixtureDir = initFixtureRepo(["guarded"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "guarded-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find((r) => r.name === "guarded-fixture")!;
+    const repoStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    await db
+      .update(stacks)
+      .set({ status: "deployed" })
+      .where(eq(stacks.id, repoStacks[0].id));
+
+    // The stack disappears from the git tree while still deployed.
+    rmSync(join(fixtureDir, "stacks", "guarded"), {
+      recursive: true,
+      force: true,
+    });
+    execFileSync("git", ["add", "-A"], { cwd: fixtureDir });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=Test",
+        "commit",
+        "-m",
+        "remove guarded",
+      ],
+      { cwd: fixtureDir }
+    );
+
+    const syncRes = await app.handle(
+      jsonReq(`/api/repositories/${repo.id}/sync`, "POST", {}, cookie)
+    );
+    expect(syncRes.status).toBe(409);
+
+    // Nothing reconciled away: the row survives the refused sync.
+    const remaining = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    expect(remaining).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("refuses to sync away a stack with live containers even if status is stale", async () => {
+    const fixtureDir = initFixtureRepo(["live"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "live-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find((r) => r.name === "live-fixture")!;
+    const repoStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    // Stale column says stopped, but Docker still runs the project.
+    await db
+      .update(stacks)
+      .set({ status: "stopped" })
+      .where(eq(stacks.id, repoStacks[0].id));
+    dockerStub.listContainers = async () => [
+      {
+        id: "abc",
+        name: "live-web-1",
+        image: "nginx:latest",
+        state: "running",
+        status: "Up",
+        ports: [],
+        labels: {},
+        networks: [],
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    rmSync(join(fixtureDir, "stacks", "live"), {
+      recursive: true,
+      force: true,
+    });
+    execFileSync("git", ["add", "-A"], { cwd: fixtureDir });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=Test",
+        "commit",
+        "-m",
+        "remove live",
+      ],
+      { cwd: fixtureDir }
+    );
+
+    const syncRes = await app.handle(
+      jsonReq(`/api/repositories/${repo.id}/sync`, "POST", {}, cookie)
+    );
+    expect(syncRes.status).toBe(409);
+
+    const remaining = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
     expect(remaining).toHaveLength(1);
 
     rmSync(fixtureDir, { recursive: true, force: true });

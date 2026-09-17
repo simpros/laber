@@ -11,9 +11,13 @@ import {
 } from "./git";
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
-import { listContainers, runComposeCommand } from "./docker";
+import { runComposeCommand } from "./docker";
+import {
+  assertStackRemovable,
+  hasRunningContainers,
+} from "./stack-presence";
 import { runLoggedAction } from "./logged-action";
-import { NotFoundError, ConflictError, ActionFailedError } from "./errors";
+import { NotFoundError, ActionFailedError } from "./errors";
 
 export type AddRepositoryInput = {
   name: string;
@@ -27,19 +31,6 @@ type RemoteTree = Pick<
   typeof repositories.$inferSelect,
   "url" | "branch" | "sshPrivateKey"
 >;
-
-/**
- * Soft Docker probe: how many containers still run for a compose project.
- * An unreadable daemon reports zero (like the detail view) — the `down`s
- * in the delete path are the hard gate, not this probe.
- */
-async function countLiveContainers(projectName: string): Promise<number> {
-  try {
-    return (await listContainers(projectName)).length;
-  } catch {
-    return 0;
-  }
-}
 
 /**
  * Ensure the local git tree exists (fresh clone, or clone-if-missing /
@@ -85,6 +76,12 @@ async function materializeRepoTree<T>(options: {
   stacksPath: string;
   fresh: boolean;
   failureMessage: string;
+  /**
+   * Async pre-commit check after discovery, before the transaction (the
+   * sync drizzle tx itself cannot await — e.g. no Docker probe in there).
+   * Sync uses it for the Docker-aware removable check; clone has none.
+   */
+  beforeApply?: (discovered: DiscoveredStack[]) => Promise<void>;
   applyDiscovery: (
     tx: StackTx,
     discovered: DiscoveredStack[],
@@ -127,6 +124,7 @@ async function materializeRepoTree<T>(options: {
         options.repoDir,
         options.stacksPath
       );
+      await options.beforeApply?.(discovered);
       // The sync transaction returns the callback's value (and rolls back on
       // throw), so there is nothing to smuggle out or assert.
       const applied = db.transaction((tx) =>
@@ -238,6 +236,22 @@ export async function syncRepository(id: string) {
     stacksPath: repo.stacksPath,
     fresh: false,
     failureMessage: `Failed to sync repository ${repo.name}`,
+    // The one removable-stack rule, shared with delete's intent: refuse to
+    // reconcile away a stack that is still deployed *or* still has running
+    // containers (covers a stale status column). Runs before the tx because
+    // the sync transaction cannot await a Docker probe; the
+    // `status === "deployed"` guard inside `reconcileStacksTx` stays as the
+    // transactional last resort against a status flip mid-sync.
+    beforeApply: async (discoveredStacks) => {
+      const names = new Set(discoveredStacks.map((s) => s.name));
+      const existing = await db
+        .select()
+        .from(stacks)
+        .where(eq(stacks.repositoryId, repo.id));
+      for (const stack of existing) {
+        if (!names.has(stack.name)) await assertStackRemovable(stack);
+      }
+    },
     applyDiscovery: (tx, discoveredStacks, onOutput) => {
       // Reconcile and `lastSyncedAt` commit together: stacks can never
       // change while the timestamp stays stale.
@@ -275,40 +289,31 @@ export async function deleteRepository(id: string) {
     .from(stacks)
     .where(eq(stacks.repositoryId, id));
 
-  // One rule, mirroring sync: a stack that is still deployed is never
-  // orphaned. Sync refuses to reconcile it away (`ConflictError`); delete
-  // refuses to drop its rows while containers may keep running. Stop the
-  // stacks first, then delete.
-  const deployed = repoStacks.filter((s) => s.status === "deployed");
-  if (deployed.length > 0) {
-    throw new ConflictError(
-      `Cannot delete: stack(s) still deployed: ${deployed.map((s) => s.name).join(", ")}. Stop them before deleting.`
-    );
-  }
-
-  // A stale `status` column must not orphan live containers: probe Docker
-  // before anything commits. The probe itself is soft (an unreadable daemon
-  // reports no containers, like the detail view) — the `down`s below are
-  // the hard gate.
-  for (const stack of repoStacks) {
-    if ((await countLiveContainers(stack.name)) > 0) {
-      throw new ConflictError(
-        `Cannot delete: stack ${stack.name} still has running containers. Stop it before deleting.`
-      );
-    }
-  }
-
   // Docker first, hard: every stack comes down before any row is deleted.
-  // A `down` throw aborts with no DB change — rows are never deleted while
-  // containers may still be running. Disk removal afterwards is the only
-  // best-effort step left, reported in `warnings`.
+  // `down` is the gate — there is no status refuse and no soft container
+  // probe here. A `down` throw aborts with no DB change, so rows are never
+  // deleted while containers may still be running. (Sync keeps the shared
+  // `assertStackRemovable` check because sync does not bring stacks down;
+  // delete does, so it needs no pre-gate.)
   for (const stack of repoStacks) {
+    const composePath = getComposePath(
+      repo.id,
+      stack.relativePath,
+      stack.composeFile
+    );
+    if (!existsSync(composePath)) {
+      // No compose project to bring down (dir removed out of band). Fall
+      // back to the soft probe so a missing file never orphans live
+      // containers — and never wedges the repo undeletable either.
+      if (await hasRunningContainers(stack.name)) {
+        throw new ActionFailedError(
+          `Failed to delete repository: stack ${stack.name} still has running containers but its compose file is gone; remove them manually, then retry`
+        );
+      }
+      continue;
+    }
     try {
-      await runComposeCommand(
-        getComposePath(repo.id, stack.relativePath, stack.composeFile),
-        ["down"],
-        stack.name
-      );
+      await runComposeCommand(composePath, ["down"], stack.name);
     } catch (e) {
       throw new ActionFailedError(
         `Failed to delete repository: could not bring down stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"})`

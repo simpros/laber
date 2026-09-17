@@ -4,9 +4,13 @@ import { createActivity, appendOutput, finishActivity } from "./activity";
 import { ActionFailedError } from "./errors";
 
 /**
- * Success-only transitions. There is no `"error"` member: failure always
- * moves a tracked stack to `"error"` (see below), so callers never choose
- * the failure transition and cannot forget it.
+ * Success-only transitions. There is no `"error"` member: callers declare
+ * only the success transition for actions that own runtime intent
+ * (deploy/stop). A tracked failure of those same actions moves the stack to
+ * `"error"` automatically. Actions that do not change desired runtime
+ * (pull/restart) pass neither `stackId` nor `statusOnSuccess` and never
+ * touch `stacks.status` — last-action outcome already lives in
+ * `deployment_logs` / activity.
  */
 export type StackStatusOnSuccess = "deployed" | "stopped";
 
@@ -28,26 +32,40 @@ async function recordActionOutcome(options: {
     output: options.result.output,
   });
 
-  // The one status state machine: success applies the caller's transition,
-  // operational failure moves a tracked stack to "error". Sync/delete gate
-  // on `status === "deployed"`, so a failed redeploy must not keep the old
-  // "deployed" marker — otherwise the gates trust a column that failure
-  // never maintains.
-  if (options.stackId) {
+  // The one status state machine: only actions that own runtime intent
+  // (deploy/stop, the ones passing `statusOnSuccess`) move the column.
+  // Success applies the caller's transition; operational failure of those
+  // same actions moves a tracked stack to "error" so sync/delete gates stop
+  // trusting a stale "deployed" after a failed redeploy. Pull/restart pass
+  // no transition and leave the column alone on success *and* failure — a
+  // failed pull must not clear the "deployed" marker while containers keep
+  // running, or sync would reconcile the still-live stack away.
+  if (options.stackId && options.statusOnSuccess !== undefined) {
     const next = options.result.success ? options.statusOnSuccess : "error";
-    if (next) {
-      const stackId = options.stackId;
-      await db
-        .update(stacks)
-        .set({ status: next, updatedAt: new Date() })
-        .where(eq(stacks.id, stackId));
-    }
+    const stackId = options.stackId;
+    await db
+      .update(stacks)
+      .set({ status: next, updatedAt: new Date() })
+      .where(eq(stacks.id, stackId));
   }
 }
 
 export type LoggedActionRun<T> = (
   onOutput: (chunk: string) => void
 ) => Promise<{ output: string; value: T }>;
+
+export type LoggedActionRunVoid = (
+  onOutput: (chunk: string) => void
+) => Promise<{ output: string }>;
+
+type LoggedActionBase = {
+  title: string;
+  action: string;
+  stackId?: string;
+  isCore?: boolean;
+  statusOnSuccess?: StackStatusOnSuccess;
+  failureMessage?: string;
+};
 
 /**
  * Single failure contract for logged actions: `run` streams progress via
@@ -56,23 +74,32 @@ export type LoggedActionRun<T> = (
  * for logging; callers get `{ output, value }` or an exception, never a
  * second success flag to remember.
  *
+ * Value-less actions return `{ output }` only (first overload); actions
+ * with a result return `{ output, value }` (second overload).
+ *
  * A throwing `run` never leaves the activity stuck on "running": the
  * streamed transcript plus the error line is persisted to the deployment
- * log, the stack (when tracked) moves to `"error"`, then operational
- * failures (`ActionFailedError`) are mapped to the contextual
- * `failureMessage` while domain errors keep their kind at the edge. The
- * full transcript stays in the deployment log and activity stream; the
- * wire message stays short.
+ * log, the stack (when the action owns runtime intent — see
+ * `statusOnSuccess`) moves to `"error"`, then operational failures
+ * (`ActionFailedError`) are mapped to the contextual `failureMessage`
+ * while domain errors keep their kind at the edge. The full transcript
+ * stays in the deployment log and activity stream; the wire message stays
+ * short.
  */
-export async function runLoggedAction<T = void>(options: {
-  title: string;
-  action: string;
-  stackId?: string;
-  isCore?: boolean;
-  statusOnSuccess?: StackStatusOnSuccess;
-  failureMessage?: string;
-  run: LoggedActionRun<T>;
-}): Promise<{ output: string; value: T }> {
+export async function runLoggedAction(options: LoggedActionBase & {
+  run: LoggedActionRunVoid;
+}): Promise<{ output: string }>;
+export async function runLoggedAction<T>(
+  options: LoggedActionBase & { run: LoggedActionRun<T> }
+): Promise<{ output: string; value: T }>;
+export async function runLoggedAction<T>(
+  options: LoggedActionBase & {
+    run: (onOutput: (chunk: string) => void) => Promise<{
+      output: string;
+      value?: T;
+    }>;
+  }
+): Promise<{ output: string; value?: T }> {
   const failureMessage = options.failureMessage ?? `${options.title} failed`;
   const activity = createActivity(options.title);
 
@@ -105,6 +132,9 @@ export async function runLoggedAction<T = void>(options: {
       stackId: options.stackId,
       isCore: options.isCore,
       action: options.action,
+      // Forwarded so deploy/stop failures still move the stack to "error";
+      // pull/restart pass none and leave the column alone (see above).
+      statusOnSuccess: options.statusOnSuccess,
       result: { success: false, output: transcript },
     });
     if (e instanceof ActionFailedError) {

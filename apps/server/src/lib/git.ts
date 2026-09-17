@@ -156,6 +156,10 @@ export function reconcileStacksTx(
   // Removal policy: refuse to silently orphan a deployed stack; otherwise
   // delete the stale rows (env/secrets cascade, logs detach) in the same
   // transaction as the adds/updates so sync never leaves zombies behind.
+  // This status guard is the transactional last resort: sync pre-checks the
+  // same rule Docker-aware via `assertStackRemovable` (status *and* live
+  // containers) before the tx, but the probe cannot run inside a sync
+  // drizzle transaction — so this stays to catch a status flip mid-sync.
   const deployedRemoved = removed
     .filter((s) => s.status === "deployed")
     .map((s) => s.name);

@@ -169,7 +169,7 @@ export async function deployCore() {
         projectName: "laber-core",
         onOutput,
       });
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };
@@ -188,7 +188,7 @@ export async function stopCore() {
         "laber-core",
         onOutput
       );
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };
@@ -207,7 +207,7 @@ export async function restartCore() {
         "laber-core",
         onOutput
       );
-      return { output: result.output, value: undefined };
+      return { output: result.output };
     },
   });
   return { output };
