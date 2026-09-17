@@ -2,7 +2,7 @@ import { db, stacks, repositories } from "@laber/db";
 import { resolveDataDir } from "@laber/db/paths";
 import { eq } from "drizzle-orm";
 import { resolve } from "path";
-import { HttpError } from "./errors";
+import { NotFoundError } from "./errors";
 
 export const DATA_DIR = resolveDataDir();
 
@@ -25,7 +25,7 @@ export async function getStackAndRepo(stackName: string) {
     .where(eq(stacks.name, stackName))
     .limit(1);
 
-  if (!stack) throw new HttpError(404, "Stack not found");
+  if (!stack) throw new NotFoundError("Stack not found");
 
   const [repo] = await db
     .select()
@@ -33,7 +33,7 @@ export async function getStackAndRepo(stackName: string) {
     .where(eq(repositories.id, stack.repositoryId))
     .limit(1);
 
-  if (!repo) throw new HttpError(404, "Repository not found");
+  if (!repo) throw new NotFoundError("Repository not found");
 
   const composePath = getComposePath(
     repo.id,

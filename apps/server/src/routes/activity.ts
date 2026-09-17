@@ -1,47 +1,30 @@
 import { Elysia } from "elysia";
 import { subscribe } from "../lib/activity";
+import { sseResponse, encodeNamedEvent, encodeComment } from "../lib/sse";
 
-export const activityRoutes = new Elysia().get(
-  "/api/activity/stream",
-  () => {
-    const encoder = new TextEncoder();
-
-    const stream = new ReadableStream({
-      start(controller) {
-        const unsubscribe = subscribe((event) => {
-          try {
-            controller.enqueue(
-              encoder.encode(
-                `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
-              )
-            );
-          } catch {
-            unsubscribe();
-          }
-        });
-
-        controller.enqueue(encoder.encode(": connected\n\n"));
-
-        void new Promise<void>((resolve) => {
-          const check = setInterval(() => {
-            try {
-              controller.enqueue(encoder.encode(": ping\n\n"));
-            } catch {
-              clearInterval(check);
-              unsubscribe();
-              resolve();
-            }
-          }, 30000);
-        });
-      },
+export const activityRoutes = new Elysia().get("/api/activity/stream", () => {
+  return sseResponse((controller, onCleanup) => {
+    const unsubscribe = subscribe((event) => {
+      try {
+        controller.enqueue(
+          encodeNamedEvent(event.type, JSON.stringify(event))
+        );
+      } catch {
+        unsubscribe();
+      }
     });
+    onCleanup(unsubscribe);
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
-  }
-);
+    controller.enqueue(encodeComment("connected"));
+
+    const check = setInterval(() => {
+      try {
+        controller.enqueue(encodeComment("ping"));
+      } catch {
+        clearInterval(check);
+        unsubscribe();
+      }
+    }, 30000);
+    onCleanup(() => clearInterval(check));
+  });
+});

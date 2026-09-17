@@ -1,12 +1,19 @@
 import "../setup";
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import {
   extractEnvVarNames,
   extractServices,
   extractAllEnvVarNames,
   extractNetworkName,
   extractSecrets,
+  parseComposeContent,
+  readComposeFile,
+  parseComposeFile,
 } from "../../src/lib/compose-parser";
+import { ValidationError } from "../../src/lib/errors";
 
 describe("extractEnvVarNames", () => {
   it("returns empty array for undefined input", () => {
@@ -356,5 +363,87 @@ describe("extractSecrets", () => {
       "/data/repos/abc/stacks/myapp/docker-compose.yaml"
     );
     expect(result[0].filePath).toBe("/run/secrets/db_password");
+  });
+});
+
+describe("parseComposeContent", () => {
+  it("parses a valid compose document", () => {
+    const compose = parseComposeContent(
+      "services:\n  web:\n    image: nginx:latest\n"
+    );
+    expect(Object.keys(compose.services)).toEqual(["web"]);
+    expect(compose.services.web.image).toBe("nginx:latest");
+  });
+
+  it("rejects YAML syntax errors", () => {
+    expect(() => parseComposeContent("{unclosed: [")).toThrow(
+      ValidationError
+    );
+  });
+
+  it("rejects documents without a services section", () => {
+    expect(() => parseComposeContent("version: '3'\n")).toThrow(
+      "missing 'services' section"
+    );
+  });
+
+  it("rejects non-object services", () => {
+    expect(() => parseComposeContent("services: just-a-string\n")).toThrow(
+      ValidationError
+    );
+  });
+
+  it("rejects non-object service entries", () => {
+    expect(() =>
+      parseComposeContent("services:\n  web: just-a-string\n")
+    ).toThrow(ValidationError);
+  });
+
+  it("tolerates exotic but valid shapes (numeric ports, extension fields)", () => {
+    const compose = parseComposeContent(
+      [
+        "services:",
+        "  web:",
+        "    image: nginx:latest",
+        "    ports:",
+        "      - 8080",
+        "    x-custom:",
+        "      anything: true",
+        "",
+      ].join("\n")
+    );
+    expect(compose.services.web.image).toBe("nginx:latest");
+  });
+});
+
+describe("readComposeFile", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "laber-compose-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns raw text and parsed compose from a single read", () => {
+    const content = "services:\n  web:\n    image: nginx:latest\n";
+    const filePath = join(tempDir, "docker-compose.yaml");
+    writeFileSync(filePath, content, "utf-8");
+
+    const { raw, compose } = readComposeFile(filePath);
+    expect(raw).toBe(content);
+    expect(compose.services.web.image).toBe("nginx:latest");
+    expect(parseComposeFile(filePath).services.web.image).toBe(
+      "nginx:latest"
+    );
+  });
+
+  it("throws a ValidationError for a missing services section", () => {
+    const filePath = join(tempDir, "docker-compose.yaml");
+    writeFileSync(filePath, "version: '3'\n", "utf-8");
+
+    expect(() => readComposeFile(filePath)).toThrow(ValidationError);
   });
 });

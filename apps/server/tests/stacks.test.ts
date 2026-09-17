@@ -1,6 +1,6 @@
 import "./setup";
 import { describe, it, expect, beforeAll, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import {
   db,
@@ -177,7 +177,13 @@ describe("POST /api/stacks/:name/deploy", () => {
       value: "s3cr3t",
     });
     dockerStub.execCompose = async (options) => {
-      expect(options.envVars?.FOO).toBe("bar");
+      // Single env channel: stack vars travel via --env-file, not a second
+      // process-env overlay.
+      expect(options.envVars).toBeUndefined();
+      const envFlag = options.command.indexOf("--env-file");
+      expect(envFlag).toBeGreaterThanOrEqual(0);
+      const envContent = readFileSync(options.command[envFlag + 1], "utf-8");
+      expect(envContent).toContain("FOO=bar");
       expect(options.projectName).toBe("deploy-me");
       options.onOutput?.("deploying...\n");
       return { stdout: "deployed\n", stderr: "", exitCode: 0 };
@@ -240,6 +246,59 @@ describe("POST /api/stacks/:name/deploy", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("returns 500 when the deploy command fails", async () => {
+    await seedStack("failed-deploy", BASIC_COMPOSE);
+    dockerStub.execCompose = async () => ({
+      stdout: "",
+      stderr: "boom",
+      exitCode: 1,
+    });
+
+    const res = await app.handle(
+      jsonReq("/api/stacks/failed-deploy/deploy", "POST", {}, cookie)
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("boom");
+  });
+
+  it("removes written secret files when the deploy fails", async () => {
+    const { stack, composePath } = await seedStack(
+      "failed-secret-deploy",
+      SECRET_COMPOSE
+    );
+    await db.insert(stackEnvVars).values({
+      stackId: stack.id,
+      key: "FOO",
+      value: "bar",
+      isSecret: false,
+    });
+    await db.insert(stackSecrets).values({
+      stackId: stack.id,
+      name: "mysecret",
+      value: "s3cr3t",
+    });
+
+    dockerStub.execCompose = async () => ({
+      stdout: "",
+      stderr: "compose blew up",
+      exitCode: 1,
+    });
+
+    const res = await app.handle(
+      jsonReq(
+        "/api/stacks/failed-secret-deploy/deploy",
+        "POST",
+        {},
+        cookie
+      )
+    );
+    expect(res.status).toBe(500);
+
+    const secretPath = join(composePath, "..", "mysecret.txt");
+    expect(existsSync(secretPath)).toBe(false);
+  });
 });
 
 describe("POST /api/stacks/:name/stop|restart|pull", () => {
@@ -266,6 +325,21 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       .from(stacks)
       .where(eq(stacks.id, stack.id));
     expect(updated.status).toBe("stopped");
+  });
+
+  it("returns 500 when stopping fails", async () => {
+    await seedStack("unstoppable", BASIC_COMPOSE);
+    dockerStub.runComposeCommand = async () => ({
+      success: false,
+      output: "down blew up",
+    });
+
+    const res = await app.handle(
+      jsonReq("/api/stacks/unstoppable/stop", "POST", {}, cookie)
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("down blew up");
   });
 
   it("restarts and pulls without changing status", async () => {

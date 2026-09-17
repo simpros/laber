@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { stringify } from "yaml";
-import { HttpError } from "./errors";
+import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainers, runComposeCommand } from "./docker";
 import { deployStack } from "./stack-manager";
@@ -25,8 +25,7 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
     (k) => k.required && !configMap.get(k.key)
   ).map((k) => k.key);
   if (missing.length > 0) {
-    throw new HttpError(
-      400,
+    throw new ValidationError(
       `${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} required`
     );
   }

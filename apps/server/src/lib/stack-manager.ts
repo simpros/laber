@@ -1,13 +1,10 @@
-import { writeFileSync, unlinkSync, mkdirSync } from "fs";
+import { writeFileSync, unlinkSync, mkdirSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
   execCompose,
   ensureNetwork,
-  listContainers,
-  runComposeCommand,
   connectTraefikToNetwork,
-  type ContainerInfo,
 } from "./docker";
 
 type SecretFile = {
@@ -55,6 +52,16 @@ function writeSecretFiles(files: SecretFile[]): void {
   }
 }
 
+function removeSecretFiles(files: SecretFile[]): void {
+  for (const { filePath } of files) {
+    try {
+      rmSync(filePath, { force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
 export async function deployStack(
   options: DeployOptions
 ): Promise<DeployResult> {
@@ -78,28 +85,41 @@ export async function deployStack(
 
     const command = [...envArgs, "up", "-d"];
 
+    // Single env channel: everything the stack needs travels via --env-file.
+    // (execCompose still inherits process.env, but stack vars are no longer
+    // overlaid a second time, so there is only one fact to fix.)
     const result = await execCompose({
       composePath: options.composePath,
       command,
-      envVars: options.envVars,
       projectName: options.projectName,
       onOutput: options.onOutput,
     });
+
+    let output = result.stdout + result.stderr;
 
     if (result.exitCode === 0 && options.networkName) {
       try {
         await connectTraefikToNetwork(options.networkName);
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
-        options.onOutput?.(
-          `Warning: could not attach Traefik to network ${options.networkName}: ${reason}\n`
-        );
+        const warning =
+          `Warning: could not attach Traefik to network ${options.networkName}: ${reason}\n`;
+        options.onOutput?.(warning);
+        // The deploy itself succeeded; surface the warning in the returned
+        // output too so callers don't have to watch the activity stream.
+        output += warning;
       }
+    }
+
+    if (result.exitCode !== 0 && options.secretFiles?.length) {
+      // A failed deploy must not leave freshly-written secret files behind.
+      // (On success they stay: running containers mount these paths.)
+      removeSecretFiles(options.secretFiles);
     }
 
     return {
       success: result.exitCode === 0,
-      output: result.stdout + result.stderr,
+      output,
     };
   } finally {
     if (envFilePath) {
@@ -110,39 +130,4 @@ export async function deployStack(
       }
     }
   }
-}
-
-export async function stopStack(
-  composePath: string,
-  projectName?: string,
-  onOutput?: (chunk: string) => void
-): Promise<DeployResult> {
-  return runComposeCommand(composePath, ["down"], projectName, onOutput);
-}
-
-export async function restartStack(
-  composePath: string,
-  projectName?: string,
-  onOutput?: (chunk: string) => void
-): Promise<DeployResult> {
-  return runComposeCommand(
-    composePath,
-    ["restart"],
-    projectName,
-    onOutput
-  );
-}
-
-export async function pullStack(
-  composePath: string,
-  projectName?: string,
-  onOutput?: (chunk: string) => void
-): Promise<DeployResult> {
-  return runComposeCommand(composePath, ["pull"], projectName, onOutput);
-}
-
-export async function getStackContainers(
-  projectName: string
-): Promise<ContainerInfo[]> {
-  return listContainers(projectName);
 }

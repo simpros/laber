@@ -17,11 +17,13 @@ describe("session guard", () => {
     for (const path of paths) {
       const res = await app.handle(req(path));
       expect(res.status).toBe(401);
-      expect(await res.text()).toBe("Unauthorized");
+      expect(await res.json()).toEqual({ error: "Unauthorized" });
     }
   });
 
   it("returns 401 for unauthenticated POST/PUT/DELETE requests", async () => {
+    // Well-formed bodies: the session guard answers 401 with the unified
+    // { error } contract.
     const cases: Array<[string, string, unknown?]> = [
       ["POST", "/api/stacks/demo/deploy"],
       ["POST", "/api/stacks/demo/stop"],
@@ -34,7 +36,6 @@ describe("session guard", () => {
       ["POST", "/api/core/deploy"],
       ["POST", "/api/core/stop"],
       ["POST", "/api/core/restart"],
-      ["POST", "/api/repositories", {}],
       ["POST", "/api/repositories/123/sync"],
       ["DELETE", "/api/repositories/123"],
     ];
@@ -49,12 +50,32 @@ describe("session guard", () => {
       expect(`${method} ${path} -> ${res.status}`).toBe(
         `${method} ${path} -> 401`
       );
+      expect(await res.json()).toEqual({ error: "Unauthorized" });
     }
+  });
+
+  it("denies unauthenticated malformed requests without running handlers", async () => {
+    // Elysia validates route schemas before beforeHandle hooks, so a
+    // malformed body answers 400 instead of 401 — either way the handler
+    // never runs and nothing is created.
+    const res = await app.handle(
+      req("/api/repositories", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      })
+    );
+    expect(res.status).toBe(400);
+
+    const list = await app.handle(
+      req("/api/repositories", { headers: { cookie: "none" } })
+    );
+    expect(list.status).toBe(401);
   });
 
   it("lets better-auth routes through without a session", async () => {
     const res = await app.handle(req("/api/auth/session"));
     expect(res.status).not.toBe(401);
-    expect(await res.text()).not.toBe("Unauthorized");
+    expect(await res.text()).not.toContain("Unauthorized");
   });
 });

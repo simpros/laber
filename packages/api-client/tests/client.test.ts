@@ -79,4 +79,17 @@ describe("createApiClient", () => {
     expect(res.error).toBeNull();
     expect(String(calls[0].url)).toContain("/api/stacks/demo/env");
   });
+
+  it("rejects mistyped bodies at compile time", async () => {
+    const calls: Array<{ url: unknown; init: unknown }> = [];
+    const client = createApiClient("http://localhost:3001", {
+      fetcher: stubFetch(calls, { success: true }),
+    });
+
+    // If Eden stops inferring the route body schema, the @ts-expect-error
+    // below stops erroring and `turbo check` fails: this pins the typed
+    // request contract, not just the runtime fetch.
+    // @ts-expect-error - entries requires key/value/isSecret entries
+    await client.api.stacks({ name: "demo" }).env.put({ wrong: true });
+  });
 });

@@ -1,21 +1,27 @@
 import { Elysia } from "elysia";
+import * as v from "valibot";
 import {
   getContainerLogs,
   followContainerLogs,
   listContainers,
 } from "../lib/docker";
-import { HttpError } from "../lib/errors";
+import { NotFoundError } from "../lib/errors";
+import { sseResponse, encodeEvent } from "../lib/sse";
+
+const logsQuerySchema = v.object({
+  follow: v.optional(v.string()),
+  tail: v.optional(v.string()),
+});
 
 export const logRoutes = new Elysia().get(
   "/api/stacks/:name/logs",
   async ({ params, query }) => {
-    const q = query as Record<string, string | undefined>;
-    const follow = q.follow === "true";
-    const tail = parseInt(q.tail ?? "100", 10);
+    const follow = query.follow === "true";
+    const tail = parseInt(query.tail ?? "100", 10);
 
     const containers = await listContainers(params.name);
     if (containers.length === 0) {
-      throw new HttpError(404, "No containers found for this stack");
+      throw new NotFoundError("No containers found for this stack");
     }
 
     const containerId = containers[0].id;
@@ -26,31 +32,29 @@ export const logRoutes = new Elysia().get(
         tail,
       });
 
-      const encoder = new TextEncoder();
-      const sseStream = new ReadableStream({
-        async start(controller) {
-          const reader = stream.getReader();
+      return sseResponse(async (controller, onCleanup) => {
+        const reader = stream.getReader();
+        onCleanup(() => {
+          reader.cancel().catch(() => {
+            // already closed
+          });
+        });
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(encodeEvent(JSON.stringify(value)));
+          }
+          controller.close();
+        } catch {
           try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(value)}\n\n`)
-              );
-            }
             controller.close();
           } catch {
-            controller.close();
+            // already closed
           }
-        },
-      });
-
-      return new Response(sseStream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
+        } finally {
+          reader.releaseLock();
+        }
       });
     }
 
@@ -60,5 +64,6 @@ export const logRoutes = new Elysia().get(
     });
 
     return { logs };
-  }
+  },
+  { query: logsQuerySchema }
 );

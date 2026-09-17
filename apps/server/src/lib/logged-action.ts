@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, deploymentLogs, stacks } from "@laber/db";
 import { createActivity, appendOutput, finishActivity } from "./activity";
+import { ActionFailedError } from "./errors";
 
 export type LoggedActionResult = {
   success: boolean;
@@ -40,4 +41,19 @@ export async function runLoggedAction(options: {
   }
 
   return result;
+}
+
+/**
+ * Single failure contract for logged actions: a failed compose/git run is an
+ * error, not a 200 `{ success: false }`. The full output is already stored in
+ * the deployment log and activity stream; it doubles as the error message.
+ */
+export function ensureActionSuccess(
+  result: LoggedActionResult,
+  fallbackMessage: string
+): { success: true; output: string } {
+  if (!result.success) {
+    throw new ActionFailedError(result.output || fallbackMessage);
+  }
+  return { success: true, output: result.output };
 }

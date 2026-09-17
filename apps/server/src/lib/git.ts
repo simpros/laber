@@ -1,5 +1,5 @@
 import simpleGit from "simple-git";
-import { HttpError } from "./errors";
+import { ConflictError } from "./errors";
 import { db, stacks } from "@laber/db";
 import { and, eq, inArray } from "drizzle-orm";
 import {
@@ -149,8 +149,7 @@ export async function reconcileDiscoveredStacks(
     .filter((s) => s.status === "deployed")
     .map((s) => s.name);
   if (deployedRemoved.length > 0) {
-    throw new HttpError(
-      409,
+    throw new ConflictError(
       `Cannot sync: stack(s) no longer in repo but still deployed: ${deployedRemoved.join(", ")}. Stop them before syncing.`
     );
   }

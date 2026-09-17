@@ -9,12 +9,11 @@ import {
   getCoreStatus,
   loadCoreConfig,
 } from "../lib/core-stack";
-import { CORE_KEYS } from "../lib/core-keys";
-import { runLoggedAction } from "../lib/logged-action";
-import { parseBody } from "../lib/validate";
+import { CORE_KEYS, type CoreKey } from "../lib/core-keys";
+import { runLoggedAction, ensureActionSuccess } from "../lib/logged-action";
 
 const saveCoreConfigSchema = v.record(
-  v.picklist(CORE_KEYS.map((k) => k.key) as [string, ...string[]]),
+  v.picklist(CORE_KEYS.map((k) => k.key) as [CoreKey, ...CoreKey[]]),
   v.optional(v.nullable(v.string()))
 );
 
@@ -48,34 +47,34 @@ export const coreRoutes = new Elysia()
       isConfigured: config.some((c) => c.key === "ROOT_DOMAIN"),
     };
   })
-  .put("/api/core/config", async ({ body }) => {
-    const values = parseBody(saveCoreConfigSchema, body) as Record<
-      string,
-      string | null | undefined
-    >;
-    // null / undefined = leave unchanged; "" = clear; string = set.
-    const rows = CORE_KEYS.flatMap((keyDef) => {
-      const value = values[keyDef.key];
-      if (value === undefined || value === null) return [];
-      return [{ key: keyDef.key, value, isSecret: keyDef.secret }];
-    });
+  .put(
+    "/api/core/config",
+    async ({ body }) => {
+      // null / undefined = leave unchanged; "" = clear; string = set.
+      const rows = CORE_KEYS.flatMap((keyDef) => {
+        const value = body[keyDef.key];
+        if (value === undefined || value === null) return [];
+        return [{ key: keyDef.key, value, isSecret: keyDef.secret }];
+      });
 
-    if (rows.length > 0) {
-      await db
-        .insert(coreConfig)
-        .values(rows)
-        .onConflictDoUpdate({
-          target: coreConfig.key,
-          set: {
-            value: sql`excluded.value`,
-            isSecret: sql`excluded.is_secret`,
-            updatedAt: new Date(),
-          },
-        });
-    }
+      if (rows.length > 0) {
+        await db
+          .insert(coreConfig)
+          .values(rows)
+          .onConflictDoUpdate({
+            target: coreConfig.key,
+            set: {
+              value: sql`excluded.value`,
+              isSecret: sql`excluded.is_secret`,
+              updatedAt: new Date(),
+            },
+          });
+      }
 
-    return { success: true, message: "Configuration saved" };
-  })
+      return { success: true, message: "Configuration saved" };
+    },
+    { body: saveCoreConfigSchema }
+  )
   .post("/api/core/deploy", async () => {
     const coreConf = await loadCoreConfig();
 
@@ -86,7 +85,7 @@ export const coreRoutes = new Elysia()
       run: (onOutput) => deployCoreStack(coreConf, onOutput),
     });
 
-    return { success: result.success, output: result.output };
+    return ensureActionSuccess(result, "Deploying core services failed");
   })
   .post("/api/core/stop", async () => {
     const result = await runLoggedAction({
@@ -96,7 +95,7 @@ export const coreRoutes = new Elysia()
       run: (onOutput) => stopCoreStack(onOutput),
     });
 
-    return { success: result.success, output: result.output };
+    return ensureActionSuccess(result, "Stopping core services failed");
   })
   .post("/api/core/restart", async () => {
     const result = await runLoggedAction({
@@ -106,5 +105,5 @@ export const coreRoutes = new Elysia()
       run: (onOutput) => restartCoreStack(onOutput),
     });
 
-    return { success: result.success, output: result.output };
+    return ensureActionSuccess(result, "Restarting core services failed");
   });

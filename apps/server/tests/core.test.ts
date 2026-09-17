@@ -154,4 +154,27 @@ describe("POST /api/core/deploy|stop|restart", () => {
       );
     }
   });
+
+  it("returns 500 when the core deploy command fails", async () => {
+    await app.handle(
+      jsonReq(
+        "/api/core/config",
+        "PUT",
+        { ROOT_DOMAIN: "example.com", CF_DNS_API_TOKEN: "tok" },
+        cookie
+      )
+    );
+    dockerStub.execCompose = async () => ({
+      stdout: "",
+      stderr: "core blew up",
+      exitCode: 1,
+    });
+
+    const res = await app.handle(
+      jsonReq("/api/core/deploy", "POST", {}, cookie)
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("core blew up");
+  });
 });
