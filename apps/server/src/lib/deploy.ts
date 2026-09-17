@@ -3,9 +3,11 @@ import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
   runComposeCommand,
+} from "./compose-cli";
+import {
   ensureNetwork,
   connectTraefikToNetwork,
-} from "./docker";
+} from "./docker-engine";
 import { ActionFailedError } from "./errors";
 
 type SecretFile = {

@@ -6,7 +6,8 @@ import { dockerStub } from "./docker-stub";
 
 // Every test file imports this module first (before `../src/app`), so the
 // temp-database env vars are set before `@laber/db` is first evaluated and
-// the docker mock is registered before `src/lib/docker.ts` is imported.
+// the docker mocks are registered before `src/lib/docker-engine.ts` /
+// `src/lib/compose-cli.ts` are imported.
 //
 // NOTE: run these tests from this package directory (e.g. `bun test` here,
 // or `bun run test` at the repo root via turbo, which uses the package dir
@@ -23,7 +24,7 @@ if (!process.env.BETTER_AUTH_BASE_URL) {
   process.env.BETTER_AUTH_BASE_URL = "http://localhost:3001";
 }
 
-mock.module("../src/lib/docker.ts", () => ({
+mock.module("../src/lib/docker-engine.ts", () => ({
   listContainers: (projectLabel?: string) =>
     dockerStub.listContainers(projectLabel),
   getContainerLogs: (options: {
@@ -40,12 +41,15 @@ mock.module("../src/lib/docker.ts", () => ({
     dockerStub.ensureNetwork(networkName),
   connectContainerToNetwork: (containerId: string, networkName: string) =>
     dockerStub.connectContainerToNetwork(containerId, networkName),
-  execCompose: (options: {
-    composePath: string;
-    command: string[];
-    projectName?: string;
-    onOutput?: (chunk: string) => void;
-  }) => dockerStub.execCompose(options),
+  connectTraefikToNetwork: (networkName: string) =>
+    dockerStub.connectTraefikToNetwork(networkName),
+  stopContainer: (containerId: string) =>
+    dockerStub.stopContainer(containerId),
+  removeContainer: (containerId: string) =>
+    dockerStub.removeContainer(containerId),
+}));
+
+mock.module("../src/lib/compose-cli.ts", () => ({
   runComposeCommand: (
     composePath: string,
     command: string[],
@@ -60,12 +64,6 @@ mock.module("../src/lib/docker.ts", () => ({
       onOutput,
       options
     ),
-  connectTraefikToNetwork: (networkName: string) =>
-    dockerStub.connectTraefikToNetwork(networkName),
-  stopContainer: (containerId: string) =>
-    dockerStub.stopContainer(containerId),
-  removeContainer: (containerId: string) =>
-    dockerStub.removeContainer(containerId),
   downProject: (options: {
     projectName: string;
     composePath?: string;

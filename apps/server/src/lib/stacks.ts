@@ -9,8 +9,8 @@ import {
   deploymentLogs,
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
-import { listContainers } from "./docker";
-import { runStackOp, loggedDeployAction } from "./compose-actions";
+import { listContainers } from "./docker-engine";
+import { loggedDeployAction } from "./compose-actions";
 import {
   readComposeFile,
   extractServices,
@@ -21,10 +21,9 @@ import {
 import {
   getStackAndRepo,
   getRepoDir,
-  getComposePath,
   assertStackName,
 } from "./config";
-import { ValidationError, NotFoundError } from "./errors";
+import { ValidationError } from "./errors";
 import type { ContainerInfo } from "./types";
 
 export async function listStacks() {
@@ -59,76 +58,64 @@ export async function listStacks() {
   }));
 }
 
-export async function getStackDetail(name: string) {
-  assertStackName(name);
-  const [stack] = await db
-    .select()
-    .from(stacks)
-    .where(eq(stacks.name, name))
-    .limit(1);
-  if (!stack) throw new NotFoundError("Stack not found");
-
-  // Independent reads, fetched together: repo row, env, secrets, logs,
-  // Docker state. The compose file needs the repo row, so it is parsed
-  // after the join (single disk read, sync, with internal fallback).
-  const [repoRows, envVars, secrets, logs, containers] = await Promise.all(
-    [
-      db
-        .select()
-        .from(repositories)
-        .where(eq(repositories.id, stack.repositoryId))
-        .limit(1),
-      db
-        .select()
-        .from(stackEnvVars)
-        .where(eq(stackEnvVars.stackId, stack.id)),
-      db
-        .select()
-        .from(stackSecrets)
-        .where(eq(stackSecrets.stackId, stack.id)),
-      db
-        .select()
-        .from(deploymentLogs)
-        .where(eq(deploymentLogs.stackId, stack.id))
-        .orderBy(desc(deploymentLogs.createdAt))
-        .limit(20),
-      // The docker stub throws synchronously (no promise), so the call is
-      // wrapped lazily — .catch on a sync throw would never attach.
-      Promise.resolve()
-        .then(() => listContainers(stack.name))
-        .catch((): ContainerInfo[] => []),
-    ]
-  );
-  const repo = repoRows[0];
-
-  let services: ReturnType<typeof extractServices> = [];
-  let detectedEnvVars: string[] = [];
-  let detectedSecrets: ReturnType<typeof extractSecrets> = [];
-  let composeRaw = "";
-  if (repo) {
-    const repoDir = getRepoDir(repo.id);
-    if (repoDir) {
-      // Single disk read: raw text for the editor, parsed doc for detection.
-      const composePath = getComposePath(
-        repo.id,
-        stack.relativePath,
-        stack.composeFile
-      );
-      // A missing compose file means "nothing to show" (empty defaults);
-      // a present-but-invalid file is a loud ValidationError, the same
-      // gate deploy enforces — the UI must look broken, not empty.
-      if (existsSync(composePath)) {
-        const { raw, doc } = readComposeFile(composePath);
-        composeRaw = raw;
-        services = extractServices(doc);
-        detectedEnvVars = extractAllEnvVarNames(doc);
-        detectedSecrets = extractSecrets(doc, composePath).map((d) => ({
-          ...d,
-          filePath: relative(getRepoDir(repo.id), d.filePath),
-        }));
-      }
-    }
+/**
+ * Compose read for detail: missing file → empty defaults (nothing to show);
+ * present-but-invalid → loud `ValidationError`, the same gate deploy
+ * enforces, so the UI looks broken instead of empty.
+ */
+function loadComposeForDetail(composePath: string, repoId: string) {
+  if (!existsSync(composePath)) {
+    return {
+      raw: "",
+      services: [] as ReturnType<typeof extractServices>,
+      detectedEnvVars: [] as string[],
+      detectedSecrets: [] as ReturnType<typeof extractSecrets>,
+    };
   }
+  // Single disk read: raw text for the editor, parsed doc for detection.
+  const { raw, doc } = readComposeFile(composePath);
+  return {
+    raw,
+    services: extractServices(doc),
+    detectedEnvVars: extractAllEnvVarNames(doc),
+    detectedSecrets: extractSecrets(doc, composePath).map((d) => ({
+      ...d,
+      filePath: relative(getRepoDir(repoId), d.filePath),
+    })),
+  };
+}
+
+export async function getStackDetail(name: string) {
+  // One context loader for reads and mutations: a stack whose repo row is
+  // gone is corrupt, not "empty" — detail 404s like deploy/stop do.
+  const { stack, repo, composePath } = await getStackAndRepo(name);
+
+  // Independent reads, fetched together: env, secrets, logs, Docker state.
+  const [envVars, secrets, logs, containers] = await Promise.all([
+    db
+      .select()
+      .from(stackEnvVars)
+      .where(eq(stackEnvVars.stackId, stack.id)),
+    db.select().from(stackSecrets).where(eq(stackSecrets.stackId, stack.id)),
+    db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id))
+      .orderBy(desc(deploymentLogs.createdAt))
+      .limit(20),
+    // The docker stub throws synchronously (no promise), so the call is
+    // wrapped lazily — .catch on a sync throw would never attach.
+    Promise.resolve()
+      .then(() => listContainers(stack.name))
+      .catch((): ContainerInfo[] => []),
+  ]);
+
+  const {
+    raw: composeRaw,
+    services,
+    detectedEnvVars,
+    detectedSecrets,
+  } = loadComposeForDetail(composePath, repo.id);
 
   const secretsByName = new Map(secrets.map((s) => [s.name, s]));
 
@@ -218,21 +205,4 @@ export async function deployStackByName(name: string) {
       projectName: stack.name,
     },
   });
-}
-
-/** Compose argv lives in `STACK_OPS` (`compose-actions.ts`), not in routes. */
-export async function stopStack(name: string) {
-  return runStackOp(name, "stop");
-}
-
-/** Restart carries `stackId` (log attribution) but no `statusOnSuccess`: it
- * does not change desired runtime, so even a failure must keep the
- * deploy/stop marker that sync gates on. */
-export async function restartStack(name: string) {
-  return runStackOp(name, "restart");
-}
-
-/** Same status contract as restart: pull never touches `stacks.status`. */
-export async function pullStack(name: string) {
-  return runStackOp(name, "pull");
 }

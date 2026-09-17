@@ -3,8 +3,8 @@ import { join } from "path";
 import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
-import { listContainers } from "./docker";
-import { runCoreOp, loggedDeployAction } from "./compose-actions";
+import { listContainers } from "./docker-engine";
+import { loggedDeployAction } from "./compose-actions";
 import { DATA_DIR, type ConfigValue } from "./config";
 import { getCoreComposeContent } from "./core-compose";
 import {
@@ -66,7 +66,8 @@ function getComposeDir(): string {
   return dir;
 }
 
-function getComposePath(): string {
+/** Compose file for the core project. Exported so routes can run core ops. */
+export function getCoreComposePath(): string {
   return join(getComposeDir(), "docker-compose.yaml");
 }
 
@@ -104,12 +105,28 @@ export function isCoreConfiguredRows(
   );
 }
 
-export async function getCoreOverview() {
-  const [config, coreServices] = await Promise.all([
+/**
+ * The one "core configured + services" assembly, shared by `GET /api/core`
+ * and the dashboard. Overview adds the per-key config map; dashboard adds
+ * stats — neither re-selects `coreConfig` nor re-derives configured-ness.
+ */
+export async function getCoreSnapshot() {
+  const [rows, services] = await Promise.all([
     db.select().from(coreConfig),
     safeCoreStatus(),
   ]);
-  const storedByKey = new Map(config.map((c) => [c.key, c]));
+  return {
+    configured: isCoreConfiguredRows(rows),
+    services,
+    rows,
+  };
+}
+
+export async function getCoreOverview() {
+  // One assembly of "configured + services", shared with the dashboard:
+  // overview only adds the per-key config map on top of the snapshot.
+  const snapshot = await getCoreSnapshot();
+  const storedByKey = new Map(snapshot.rows.map((c) => [c.key, c]));
   const configMap: Record<
     string,
     { value: string; isSecret: boolean; hasValue: boolean }
@@ -125,8 +142,8 @@ export async function getCoreOverview() {
 
   return {
     config: configMap,
-    coreServices,
-    isConfigured: isCoreConfiguredRows(config),
+    coreServices: snapshot.services,
+    isConfigured: snapshot.configured,
   };
 }
 
@@ -159,7 +176,7 @@ export async function saveCoreConfig(
 
 export async function deployCore() {
   const config = await loadCoreConfig();
-  const composePath = getComposePath();
+  const composePath = getCoreComposePath();
   writeFileSync(composePath, getCoreComposeContent(config), "utf-8");
 
   const envVars: Record<string, string> = {
@@ -180,12 +197,4 @@ export async function deployCore() {
       projectName: "laber-core",
     },
   });
-}
-
-export async function stopCore() {
-  return runCoreOp("stop", getComposePath());
-}
-
-export async function restartCore() {
-  return runCoreOp("restart", getComposePath());
 }

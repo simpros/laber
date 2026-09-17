@@ -1,5 +1,6 @@
 import { deployStack, type DeployOptions } from "./deploy";
-import { runComposeCommand, downProject } from "./docker";
+import { runComposeCommand } from "./compose-cli";
+import { downProject } from "./compose-cli";
 import {
   runLoggedAction,
   type StackStatusOnSuccess,
@@ -83,7 +84,6 @@ const STACK_OPS: Record<
   {
     title: (name: string) => string;
     action: string;
-    argv: string[];
     statusOnSuccess?: StackStatusOnSuccess;
     failureMessage: (name: string) => string;
   }
@@ -91,22 +91,27 @@ const STACK_OPS: Record<
   stop: {
     title: (name) => `Stopping ${name}`,
     action: "stop",
-    argv: ["down"],
     statusOnSuccess: "stopped",
     failureMessage: (name) => `Stopping ${name} failed`,
   },
   restart: {
     title: (name) => `Restarting ${name}`,
     action: "restart",
-    argv: ["restart"],
     failureMessage: (name) => `Restarting ${name} failed`,
   },
   pull: {
     title: (name) => `Pulling images for ${name}`,
     action: "pull",
-    argv: ["pull"],
     failureMessage: (name) => `Pulling images for ${name} failed`,
   },
+};
+
+// Only restart/pull are compose-argv invocations. Stop is project teardown
+// by name — there is exactly one "bring it down" protocol, shared with repo
+// delete, and it needs no compose file.
+const STACK_ARGV: Record<"restart" | "pull", string[]> = {
+  restart: ["restart"],
+  pull: ["pull"],
 };
 
 /**
@@ -122,15 +127,31 @@ export async function runStackOp(
   assertStackName(name);
   const def = STACK_OPS[op];
   const { stack, composePath } = await getStackAndRepo(name);
-  return loggedComposeAction({
+  const meta = {
     title: def.title(name),
     action: def.action,
     stackId: stack.id,
     statusOnSuccess: def.statusOnSuccess,
     failureMessage: def.failureMessage(name),
+  };
+  if (op === "stop") {
+    return runLoggedAction({
+      ...meta,
+      run: async (onOutput) => {
+        const result = await downProject({
+          projectName: stack.name,
+          composePath,
+          onOutput,
+        });
+        return { output: result.output };
+      },
+    });
+  }
+  return loggedComposeAction({
+    ...meta,
     composePath,
     projectName: stack.name,
-    argv: def.argv,
+    argv: STACK_ARGV[op],
   });
 }
 
@@ -173,36 +194,5 @@ export function runCoreOp(
     composePath,
     projectName: "laber-core",
     argv: def.argv,
-  });
-}
-
-/**
- * Logged project teardown for repo delete: the same `downProject` primitive
- * stop uses, but without requiring the compose file (delete must work after
- * the file vanished out of band). Success moves the stack to `"stopped"`;
- * failure moves it to `"error"` via the shared status machine, so a partial
- * multi-stack delete leaves an honest column instead of a sync dead-end.
- * Rows are deleted by the caller only after every stack tore down.
- */
-export async function teardownStackProject(
-  name: string,
-  options?: { title?: string; action?: string; failureMessage?: string }
-): Promise<{ output: string }> {
-  assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
-  return runLoggedAction({
-    title: options?.title ?? `Removing ${name}`,
-    action: options?.action ?? "remove",
-    stackId: stack.id,
-    statusOnSuccess: "stopped",
-    failureMessage: options?.failureMessage ?? `Removing ${name} failed`,
-    run: async (onOutput) => {
-      const result = await downProject({
-        projectName: stack.name,
-        composePath,
-        onOutput,
-      });
-      return { output: result.output };
-    },
   });
 }

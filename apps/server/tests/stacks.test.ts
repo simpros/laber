@@ -443,7 +443,7 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       .update(stacks)
       .set({ status: "deployed" })
       .where(eq(stacks.id, stack.id));
-    dockerStub.runComposeCommand = async () => ({
+    dockerStub.downProject = async () => ({
       output: "stopped",
     });
 
@@ -463,16 +463,11 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
 
   it("returns 500 when stopping fails", async () => {
     const { stack } = await seedStack("unstoppable", BASIC_COMPOSE);
-    dockerStub.runComposeCommand = async (
-      _composePath,
-      _command,
-      _projectName,
-      onOutput
-    ) => {
+    dockerStub.downProject = async (options) => {
       // Operational failure is a throw, not a flag; the streamed detail is
       // what the deployment log records.
-      onOutput?.("down blew up");
-      throw new ActionFailedError("Compose down failed");
+      options.onOutput?.("down blew up");
+      throw new ActionFailedError("Cannot bring down unstoppable");
     };
 
     const res = await app.handle(

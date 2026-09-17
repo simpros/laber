@@ -1,11 +1,11 @@
 import { ActionFailedError, ConflictError } from "./errors";
-import { listContainers } from "./docker";
+import { listContainers } from "./docker-engine";
 
 /**
- * Stack presence: does a compose project still have *running* containers?
- * Exited containers do not block removal (`listContainers` reports `all`,
- * so the state filter matters). Lives here — next to the sync/delete gates
- * that need it — so the removable rule is defined once, not once per path.
+ * Stack presence: the one removable-stack rule, defined once. Sync pre-checks
+ * it Docker-aware before the transaction; the status half doubles as the
+ * transactional last resort inside `reconcileStacksTx` (the probe cannot run
+ * inside a sync tx). Delete needs no pre-gate — hard `down` is its gate.
  */
 
 /** Running containers for a compose project. Throws when Docker is unreadable. */
@@ -17,11 +17,16 @@ export async function countProjectContainers(
 }
 
 /**
- * The one removable-stack check. Sync calls it for every stack that would
- * be reconciled away (a Docker-aware pre-check before the transaction; the
- * `status === "deployed"` guard inside `reconcileStacksTx` remains as the
- * transactional last resort since the probe cannot run inside a sync tx).
- *
+ * The deployed half of the removal rule, shared by the async pre-check and
+ * the sync-tx last resort so the predicate and conflict text cannot drift.
+ */
+export function deployedRemovalConflict(names: string[]): ConflictError {
+  return new ConflictError(
+    `Cannot sync: stack(s) no longer in repo but still deployed: ${names.join(", ")}. Stop them before syncing.`
+  );
+}
+
+/**
  * Hard and fail-closed: an unreadable daemon refuses the removal instead of
  * reporting "no containers". This is a commit gate, never a soft probe.
  */
@@ -30,9 +35,7 @@ export async function assertStackRemovable(stack: {
   status: string;
 }): Promise<void> {
   if (stack.status === "deployed") {
-    throw new ConflictError(
-      `Cannot sync: stack(s) no longer in repo but still deployed: ${stack.name}. Stop them before syncing.`
-    );
+    throw deployedRemovalConflict([stack.name]);
   }
   let running: number;
   try {

@@ -2,11 +2,11 @@ import { Elysia } from "elysia";
 import * as v from "valibot";
 import {
   getCoreOverview,
+  getCoreComposePath,
   saveCoreConfig,
   deployCore,
-  stopCore,
-  restartCore,
 } from "../lib/core-stack";
+import { runCoreOp } from "../lib/compose-actions";
 import { CORE_KEYS, type CoreKey } from "../lib/core-keys";
 
 const saveCoreConfigSchema = v.record(
@@ -29,8 +29,8 @@ export const coreRoutes = new Elysia()
     return deployCore();
   })
   .post("/api/core/stop", async () => {
-    return stopCore();
+    return runCoreOp("stop", getCoreComposePath());
   })
   .post("/api/core/restart", async () => {
-    return restartCore();
+    return runCoreOp("restart", getCoreComposePath());
   });

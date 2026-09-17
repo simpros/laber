@@ -4,10 +4,8 @@ import {
   listStacks,
   getStackDetail,
   deployStackByName,
-  stopStack,
-  restartStack,
-  pullStack,
 } from "../lib/stacks";
+import { runStackOp } from "../lib/compose-actions";
 import {
   replaceStackEnv,
   replaceStackSecrets,
@@ -51,13 +49,13 @@ export const stackRoutes = new Elysia()
     return deployStackByName(params.name);
   })
   .post("/api/stacks/:name/stop", async ({ params }) => {
-    return stopStack(params.name);
+    return runStackOp(params.name, "stop");
   })
   .post("/api/stacks/:name/restart", async ({ params }) => {
-    return restartStack(params.name);
+    return runStackOp(params.name, "restart");
   })
   .post("/api/stacks/:name/pull", async ({ params }) => {
-    return pullStack(params.name);
+    return runStackOp(params.name, "pull");
   })
   .put(
     "/api/stacks/:name/compose",

@@ -14,10 +14,10 @@ import {
 } from "./stack-reconcile";
 import type { StackTx } from "./db-tx";
 import { getRepoDir } from "./config";
-import { teardownStackProject } from "./compose-actions";
+import { runStackOp } from "./compose-actions";
 import { assertStackRemovable } from "./stack-presence";
 import { runLoggedAction } from "./logged-action";
-import { NotFoundError, ActionFailedError } from "./errors";
+import { DomainError, NotFoundError, ActionFailedError } from "./errors";
 
 export type AddRepositoryInput = {
   name: string;
@@ -228,24 +228,26 @@ export async function deleteRepository(id: string) {
     .where(eq(stacks.repositoryId, id));
 
   // Docker first, hard: every stack comes down before any row is deleted.
-  // `down` is the gate — there is no status refuse and no soft container
-  // probe here. Teardown goes through the logged project teardown (the same
-  // `downProject` primitive stop uses, which needs no compose file), so each
-  // stack gets an activity, a deployment log, and an honest status
-  // transition ("stopped", or "error" on partial failure) before rows move.
-  // A `down` throw aborts with no DB change, so rows are never deleted while
-  // containers may still be running — and a partial failure leaves a status
-  // sync understands instead of a sync dead-end. (Sync keeps the shared
-  // `assertStackRemovable` check because sync does not bring stacks down;
-  // delete does, so it needs no pre-gate.)
-  for (const stack of repoStacks) {
-    try {
-      await teardownStackProject(stack.name);
-    } catch (e) {
-      throw new ActionFailedError(
-        `Failed to delete repository: could not bring down stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"})`
-      );
-    }
+  // `down` is the gate — the same `runStackOp(name, "stop")` the stop route
+  // uses, so there is one teardown protocol (project-name `downProject`,
+  // compose file optional). Each stack gets an activity, a deployment log,
+  // and an honest status transition ("stopped", or "error" on partial
+  // failure) before rows move. Independent projects teardown in parallel;
+  // a `down` failure aborts with no DB change, so rows are never deleted
+  // while containers may still be running. Domain errors keep their kind
+  // (a failed stop already carries its logged context); only unexpected
+  // throws are wrapped.
+  const settlements = await Promise.allSettled(
+    repoStacks.map((stack) => runStackOp(stack.name, "stop"))
+  );
+  const failed = settlements.find(
+    (s): s is PromiseRejectedResult => s.status === "rejected"
+  );
+  if (failed) {
+    if (failed.reason instanceof DomainError) throw failed.reason;
+    throw new ActionFailedError(
+      `Failed to delete repository: could not bring down its stacks (${failed.reason instanceof Error ? failed.reason.message : "unknown error"})`
+    );
   }
 
   db.transaction((tx) => {

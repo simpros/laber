@@ -1,4 +1,4 @@
-import { ConflictError } from "./errors";
+import { deployedRemovalConflict } from "./stack-presence";
 import { stacks } from "@laber/db";
 import type { StackTx } from "./db-tx";
 import type { DiscoveredStack } from "./git";
@@ -47,17 +47,14 @@ export function reconcileStacksTx(
   // Removal policy: refuse to silently orphan a deployed stack; otherwise
   // delete the stale rows (env/secrets cascade, logs detach) in the same
   // transaction as the adds/updates so sync never leaves zombies behind.
-  // This status guard is the transactional last resort: sync pre-checks the
-  // same rule Docker-aware via `assertStackRemovable` (status *and* live
-  // containers) before the tx, but the probe cannot run inside a sync
-  // drizzle transaction — so this stays to catch a status flip mid-sync.
+  // This status guard is the transactional last resort for the shared
+  // deployed-removal rule (see `deployedRemovalConflict`); the async
+  // pre-check covers the Docker-aware half before the tx.
   const deployedRemoved = removed
     .filter((s) => s.status === "deployed")
     .map((s) => s.name);
   if (deployedRemoved.length > 0) {
-    throw new ConflictError(
-      `Cannot sync: stack(s) no longer in repo but still deployed: ${deployedRemoved.join(", ")}. Stop them before syncing.`
-    );
+    throw deployedRemovalConflict(deployedRemoved);
   }
 
   // NOTE: drizzle only executes queries that are awaited (async tx) or

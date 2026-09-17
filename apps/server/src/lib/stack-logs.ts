@@ -2,7 +2,7 @@ import {
   getContainerLogs,
   followContainerLogs,
   listContainers,
-} from "./docker";
+} from "./docker-engine";
 import { NotFoundError } from "./errors";
 
 /**
