@@ -1,10 +1,8 @@
-import { writeFileSync, renameSync, rmSync } from "fs";
+import { writeFileSync } from "fs";
 import { sql } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainersSoft } from "./docker-engine";
-import { downProject } from "./compose-cli";
 import { runLoggedDeploy } from "./compose-actions";
 import { type ConfigValue } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
@@ -164,16 +162,14 @@ export async function saveCoreConfig(
 export async function deployCore() {
   const config = await loadCoreConfig();
   const composePath = getCoreComposePath();
-  // One success contract for disk + runtime: the generated compose is part
-  // of the deploy attempt. Prepare to a temp file in the same directory
-  // (same `cwd` + relative-path resolution) and run `up -d` from the temp —
-  // the live file advances only after a successful attempt. A failed `up` /
-  // Traefik attach leaves the previous template untouched, so there is no
-  // outer restore catch and no second compensation layer: `deployStack`
-  // already owns secret wipe + compensating `down` for the attempt.
+  // One success contract for disk + runtime: the generated compose travels as
+  // `deploy.composeBytes`, and `deployStack` owns the sibling-temp snapshot
+  // lifecycle (write → `up -d` from the temp → delete). The live template
+  // advances only after a successful attempt returns, so a failed `up` /
+  // Traefik attach leaves the previous file untouched with no restore catch
+  // and no second compensation layer — `deployStack` already owns secret wipe
+  // + compensating `down` for the attempt.
   const content = getCoreComposeContent(config);
-  const tempPath = `${composePath}.deploy-${nanoid(8)}.tmp`;
-  writeFileSync(tempPath, content, "utf-8");
 
   const envVars: Record<string, string> = {
     CF_DNS_API_TOKEN: config.cfDnsApiToken,
@@ -182,46 +178,18 @@ export async function deployCore() {
     envVars.TUNNEL_TOKEN = config.tunnelToken;
   }
 
-  try {
-    const result = await runLoggedDeploy({
-      title: "Deploying core services",
-      action: "deploy",
-      identity: { kind: "core" },
-      failureMessage: "Deploying core services failed",
-      deploy: {
-        composePath: tempPath,
-        envVars,
-        projectName: CORE_PROJECT,
-      },
-    });
-    try {
-      renameSync(tempPath, composePath);
-    } catch (e) {
-      // Runtime advanced from the temp file but the live template could not
-      // advance: unwind the containers so disk + runtime stay consistent
-      // (both old), then throw. A half-live core project is worse than none.
-      try {
-        await downProject({
-          projectName: CORE_PROJECT,
-          composePath: tempPath,
-        });
-      } catch {
-        // the rename error is what matters
-      }
-      try {
-        rmSync(tempPath, { force: true });
-      } catch {
-        // ignore cleanup errors
-      }
-      throw e;
-    }
-    return result;
-  } catch (e) {
-    try {
-      rmSync(tempPath, { force: true });
-    } catch {
-      // best-effort temp cleanup: the deploy error is what matters
-    }
-    throw e;
-  }
+  const result = await runLoggedDeploy({
+    title: "Deploying core services",
+    action: "deploy",
+    identity: { kind: "core" },
+    failureMessage: "Deploying core services failed",
+    deploy: {
+      composePath,
+      composeBytes: content,
+      envVars,
+      projectName: CORE_PROJECT,
+    },
+  });
+  writeFileSync(composePath, content, "utf-8");
+  return result;
 }

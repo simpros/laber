@@ -1,16 +1,10 @@
-import { rmSync, writeFileSync } from "fs";
-import { nanoid } from "nanoid";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { loadCompose } from "./compose-parse";
 import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
 import { runLoggedDeploy } from "./compose-actions";
-import {
-  getStackAndRepo,
-  assertStackName,
-  withLockedStack,
-} from "./stack-context";
+import { getStackAndRepo, withLockedStack } from "./stack-context";
 import { ValidationError } from "./errors";
 
 type StackRow = Awaited<ReturnType<typeof getStackAndRepo>>["stack"];
@@ -89,17 +83,6 @@ export async function resolveStackDeployInputsFor(
   };
 }
 
-export async function resolveStackDeployInputs(name: string): Promise<{
-  stackId: string;
-  repositoryId: string;
-  composeRaw: string;
-  deploy: Omit<DeployOptions, "onOutput">;
-}> {
-  assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
-  return resolveStackDeployInputsFor(stack, composePath);
-}
-
 export async function deployStackByName(name: string) {
   // Deploy holds the per-repo lock: `up -d` creates the very containers the
   // sync removable probe reads, so an unlocked deploy racing a sync
@@ -109,31 +92,20 @@ export async function deployStackByName(name: string) {
   // lock key sampled cheaply outside, every removable input (DB row, compose,
   // env/secrets) re-resolved *under* the lock.
   //
-  // Validated bytes === applied bytes: the compose document is frozen to a
-  // snapshot file in the same directory (same `cwd` + relative-path
-  // resolution as the live file) and Docker runs `-f <snapshot>`. Live-tree
-  // writers (compose save, sync pull) cannot swap the file between this
-  // attempt's gate check and `up -d` — the lock no longer needs to chase
-  // every future disk writer.
+  // Validated bytes === applied bytes: the frozen compose document travels as
+  // `deploy.composeBytes`, and `deployStack` owns the sibling-temp snapshot
+  // lifecycle (write → `-f <temp>` → delete). Live-tree writers (compose
+  // save, sync pull) cannot swap the file between this attempt's gate check
+  // and `up -d`.
   return withLockedStack(name, async ({ stack, composePath }) => {
     const { stackId, deploy, composeRaw } =
       await resolveStackDeployInputsFor(stack, composePath);
-    const snapshotPath = `${composePath}.deploy-${nanoid(8)}.tmp`;
-    writeFileSync(snapshotPath, composeRaw, "utf-8");
-    try {
-      return await runLoggedDeploy({
-        title: `Deploying ${name}`,
-        action: "deploy",
-        identity: { kind: "stack", stackId, onSuccess: "deployed" },
-        failureMessage: `Deploying ${name} failed`,
-        deploy: { ...deploy, composePath: snapshotPath },
-      });
-    } finally {
-      try {
-        rmSync(snapshotPath, { force: true });
-      } catch {
-        // best-effort snapshot cleanup; the deploy outcome is what matters.
-      }
-    }
+    return runLoggedDeploy({
+      title: `Deploying ${name}`,
+      action: "deploy",
+      identity: { kind: "stack", stackId, onSuccess: "deployed" },
+      failureMessage: `Deploying ${name} failed`,
+      deploy: { ...deploy, composeBytes: composeRaw },
+    });
   });
 }

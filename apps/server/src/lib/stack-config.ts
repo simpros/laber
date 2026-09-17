@@ -12,12 +12,11 @@ export async function saveComposeContent(name: string, content: string) {
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
-  // Compose writes go through the same per-repo mutex a locked deploy holds
-  // while it validates + applies the file: otherwise a concurrent save could
-  // swap the file between deploy's gate check and `docker compose -f <path>
-  // up -d`, and Docker would apply bytes this attempt never validated.
-  // One door (`withLockedStack`): sample + re-resolve + write share the
-  // helper deploy/stop use — no copy-pasted lock block.
+  // Compose writes take the same per-repo mutex as deploy/stop/sync/delete
+  // so live-file writes serialize with the removable-mutation holders: the
+  // lock is about ordering with the probe/readers, not about validated-vs-
+  // applied bytes — deploy freezes the bytes it applies to its own snapshot,
+  // so save and deploy are independent attempts either way.
   return withLockedStack(name, async ({ composePath }) => {
     // The one compose gate (envelope + secret refs): save accepts exactly
     // what deploy/detail accept, so a saved file can never 400 on read/deploy.
