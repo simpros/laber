@@ -35,13 +35,18 @@ type RemoteTree = Pick<
 
 /**
  * Shared git-failure mapping: the detail line is already streamed, so the
- * throw maps to the contextual failure message at the edge. Domain errors
- * are never produced here.
+ * throw maps to the contextual failure message at the edge. The verb names
+ * the operation that failed — clone and sync share the shape, not the
+ * product name. Domain errors are never produced here.
  */
-function gitFailure(onOutput: (chunk: string) => void, e: unknown): never {
+function gitFailure(
+  onOutput: (chunk: string) => void,
+  e: unknown,
+  verb: "Clone failed" | "Sync failed"
+): never {
   const message = e instanceof Error ? e.message : "Unknown error";
-  onOutput(`Sync failed: ${message}\n`);
-  throw new ActionFailedError("Sync failed");
+  onOutput(`${verb}: ${message}\n`);
+  throw new ActionFailedError(verb);
 }
 
 /** Fresh clone: register path (fails if the remote cannot be cloned). */
@@ -58,7 +63,7 @@ async function cloneRemoteTree(
       remote.sshPrivateKey ?? undefined
     );
   } catch (e) {
-    gitFailure(onOutput, e);
+    gitFailure(onOutput, e, "Clone failed");
   }
 }
 
@@ -68,8 +73,9 @@ async function pullOrCloneRemoteTree(
   remote: RemoteTree,
   onOutput: (chunk: string) => void
 ): Promise<void> {
+  const cloning = !existsSync(repoDir);
   try {
-    if (!existsSync(repoDir)) {
+    if (cloning) {
       await cloneRepo(
         remote.url,
         repoDir,
@@ -80,7 +86,7 @@ async function pullOrCloneRemoteTree(
       await pullRepo(repoDir, remote.sshPrivateKey ?? undefined);
     }
   } catch (e) {
-    gitFailure(onOutput, e);
+    gitFailure(onOutput, e, cloning ? "Clone failed" : "Sync failed");
   }
 }
 

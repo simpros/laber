@@ -20,10 +20,11 @@ type OpCtx = {
 
 type OpDef = {
   action: string;
-  /** Present only for ops that own runtime intent (stop). The identity the
-   * op needs is derived from this: `onSuccess` → `stack` variant, absent →
-   * `stack-log` variant — callers never hand-build the union. */
-  onSuccess?: "deployed" | "stopped";
+  /** Full identity factory per row: stop owns runtime intent (`stack` with
+   * `onSuccess`); restart/pull are log-only (`stack-log`). Each row carries
+   * the complete variant — callers never branch on an optional, and
+   * `"deployed"` never appears here (deploy is not in this table). */
+  stackIdentity: (stackId: string) => ActionIdentity;
   title: (label: string) => string;
   failureMessage: (label: string) => string;
   run: (ctx: OpCtx, onOutput: (chunk: string) => void) => Promise<{
@@ -40,7 +41,11 @@ type OpDef = {
 const OPS: Record<LifecycleOp, OpDef> = {
   stop: {
     action: "stop",
-    onSuccess: "stopped",
+    stackIdentity: (stackId) => ({
+      kind: "stack",
+      stackId,
+      onSuccess: "stopped",
+    }),
     title: (label) => `Stopping ${label}`,
     failureMessage: (label) => `Stopping ${label} failed`,
     run: (ctx, onOutput) =>
@@ -52,6 +57,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
   restart: {
     action: "restart",
+    stackIdentity: (stackId) => ({ kind: "stack-log", stackId }),
     title: (label) => `Restarting ${label}`,
     failureMessage: (label) => `Restarting ${label} failed`,
     run: (ctx, onOutput) =>
@@ -59,6 +65,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
   pull: {
     action: "pull",
+    stackIdentity: (stackId) => ({ kind: "stack-log", stackId }),
     title: (label) => `Pulling images for ${label}`,
     failureMessage: (label) => `Pulling images for ${label} failed`,
     run: (ctx, onOutput) =>
@@ -94,10 +101,9 @@ function runLifecycleOp(
 
 /**
  * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
- * near-identical wrappers. The table row decides the identity variant:
- * stop (owns runtime intent) → `stack` with `onSuccess`; restart/pull →
- * `stack-log` (attribution, no status write — they do not change desired
- * runtime).
+ * near-identical wrappers. The table row owns the identity variant outright
+ * (stop → `stack` with `onSuccess`; restart/pull → `stack-log` for
+ * attribution with no status write — they do not change desired runtime).
  *
  * No per-repo lock: lifecycle ops never change the removable inputs the
  * sync/delete lock owns — the removable gate is the fail-closed Docker
@@ -112,13 +118,9 @@ export async function runStackOp(
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
   const def = OPS[op];
-  const identity: ActionIdentity =
-    def.onSuccess !== undefined
-      ? { kind: "stack", stackId: stack.id, onSuccess: def.onSuccess }
-      : { kind: "stack-log", stackId: stack.id };
   return runLifecycleOp(
     op,
-    identity,
+    def.stackIdentity(stack.id),
     { projectName: stack.name, composePath, label: stack.name }
   );
 }
@@ -139,6 +141,16 @@ export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
 }
 
 /**
+ * Deploy-scoped identity: only the variants that can mean deploy. A
+ * log-only (`stack-log`) or stop-shaped (`onSuccess: "stopped"`) identity
+ * is rejected at compile time instead of silently recording the wrong
+ * outcome.
+ */
+export type DeployIdentity =
+  | { kind: "stack"; stackId: string; onSuccess: "deployed" }
+  | { kind: "core" };
+
+/**
  * The one logged-deploy shell, next to the other lifecycle verbs: stack
  * `deployStackByName` and `deployCore` only resolve inputs + identity, then
  * run through here — so deploy is a table peer, not a hand-rolled twin that
@@ -148,7 +160,7 @@ export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
 export function runLoggedDeploy(options: {
   title: string;
   action: string;
-  identity: ActionIdentity;
+  identity: DeployIdentity;
   failureMessage?: string;
   deploy: Omit<DeployOptions, "onOutput">;
 }): Promise<{ output: string }> {

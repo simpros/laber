@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, deploymentLogs, stacks } from "@laber/db";
 import { createActivity, appendOutput, finishActivity } from "./activity";
+import type { Activity } from "./activity";
 import { ActionFailedError } from "./errors";
 
 /**
@@ -127,6 +128,45 @@ type LoggedActionBase = {
  * so clients never see success→error finish flips or a second log attempt
  * for one action.
  */
+/**
+ * Shared transcript executor behind both public shells: creates the
+ * activity, streams `run` progress into it, and returns the success payload
+ * or `{ transcript, error }`. It never finishes the activity and never
+ * persists — `runActivity` finishes, `runLoggedAction` records. One
+ * try/catch for the streaming half so the next finish/persist fix cannot
+ * drift one shell and leave the other wrong.
+ */
+async function runTranscript<T>(
+  title: string,
+  run: (
+    onOutput: (chunk: string) => void
+  ) => Promise<{ output: string; value?: T }>
+): Promise<
+  | { ok: true; activity: Activity; output: string; value: T | undefined }
+  | { ok: false; activity: Activity; error: unknown; transcript: string }
+> {
+  const activity = createActivity(title);
+
+  // Everything `run` streams. On failure `run` threw instead of returning
+  // output, so this transcript (plus the error line below) is what the
+  // durable log records — no second encoding of the same failure.
+  let transcript = "";
+  const onOutput = (chunk: string) => {
+    transcript += chunk;
+    appendOutput(activity.id, chunk);
+  };
+
+  try {
+    const result = await run(onOutput);
+    return { ok: true, activity, output: result.output, value: result.value };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unknown error";
+    transcript += `\n${detail}\n`;
+    appendOutput(activity.id, `\n${detail}\n`);
+    return { ok: false, activity, error, transcript };
+  }
+}
+
 export async function runLoggedAction(
   options: LoggedActionBase & {
     run: LoggedActionRunVoid;
@@ -144,34 +184,15 @@ export async function runLoggedAction<T>(
   }
 ): Promise<{ output: string; value?: T }> {
   const failureMessage = options.failureMessage ?? `${options.title} failed`;
-  const activity = createActivity(options.title);
+  const outcome = await runTranscript<T>(options.title, options.run);
 
-  // Everything `run` streams. On failure `run` threw instead of returning
-  // output, so this transcript (plus the error line below) is what the
-  // deployment log records — no second encoding of the same failure.
-  let transcript = "";
-  const onOutput = (chunk: string) => {
-    transcript += chunk;
-    appendOutput(activity.id, chunk);
-  };
-
-  let runOutput: string;
-  let runValue: T | undefined;
-  try {
-    const result = await options.run(onOutput);
-    runOutput = result.output;
-    runValue = result.value;
-  } catch (runError) {
-    const detail =
-      runError instanceof Error ? runError.message : "Unknown error";
-    transcript += `\n${detail}\n`;
-    appendOutput(activity.id, `\n${detail}\n`);
+  if (!outcome.ok) {
     try {
       await recordActionOutcome({
-        activityId: activity.id,
+        activityId: outcome.activity.id,
         identity: options.identity,
         action: options.action,
-        result: { success: false, output: transcript },
+        result: { success: false, output: outcome.transcript },
       });
     } catch (persistError) {
       // Run AND persist failed: the activity is already finished as error
@@ -181,22 +202,22 @@ export async function runLoggedAction<T>(
       // original error so operators see why the action failed.
       console.error("Failed to persist action outcome:", persistError);
     }
-    if (runError instanceof ActionFailedError) {
+    if (outcome.error instanceof ActionFailedError) {
       throw new ActionFailedError(failureMessage);
     }
-    throw runError;
+    throw outcome.error;
   }
 
   // `run` succeeded: persist the success outcome. A throw here is a persist
   // failure, not an operational failure — the activity is already finished
   // as error, so propagate without recording a second (failure) outcome.
   await recordActionOutcome({
-    activityId: activity.id,
+    activityId: outcome.activity.id,
     identity: options.identity,
     action: options.action,
-    result: { success: true, output: runOutput! },
+    result: { success: true, output: outcome.output },
   });
-  return { output: runOutput!, value: runValue };
+  return { output: outcome.output, value: outcome.value };
 }
 
 type ActivityActionBase = {
@@ -226,32 +247,16 @@ export async function runActivity<T>(
   }
 ): Promise<{ output: string; value?: T }> {
   const failureMessage = options.failureMessage ?? `${options.title} failed`;
-  const activity = createActivity(options.title);
+  const outcome = await runTranscript<T>(options.title, options.run);
 
-  let transcript = "";
-  const onOutput = (chunk: string) => {
-    transcript += chunk;
-    appendOutput(activity.id, chunk);
-  };
-
-  let runOutput: string;
-  let runValue: T | undefined;
-  try {
-    const result = await options.run(onOutput);
-    runOutput = result.output;
-    runValue = result.value;
-  } catch (runError) {
-    const detail =
-      runError instanceof Error ? runError.message : "Unknown error";
-    transcript += `\n${detail}\n`;
-    appendOutput(activity.id, `\n${detail}\n`);
-    finishActivity(activity.id, "error");
-    if (runError instanceof ActionFailedError) {
+  if (!outcome.ok) {
+    finishActivity(outcome.activity.id, "error");
+    if (outcome.error instanceof ActionFailedError) {
       throw new ActionFailedError(failureMessage);
     }
-    throw runError;
+    throw outcome.error;
   }
 
-  finishActivity(activity.id, "success");
-  return { output: runOutput!, value: runValue };
+  finishActivity(outcome.activity.id, "success");
+  return { output: outcome.output, value: outcome.value };
 }
