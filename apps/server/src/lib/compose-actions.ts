@@ -7,10 +7,10 @@ import {
 } from "./logged-action";
 import {
   getStackAndRepo,
-  getComposePath,
   assertStackName,
 } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
+import { withRepoLock } from "./repo-lock";
 
 type LifecycleOp = "stop" | "restart" | "pull";
 
@@ -65,57 +65,26 @@ const OPS: Record<LifecycleOp, OpDef> = {
 };
 
 /**
- * Discriminated lifecycle target: a stack op carries its row identity plus
- * an explicit status decision; a core op carries no stack row by
- * construction. Delete-path teardown passes `statusOnSuccess: undefined`
- * explicitly (rows disappear right after) instead of a boolean that negates
- * the table row.
- */
-export type LifecycleTarget =
-  | {
-      kind: "stack";
-      stackId: string;
-      projectName: string;
-      composePath: string;
-      label: string;
-      statusOnSuccess?: StackStatusOnSuccess;
-    }
-  | {
-      kind: "core";
-      projectName: string;
-      composePath: string;
-      label: string;
-    };
-
-function identityForTarget(target: LifecycleTarget): ActionIdentity {
-  return target.kind === "stack"
-    ? {
-        kind: "stack",
-        stackId: target.stackId,
-        statusOnSuccess: target.statusOnSuccess,
-      }
-    : { kind: "core" };
-}
-
-/**
- * The one logged-lifecycle shell for every stoppable project: stack ops
- * (`runStackOp`, `stopStackRow`) and core ops (`runCoreOp`) only resolve
- * identity + compose path, then run the table def through here — so the
- * status machine, activity title, and failure phrasing live once.
+ * The one logged-lifecycle shell for every stoppable project: `runStackOp`
+ * and `runCoreOp` only resolve identity + compose path, then run the table
+ * def through here — so the status machine, activity title, and failure
+ * phrasing live once. Identity is `ActionIdentity` directly: no second
+ * twin union remapping 1:1 into it.
  */
 function runLifecycleOp(
   op: LifecycleOp,
-  target: LifecycleTarget
+  identity: ActionIdentity,
+  ctx: OpCtx & { label: string }
 ): Promise<{ output: string }> {
   const def = OPS[op];
   return runLoggedAction({
-    title: def.title(target.label),
+    title: def.title(ctx.label),
     action: def.action,
-    identity: identityForTarget(target),
-    failureMessage: def.failureMessage(target.label),
+    identity,
+    failureMessage: def.failureMessage(ctx.label),
     run: async (onOutput) =>
       def.run(
-        { projectName: target.projectName, composePath: target.composePath },
+        { projectName: ctx.projectName, composePath: ctx.composePath },
         onOutput
       ),
   });
@@ -125,7 +94,9 @@ function runLifecycleOp(
  * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
  * near-identical wrappers. Restart and pull carry the stack identity but no
  * `statusOnSuccess`, so they never touch `stacks.status` (they do not
- * change desired runtime).
+ * change desired runtime). Holds the per-repo lock (see `repo-lock.ts`):
+ * stop commits `stacks.status`, which the sync removable probe reads, so a
+ * sync probe→commit window must not interleave it.
  */
 export async function runStackOp(
   name: string,
@@ -133,50 +104,17 @@ export async function runStackOp(
 ): Promise<{ output: string }> {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  return runLifecycleOp(op, {
-    kind: "stack",
-    stackId: stack.id,
-    projectName: stack.name,
-    composePath,
-    label: stack.name,
-    statusOnSuccess: OPS[op].statusOnSuccess,
-  });
-}
-
-export type StackRowLike = {
-  id: string;
-  name: string;
-  repositoryId: string;
-  relativePath: string;
-  composeFile: string;
-};
-
-/**
- * Stop for an already-loaded stack row: the same logged `downProject` stop
- * as `runStackOp(name, "stop")` via the shared `runLifecycleOp` shell, so no
- * second lookup per stack — but with `statusOnSuccess: undefined` passed
- * explicitly. Repo delete removes the rows in one transaction after every
- * down succeeds, so per-stop status flips would be writes to rows about to
- * disappear (and lies on partial failure). Activity + deployment-log history
- * is still recorded per stack; only the `stacks.status` column stays
- * untouched.
- */
-export function stopStackRow(stack: StackRowLike): Promise<{
-  output: string;
-}> {
-  const composePath = getComposePath(
-    stack.repositoryId,
-    stack.relativePath,
-    stack.composeFile
+  return withRepoLock(stack.repositoryId, () =>
+    runLifecycleOp(
+      op,
+      {
+        kind: "stack",
+        stackId: stack.id,
+        statusOnSuccess: OPS[op].statusOnSuccess,
+      },
+      { projectName: stack.name, composePath, label: stack.name }
+    )
   );
-  return runLifecycleOp("stop", {
-    kind: "stack",
-    stackId: stack.id,
-    projectName: stack.name,
-    composePath,
-    label: stack.name,
-    statusOnSuccess: undefined,
-  });
 }
 
 type CoreOp = "stop" | "restart";
@@ -187,8 +125,7 @@ type CoreOp = "stop" | "restart";
  * own the compose path. Core has no stack row, so no status commit by
  * construction. */
 export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
-  return runLifecycleOp(op, {
-    kind: "core",
+  return runLifecycleOp(op, { kind: "core" }, {
     projectName: CORE_PROJECT,
     composePath: getCoreComposePath(),
     label: "core services",

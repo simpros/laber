@@ -117,9 +117,11 @@ describe("extractSecrets", () => {
   });
 
   it("rejects non-list service secrets sections", () => {
+    // Bypasses the parse gate on purpose: the extractor itself must stay
+    // loud for direct (unparsed) callers, not just for parsed documents.
     const compose = {
       services: {
-        web: { secrets: "db_password" },
+        web: { secrets: "db_password" as unknown as string[] },
       },
       secrets: {
         db_password: { file: "./secrets/db_password.txt" },

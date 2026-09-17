@@ -6,57 +6,67 @@ import { ValidationError } from "./errors";
 
 /**
  * The one compose parse every path shares (detail, deploy, save): a single
- * envelope with `services` required and `networks`/`secrets` optional. Each
- * extractor narrows only the slice it reads, so there is no central `as`
- * cast pretending the whole document is typed — and no second schema that
- * strips keys another consumer needs.
+ * envelope whose service entries are fully schemed for the slices we
+ * consume (image, ports, environment, labels, secrets refs) plus the
+ * network/secret envelopes deploy reads. Extractors are field reads off
+ * these inferred types — there is no central `as` cast and no second
+ * schema that strips keys another consumer needs.
+ *
+ * Fail policy, aligned at this gate: wrong *shapes* (a non-list `ports:`,
+ * a non-map `secrets:`, a string service entry) fail loud for every
+ * consumer — save, detail, and deploy share the rejection. Skipped
+ * *values* inside a valid shape (a non-string env entry, a non-string
+ * label value) stay lenient in the extractors below: they are inert data,
+ * not a broken document.
  */
-export type ComposeService = Record<string, unknown>;
-
-export type ComposeDocument = {
-  services: Record<string, ComposeService>;
-  networks?: Record<string, Record<string, unknown>>;
-  secrets?: Record<string, Record<string, unknown>>;
-};
-
-const serviceRecord = v.record(v.string(), v.unknown());
-
-const composeDocumentSchema = v.object({
-  services: v.record(v.string(), serviceRecord),
-  networks: v.optional(v.record(v.string(), serviceRecord)),
-  secrets: v.optional(v.record(v.string(), serviceRecord)),
-});
-
-// Consumed-slice schemas: each extractor parses only what it reads, once,
-// and threads the inferred type — no parallel hand-parser that can drift
-// from the gate above.
 const portLongSchema = v.object({
   target: v.union([v.string(), v.number()]),
   published: v.optional(v.union([v.string(), v.number()])),
 });
-const portEntrySchema = v.union([
-  v.string(),
-  v.number(),
-  portLongSchema,
-]);
-const portsSchema = v.array(portEntrySchema);
+const portEntrySchema = v.union([v.string(), v.number(), portLongSchema]);
 
-const envSchema = v.union([
+const serviceEnvSchema = v.union([
   v.array(v.unknown()),
   v.record(v.string(), v.unknown()),
 ]);
 
-const labelsSchema = v.union([
+const serviceLabelsSchema = v.union([
   v.array(v.unknown()),
   v.record(v.string(), v.unknown()),
 ]);
 
 const serviceSecretsSchema = v.array(v.unknown());
 
-const networkEntrySchema = v.object({
-  external: v.optional(v.unknown()),
-  name: v.optional(v.unknown()),
+const composeServiceSchema = v.object({
+  image: v.optional(v.string()),
+  container_name: v.optional(v.string()),
+  ports: v.optional(v.array(portEntrySchema)),
+  environment: v.optional(serviceEnvSchema),
+  labels: v.optional(serviceLabelsSchema),
+  secrets: v.optional(serviceSecretsSchema),
 });
+
+const networkEntrySchema = v.object({
+  external: v.optional(
+    v.union([v.boolean(), v.record(v.string(), v.unknown())])
+  ),
+  name: v.optional(v.string()),
+});
+
+const secretEntrySchema = v.object({
+  file: v.optional(v.string()),
+  external: v.optional(v.unknown()),
+});
+
+const composeDocumentSchema = v.object({
+  services: v.record(v.string(), composeServiceSchema),
+  networks: v.optional(v.record(v.string(), networkEntrySchema)),
+  secrets: v.optional(v.record(v.string(), secretEntrySchema)),
+});
+
+export type ComposeService = v.InferOutput<typeof composeServiceSchema>;
+
+export type ComposeDocument = v.InferOutput<typeof composeDocumentSchema>;
 
 export function parseComposeDocument(content: string): ComposeDocument {
   let parsed: unknown;
@@ -97,20 +107,14 @@ export type ServiceInfo = {
   };
 };
 
-export function extractEnvVarNames(env: unknown): string[] {
+export function extractEnvVarNames(
+  env: ComposeService["environment"]
+): string[] {
   if (env === undefined) return [];
   const varPattern = /\$\{?([A-Z_][A-Z0-9_]*)}?/g;
   const names = new Set<string>();
 
-  const parsed = v.safeParse(envSchema, env);
-  if (!parsed.success) return [];
-
-  let values: unknown[];
-  if (Array.isArray(parsed.output)) {
-    values = parsed.output;
-  } else {
-    values = Object.values(parsed.output);
-  }
+  const values: unknown[] = Array.isArray(env) ? env : Object.values(env);
 
   for (const val of values) {
     if (typeof val !== "string") continue;
@@ -123,24 +127,15 @@ export function extractEnvVarNames(env: unknown): string[] {
   return [...names];
 }
 
-function stringField(
-  svc: ComposeService,
-  key: string
-): string | undefined {
-  const parsed = v.safeParse(v.string(), svc[key]);
-  return parsed.success ? parsed.output : undefined;
-}
-
 function parsePorts(
-  ports: unknown
+  ports: ComposeService["ports"]
 ): Array<{ host?: number; container: number }> {
-  const parsed = v.safeParse(portsSchema, ports);
-  if (!parsed.success) return [];
+  if (!ports) return [];
   const out: Array<{ host?: number; container: number }> = [];
-  for (const entry of parsed.output) {
+  for (const entry of ports) {
     // Long-form `ports:` objects ({ target, published }) have no short
     // string to split: read the fields directly instead of String(entry).
-    if (typeof entry === "object" && entry !== null) {
+    if (typeof entry === "object") {
       const target = Number(entry.target);
       if (!Number.isFinite(target)) continue;
       const published =
@@ -169,26 +164,25 @@ function parsePorts(
   return out;
 }
 
-function normalizeLabels(labels: unknown): Record<string, string> {
-  const parsed = v.safeParse(labelsSchema, labels);
-  if (!parsed.success) return {};
-  if (Array.isArray(parsed.output)) {
+function normalizeLabels(
+  labels: ComposeService["labels"]
+): Record<string, string> {
+  if (!labels) return {};
+  if (Array.isArray(labels)) {
     const result: Record<string, string> = {};
-    for (const l of parsed.output) {
-      const item = v.safeParse(v.string(), l);
-      if (!item.success) continue;
-      const idx = item.output.indexOf("=");
+    for (const l of labels) {
+      if (typeof l !== "string") continue;
+      const idx = l.indexOf("=");
       if (idx !== -1) {
-        result[item.output.slice(0, idx)] = item.output.slice(idx + 1);
+        result[l.slice(0, idx)] = l.slice(idx + 1);
       }
     }
     return result;
   }
   {
     const result: Record<string, string> = {};
-    for (const [k, value] of Object.entries(parsed.output)) {
-      const item = v.safeParse(v.string(), value);
-      if (item.success) result[k] = item.output;
+    for (const [k, value] of Object.entries(labels)) {
+      if (typeof value === "string") result[k] = value;
     }
     return result;
   }
@@ -224,8 +218,8 @@ export function extractServices(doc: ComposeDocument): ServiceInfo[] {
     const labels = normalizeLabels(svc.labels);
     return {
       name,
-      image: stringField(svc, "image") ?? "",
-      containerName: stringField(svc, "container_name"),
+      image: svc.image ?? "",
+      containerName: svc.container_name,
       ports: parsePorts(svc.ports),
       envVars: extractEnvVarNames(svc.environment),
       traefikRoute: extractTraefikFromLabels(labels),
@@ -255,14 +249,12 @@ export function extractNetworkName(doc: ComposeDocument): string | undefined {
     ...Object.values(rest),
   ];
   for (const net of ordered) {
-    const parsed = v.safeParse(networkEntrySchema, net);
-    if (!parsed.success) continue;
     if (
-      parsed.output.external === true &&
-      typeof parsed.output.name === "string" &&
-      parsed.output.name !== ""
+      net.external === true &&
+      typeof net.name === "string" &&
+      net.name !== ""
     ) {
-      return parsed.output.name;
+      return net.name;
     }
   }
 
@@ -283,29 +275,28 @@ export function extractSecrets(
   // compose with service `secrets:` refs but no top-level `secrets:` must
   // fail loud (secret-less deploy), not return [].
   const serviceMap = new Map<string, string[]>();
-  for (const [svcName, svc] of Object.entries(doc.services ?? {})) {
+  for (const [svcName, svc] of Object.entries(doc.services)) {
     const refs = svc.secrets;
     if (refs === undefined) continue;
     // Only short-syntax names are supported: a long-form object (or any
     // non-list) has no resolvable file, and silently skipping it would deploy
-    // without files the compose file intended. Fail loud instead — validated
-    // once here through the slice schema, then threaded as typed strings.
-    const list = v.safeParse(serviceSecretsSchema, refs);
-    if (!list.success) {
+    // without files the compose file intended. The gate above already
+    // enforces the list shape for parsed documents; this plain `Array.isArray`
+    // keeps the same loud branch for direct (unparsed) callers.
+    if (!Array.isArray(refs)) {
       throw new ValidationError(
         `Invalid compose file: service "${svcName}" has a non-list "secrets" section (only short-syntax secret names are supported)`
       );
     }
-    for (const ref of list.output) {
-      const name = v.safeParse(v.string(), ref);
-      if (!name.success) {
+    for (const ref of refs) {
+      if (typeof ref !== "string") {
         throw new ValidationError(
           `Invalid compose file: service "${svcName}" uses long-form secret syntax (only short-syntax secret names are supported)`
         );
       }
-      const acc = serviceMap.get(name.output) ?? [];
+      const acc = serviceMap.get(ref) ?? [];
       acc.push(svcName);
-      serviceMap.set(name.output, acc);
+      serviceMap.set(ref, acc);
     }
   }
 
@@ -333,9 +324,9 @@ export function extractSecrets(
     // Explicit `external: true` secrets are managed outside compose: they
     // are intentionally omitted from file writes (no `secretFiles`), whether
     // or not a service references them.
-    if (v.safeParse(v.literal(true), def.external).success) continue;
-    const file = v.safeParse(v.string(), def.file);
-    if (!file.success || file.output === "") {
+    if (def.external === true) continue;
+    const file = def.file;
+    if (typeof file !== "string" || file === "") {
       // A referenced secret without a resolvable file would deploy without
       // files the compose file intended — fail loud. Unreferenced file-less
       // entries are inert declarations, so they are skipped.
@@ -348,9 +339,9 @@ export function extractSecrets(
     }
     out.push({
       name,
-      filePath: isAbsolute(file.output)
-        ? file.output
-        : resolve(dirname(composePath), file.output),
+      filePath: isAbsolute(file)
+        ? file
+        : resolve(dirname(composePath), file),
       services: serviceMap.get(name) ?? [],
     });
   }

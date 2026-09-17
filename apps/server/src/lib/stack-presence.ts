@@ -2,16 +2,18 @@ import { ActionFailedError, ConflictError } from "./errors";
 import { listContainers } from "./docker-engine";
 
 /**
- * Stack presence: the one removable-stack authority. Removal has two halves
- * that cannot share code directly — an async Docker-aware pre-check (runs
- * before the sync transaction, fail-closed) and a synchronous status
- * last-resort (runs inside `reconcileStacksTx`, where Docker cannot be
- * awaited). Both halves read the same predicate and the same conflict
- * constructor here, so a policy change edits one module. `stacks.status`
- * stays a UI/history column; only this module decides what "removable"
- * means, and sync serializes probe→commit per repo (`withRepoLock`) so the
- * window between the halves stays closed for concurrent syncs. Delete needs
- * no pre-gate — hard `down` is its gate.
+ * The one removable-stack authority: `assertStackRemovable` refuses a
+ * disappearance when the stored status is `"deployed"` or live containers
+ * still run for the project — fail-closed on an unreadable daemon.
+ *
+ * One async function, one answer. The sync transaction cannot await Docker,
+ * so there is deliberately no status-only twin inside `reconcileStacksTx`:
+ * instead every in-process writer of the rows this rule reads (sync
+ * materialize, repo delete, stack deploy, stack stop) holds
+ * `withRepoLock(repoId)` across probe→commit, closing the window
+ * in-process. `stacks.status` stays a UI/history column; only this module
+ * decides what "removable" means. Out-of-band daemon changes (another host
+ * touching Docker) remain best-effort.
  */
 
 /** Running containers for a compose project. Throws when Docker is unreadable. */
@@ -23,23 +25,6 @@ export async function countProjectContainers(
 }
 
 /**
- * The deployed half of the removal rule, shared by the async pre-check and
- * the sync-tx last resort so the predicate and conflict text cannot drift.
- */
-export function deployedRemovalConflict(names: string[]): ConflictError {
-  return new ConflictError(
-    `Cannot sync: stack(s) no longer in repo but still deployed: ${names.join(", ")}. Stop them before syncing.`
-  );
-}
-
-/** Pure status half: names among `removed` whose stored status is deployed. */
-export function deployedRemovedNames(
-  removed: Array<{ name: string; status: string }>
-): string[] {
-  return removed.filter((s) => s.status === "deployed").map((s) => s.name);
-}
-
-/**
  * Hard and fail-closed: an unreadable daemon refuses the removal instead of
  * reporting "no containers". This is a commit gate, never a soft probe.
  */
@@ -47,9 +32,10 @@ export async function assertStackRemovable(stack: {
   name: string;
   status: string;
 }): Promise<void> {
-  const deployed = deployedRemovedNames([stack]);
-  if (deployed.length > 0) {
-    throw deployedRemovalConflict(deployed);
+  if (stack.status === "deployed") {
+    throw new ConflictError(
+      `Cannot sync: stack(s) no longer in repo but still deployed: ${stack.name}. Stop them before syncing.`
+    );
   }
   let running: number;
   try {

@@ -13,8 +13,8 @@ import {
   type ReconcileCounts,
 } from "./stack-reconcile";
 import type { StackTx } from "./db-tx";
-import { getRepoDir } from "./config";
-import { stopStackRow } from "./compose-actions";
+import { getRepoDir, getComposePath } from "./config";
+import { downProject } from "./compose-cli";
 import { assertStackRemovable } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
 import { runLoggedAction } from "./logged-action";
@@ -141,10 +141,11 @@ async function materializeRepository(options: {
         options.stacksPath
       );
       // Serialized per repo: the Docker-aware removable probe and the
-      // reconcile transaction commit under one lock, so concurrent syncs of
-      // the same repo cannot interleave probe and row deletes. (Out-of-band
-      // daemon changes remain best-effort — fail-closed probe + tx status
-      // guard still apply there.)
+      // reconcile transaction commit under one lock, so no other holder of
+      // the same repo lock (delete, stack deploy/stop — see `repo-lock.ts`)
+      // can interleave a status flip, a teardown, or a row delete between
+      // the probe and the commit. (Out-of-band daemon changes remain
+      // best-effort — fail-closed probe still applies there.)
       const applied = await withRepoLock(options.repoId, async () => {
         await options.preReconcile?.(discoveredStacks);
         // Reconcile and the repo-row write commit together: stacks can never
@@ -237,9 +238,11 @@ export async function syncRepository(id: string) {
     // Sync-only: refuse to reconcile away a stack that is still deployed
     // *or* still has running containers (covers a stale status column).
     // Runs before the tx because the sync transaction cannot await a Docker
-    // probe; the `status === "deployed"` guard inside `reconcileStacksTx`
-    // stays as the transactional last resort against a status flip mid-sync.
-    // Independent probes run in parallel under the same fail-closed rule.
+    // probe. This pre-check is the only removal gate by design (there is no
+    // status-only twin inside `reconcileStacksTx`): it runs under the same
+    // per-repo lock every other presence writer holds, so the probe→commit
+    // window is closed in-process. Independent probes run in parallel under
+    // the same fail-closed rule.
     preReconcile: async (discoveredStacks) => {
       const names = new Set(discoveredStacks.map((s) => s.name));
       const existing = await db
@@ -280,59 +283,66 @@ export async function deleteRepository(id: string) {
     .from(stacks)
     .where(eq(stacks.repositoryId, id));
 
-  // Docker first, hard: every stack comes down before any row is deleted.
-  // `down` is the gate — the same logged `downProject` teardown the stop
-  // route uses (`stopStackRow` runs it against the already-loaded rows, so
-  // delete issues no second lookup per stack). Each stack gets an activity
-  // and a deployment log, but no `stacks.status` commit: rows are deleted in
-  // one transaction after every down succeeds, so per-stop status flips would
-  // be writes to rows about to disappear. Independent projects teardown in
-  // parallel; a `down` failure aborts with no stack/repo row or status
-  // change (only activity + deployment-log history is recorded), so rows are
-  // never deleted while containers may still be running. One delete-scoped
-  // `ActionFailedError` names every failed stack — never a silent first-only
-  // report, never a count-discriminated wire shape.
-  const settlements = await Promise.allSettled(
-    repoStacks.map((stack) => stopStackRow(stack))
+  // One logged action ("Deleting repo X"), sequential downs, then rows.
+  // `down` is the gate — no status pre-check, no soft container probe: every
+  // stack comes down before any row is deleted, and a `down` failure aborts
+  // with no stack/repo row change, so rows are never deleted while
+  // containers may still be running. Sequential (not allSettled) is
+  // deliberate: fail-fast leaves one honest torn state — rows intact,
+  // earlier projects down — with the failed stack named in the transcript,
+  // instead of N independent per-stack activities plus an aggregate apology.
+  // No per-stop `stacks.status` commits either: the rows disappear in the
+  // transaction right after, so status flips would be writes to dead rows
+  // (and lies on partial failure). Runs under the per-repo lock (see
+  // `repo-lock.ts`) so a sync probe→commit window cannot interleave the
+  // teardown or the row delete.
+  const { value } = await withRepoLock(id, () =>
+    runLoggedAction<{ warnings: string[] }>({
+      title: `Deleting repository ${repo.name}`,
+      action: "delete",
+      identity: { kind: "none" },
+      failureMessage: `Failed to delete repository ${repo.name}`,
+      run: async (onOutput) => {
+        for (const stack of repoStacks) {
+          onOutput(`Bringing down ${stack.name}...\n`);
+          try {
+            await downProject({
+              projectName: stack.name,
+              composePath: getComposePath(
+                stack.repositoryId,
+                stack.relativePath,
+                stack.composeFile
+              ),
+              onOutput,
+            });
+          } catch (e) {
+            throw new ActionFailedError(
+              `Could not bring down stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"})`
+            );
+          }
+        }
+
+        db.transaction((tx) => {
+          tx.delete(stacks).where(eq(stacks.repositoryId, id)).run();
+          tx.delete(repositories).where(eq(repositories.id, id)).run();
+        });
+
+        const warnings: string[] = [];
+        try {
+          rmSync(getRepoDir(id), { recursive: true, force: true });
+        } catch (e) {
+          warnings.push(
+            `Repository files were left on disk: ${e instanceof Error ? e.message : "unknown error"}`
+          );
+        }
+
+        const output =
+          `Deleted repository ${repo.name} (${repoStacks.length} stack(s) down)\n` +
+          warnings.map((w) => `${w}\n`).join("");
+        return { output, value: { warnings } };
+      },
+    })
   );
-  const failures = settlements
-    .map((settlement, index) => ({
-      settlement,
-      stack: repoStacks[index],
-    }))
-    .filter(
-      (
-        item
-      ): item is {
-        settlement: PromiseRejectedResult;
-        stack: (typeof repoStacks)[number];
-      } => item.settlement.status === "rejected"
-    );
-  if (failures.length > 0) {
-    const details = failures
-      .map((f) => {
-        const reason = f.settlement.reason;
-        return `${f.stack.name} (${reason instanceof Error ? reason.message : "unknown error"})`;
-      })
-      .join("; ");
-    throw new ActionFailedError(
-      `Failed to delete repository: could not bring down stack${failures.length > 1 ? "s" : ""}: ${details}`
-    );
-  }
 
-  db.transaction((tx) => {
-    tx.delete(stacks).where(eq(stacks.repositoryId, id)).run();
-    tx.delete(repositories).where(eq(repositories.id, id)).run();
-  });
-
-  const warnings: string[] = [];
-  try {
-    rmSync(getRepoDir(id), { recursive: true, force: true });
-  } catch (e) {
-    warnings.push(
-      `Repository files were left on disk: ${e instanceof Error ? e.message : "unknown error"}`
-    );
-  }
-
-  return { success: true, warnings };
+  return { success: true, warnings: value.warnings };
 }

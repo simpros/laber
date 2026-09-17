@@ -1,11 +1,22 @@
 /**
- * Minimal per-key async mutex: serializes probe-then-commit sections (sync
- * removable pre-check → reconcile transaction) so concurrent syncs of one
- * repo cannot interleave Docker probes and row deletes. Process-local by
- * design — a single Bun process owns the SQLite file and the in-memory
- * activity store. Out-of-band Docker changes (another host mutating the
- * daemon) remain best-effort; the fail-closed probe + tx status guard still
- * apply there.
+ * Minimal per-key async mutex over repo ids. Every in-process writer of
+ * repo-scoped stack rows or the presence inputs the removable rule reads
+ * holds this lock across its whole probe→commit section:
+ *
+ * - sync/register materialize (Docker-aware removable probe → reconcile tx)
+ * - repo delete (sequential `down`s → row-delete tx)
+ * - stack deploy (`compose up` → `stacks.status` commit)
+ * - stack stop/restart/pull (compose run → optional `stacks.status` commit)
+ *
+ * That closes the probe→commit window in-process with a single mechanism
+ * instead of a second status-only gate inside the sync transaction (which
+ * cannot await Docker and would be a split-brain twin of the same rule).
+ * Process-local by design — a single Bun process owns the SQLite file and
+ * the in-memory activity store. Out-of-band Docker changes (another host
+ * mutating the daemon) remain best-effort; the fail-closed probe still
+ * applies there.
+ *
+ * Never nest: holders must not call another holder for the same repo id.
  */
 const tails = new Map<string, Promise<void>>();
 
