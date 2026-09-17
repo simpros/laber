@@ -10,6 +10,12 @@ import { getCoreSnapshot } from "./core-stack";
 export async function getDashboard() {
   // Independent aggregates, fetched together. "Configured + services" comes
   // from the one shared core snapshot — never a second assembly.
+  // `deployedStacks` counts the `stacks.status` column for display only:
+  // removal (sync/delete) never reads that column — the fail-closed Docker
+  // probe is the only gate — so this number is UI/history, not a safety
+  // input. The column stays (rather than being deleted) because the frozen
+  // SvelteKit tree in `apps/web` still reads/writes it until its deletion
+  // ticket; the server treats it as paint, never as ground truth.
   const [stackCount, repoCount, deployedStacks, recentLogs, core] =
     await Promise.all([
       db.select({ count: count() }).from(stacks),

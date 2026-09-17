@@ -1,7 +1,8 @@
-import { ConflictError } from "./errors";
+import { ActionFailedError, ConflictError } from "./errors";
 import { stacks } from "@laber/db";
 import type { StackTx } from "./db-tx";
 import type { DiscoveredStack } from "./git";
+import type { RemovableClearance } from "./stack-presence";
 import { and, eq, inArray } from "drizzle-orm";
 
 export type ReconcileCounts = {
@@ -62,7 +63,8 @@ function alreadyRegisteredConflict(
 export function reconcileStacksTx(
   tx: StackTx,
   repoId: string,
-  discovered: DiscoveredStack[]
+  discovered: DiscoveredStack[],
+  clearance: RemovableClearance
 ): ReconcileCounts {
   const existing = tx
     .select()
@@ -84,14 +86,27 @@ export function reconcileStacksTx(
   const removed = existing.filter((s) => !discoveredByName.has(s.name));
   const removedNames = removed.map((s) => s.name);
 
-  // Removal trusts the caller's async pre-check (`assertStackRemovable`,
-  // under the per-repo lock — see `repositories.ts`): this transaction
-  // cannot await Docker, so there is deliberately no twin of the rule here.
-  // The gate is the fail-closed container probe only — `stacks.status` is
-  // UI/history and never consulted, so no status writer needs to hold the
-  // lock. Out-of-band daemon changes are best-effort either way. Stale rows
-  // are deleted (env/secrets cascade, logs detach) in the same transaction
-  // as the adds/updates so sync never leaves zombies behind.
+  // Removal requires a clearance only the Docker probe can mint: every name
+  // about to disappear must be in `clearance.names` for this repo. The
+  // transaction cannot await Docker, so the async pre-check in
+  // `repositories.ts` mints it under the per-repo lock — there is
+  // deliberately no probe twin here, and no caller can skip the gate without
+  // the type system noticing. `stacks.status` is UI/history and never
+  // consulted. Out-of-band daemon changes are best-effort either way. Stale
+  // rows are deleted (env/secrets cascade, logs detach) in the same
+  // transaction as the adds/updates so sync never leaves zombies behind.
+  if (clearance.repoId !== repoId) {
+    throw new ActionFailedError(
+      "Cannot sync: stale removable clearance for another repository; refusing to remove stacks"
+    );
+  }
+  const cleared = new Set(clearance.names);
+  const uncleared = removedNames.filter((n) => !cleared.has(n));
+  if (uncleared.length > 0) {
+    throw new ActionFailedError(
+      `Cannot sync: stacks were never cleared for removal: ${uncleared.join(", ")}`
+    );
+  }
 
   // NOTE: drizzle only executes queries that are awaited (async tx) or
   // finished with `.run()` (sync tx). Bare `tx.delete(...)` chains are

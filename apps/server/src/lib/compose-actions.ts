@@ -1,6 +1,7 @@
 import { runComposeCommand } from "./compose-cli";
 import { downProject } from "./compose-cli";
 import { deployStack, type DeployOptions } from "./deploy";
+import { withRepoLock } from "./repo-lock";
 import {
   runLoggedAction,
   type ActionIdentity,
@@ -47,6 +48,13 @@ type OpDef = {
    * on an optional, and `"deployed"` never appears here (deploy is not in
    * this table). */
   stackIdentity: (stackId: string) => StackLifecycleIdentity;
+  /**
+   * Whether the op mutates the removable inputs the sync/delete lock owns.
+   * Stop brings containers down (the probe's ground truth); restart/pull
+   * neither start nor remove projects, so they run unlocked instead of
+   * serializing on a mutex they do not write.
+   */
+  holdsRepoLock: boolean;
   title: (label: string) => string;
   failureMessage: (label: string) => string;
   run: (ctx: OpCtx, onOutput: (chunk: string) => void) => Promise<{
@@ -63,6 +71,7 @@ type OpDef = {
 const OPS: Record<LifecycleOp, OpDef> = {
   stop: {
     action: "stop",
+    holdsRepoLock: true,
     stackIdentity: (stackId) => ({
       kind: "stack",
       stackId,
@@ -79,6 +88,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
   restart: {
     action: "restart",
+    holdsRepoLock: false,
     stackIdentity: (stackId) => ({ kind: "stack-log", stackId }),
     title: (label) => `Restarting ${label}`,
     failureMessage: (label) => `Restarting ${label} failed`,
@@ -87,6 +97,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
   pull: {
     action: "pull",
+    holdsRepoLock: false,
     stackIdentity: (stackId) => ({ kind: "stack-log", stackId }),
     title: (label) => `Pulling images for ${label}`,
     failureMessage: (label) => `Pulling images for ${label} failed`,
@@ -127,11 +138,10 @@ function runLifecycleOp(
  * (stop → `stack` with `onSuccess`; restart/pull → `stack-log` for
  * attribution with no status write — they do not change desired runtime).
  *
- * No per-repo lock: lifecycle ops never change the removable inputs the
- * sync/delete lock owns — the removable gate is the fail-closed Docker
- * probe, and `stacks.status` is UI/history. Stop's `"stopped"` commit and
- * pull/restart's log-only outcome cannot orphan a sync reconcile, so they
- * must not serialize on a mutex they do not write.
+ * Stop holds the per-repo lock: it removes the very containers the sync
+ * removable probe reads, so an unlocked stop racing a sync probe→commit
+ * would orphan a live project under a deleted row. Restart/pull neither
+ * start nor remove projects, so the table leaves them unlocked.
  */
 export async function runStackOp(
   name: string,
@@ -140,11 +150,14 @@ export async function runStackOp(
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
   const def = OPS[op];
-  return runLifecycleOp(
-    op,
-    def.stackIdentity(stack.id),
-    { projectName: stack.name, composePath, label: stack.name }
-  );
+  const run = () =>
+    runLifecycleOp(
+      op,
+      def.stackIdentity(stack.id),
+      { projectName: stack.name, composePath, label: stack.name }
+    );
+  if (!def.holdsRepoLock) return run();
+  return withRepoLock(stack.repositoryId, run);
 }
 
 type CoreOp = "stop" | "restart";

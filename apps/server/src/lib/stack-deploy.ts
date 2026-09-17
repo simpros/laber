@@ -5,6 +5,7 @@ import { loadComposeDocument } from "./compose-parse";
 import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
 import { runLoggedDeploy } from "./compose-actions";
+import { withRepoLock } from "./repo-lock";
 import { getStackAndRepo, assertStackName } from "./config";
 import { ValidationError } from "./errors";
 
@@ -16,6 +17,7 @@ import { ValidationError } from "./errors";
  */
 export async function resolveStackDeployInputs(name: string): Promise<{
   stackId: string;
+  repositoryId: string;
   deploy: Omit<DeployOptions, "onOutput">;
 }> {
   assertStackName(name);
@@ -75,6 +77,7 @@ export async function resolveStackDeployInputs(name: string): Promise<{
 
   return {
     stackId: stack.id,
+    repositoryId: stack.repositoryId,
     deploy: {
       composePath,
       envVars: envMap,
@@ -86,16 +89,21 @@ export async function resolveStackDeployInputs(name: string): Promise<{
 }
 
 export async function deployStackByName(name: string) {
-  const { stackId, deploy } = await resolveStackDeployInputs(name);
+  const { stackId, repositoryId, deploy } =
+    await resolveStackDeployInputs(name);
 
-  // Deploy's `deployed`/`error` status commit is UI/history, not a removable
-  // input: the sync/delete lock owns only the Docker-aware probe→reconcile
-  // and teardown→delete windows, so deploy runs unlocked.
-  return runLoggedDeploy({
-    title: `Deploying ${name}`,
-    action: "deploy",
-    identity: { kind: "stack", stackId, onSuccess: "deployed" },
-    failureMessage: `Deploying ${name} failed`,
-    deploy,
-  });
+  // Deploy holds the per-repo lock: `up -d` creates the very containers the
+  // sync removable probe reads, so an unlocked deploy racing a sync
+  // probe→commit would orphan a live project under a deleted row. The
+  // `deployed`/`error` status commit stays UI/history — the lock is about
+  // containers, not the column.
+  return withRepoLock(repositoryId, () =>
+    runLoggedDeploy({
+      title: `Deploying ${name}`,
+      action: "deploy",
+      identity: { kind: "stack", stackId, onSuccess: "deployed" },
+      failureMessage: `Deploying ${name} failed`,
+      deploy,
+    })
+  );
 }

@@ -8,16 +8,30 @@ import { listContainers } from "./docker-engine";
  *
  * `stacks.status` is UI/history and deliberately NOT part of this gate: a
  * stale `"deployed"` with nothing running must not force a stop-before-sync
- * round-trip, and mixing the column in is what forced every status writer
- * (deploy, stop) to serialize on the per-repo lock. The daemon is the ground
- * truth for "will this orphan containers". The sync transaction cannot await
- * Docker, so there is deliberately no twin of the rule inside
- * `reconcileStacksTx`: the async pre-check in `repositories.ts` runs under
- * the same per-repo lock as repo delete, closing the probe→commit window
- * in-process. Out-of-band daemon changes (another host touching Docker)
- * remain best-effort.
+ * round-trip. Deploy/stop still serialize on the per-repo lock — not because
+ * of the column, but because they create/remove the live containers this
+ * probe reads. The daemon is the ground truth for "will this orphan
+ * containers". The sync transaction cannot await Docker, so there is
+ * deliberately no twin of the rule inside `reconcileStacksTx`: the async
+ * pre-check in `repositories.ts` mints a `RemovableClearance` under the same
+ * per-repo lock as repo delete, closing the probe→commit window in-process.
+ * Out-of-band daemon changes (another host touching Docker) remain
+ * best-effort.
  */
 
+/**
+ * Capability proving the fail-closed Docker probe ran for an exact removal
+ * set. Only `clearStacksForRemoval` can mint it; `reconcileStacksTx`
+ * requires it, so no sync path (or direct test caller) can delete rows
+ * without a probe the type system saw. The probe and the commit still run
+ * under `withRepoLock` — the clearance is the typed proof, the lock is the
+ * timing.
+ */
+export type RemovableClearance = {
+  repoId: string;
+  /** Stack names the probe cleared for removal. */
+  names: string[];
+};
 /** Running containers for a compose project. Throws when Docker is unreadable. */
 export async function countProjectContainers(
   projectName: string
@@ -46,4 +60,18 @@ export async function assertStackRemovable(stack: {
       `Cannot sync: stack ${stack.name} still has running containers. Stop it before syncing.`
     );
   }
+}
+
+/**
+ * Mint a `RemovableClearance` for an exact candidate set: probes every name
+ * in parallel under the same fail-closed rule, then seals the cleared set.
+ * Callers pass the disappearing stacks (not the whole table) so the
+ * clearance names exactly what reconcile may delete.
+ */
+export async function clearStacksForRemoval(
+  repoId: string,
+  disappearing: { name: string }[]
+): Promise<RemovableClearance> {
+  await Promise.all(disappearing.map((stack) => assertStackRemovable(stack)));
+  return { repoId, names: disappearing.map((s) => s.name) };
 }

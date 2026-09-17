@@ -15,7 +15,8 @@ import {
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
 import { downProject } from "./compose-cli";
-import { assertStackRemovable } from "./stack-presence";
+import { clearStacksForRemoval } from "./stack-presence";
+import type { RemovableClearance } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
 import { runActivity } from "./logged-action";
 import { NotFoundError, ActionFailedError } from "./errors";
@@ -67,26 +68,21 @@ async function cloneRemoteTree(
   }
 }
 
-/** Clone-if-missing, else pull: sync path. */
+/** Clone-if-missing, else pull: sync path. The missing-dir case is exactly
+ * a clone, so it delegates instead of re-implementing the clone shell. */
 async function pullOrCloneRemoteTree(
   repoDir: string,
   remote: RemoteTree,
   onOutput: (chunk: string) => void
 ): Promise<void> {
-  const cloning = !existsSync(repoDir);
+  if (!existsSync(repoDir)) {
+    await cloneRemoteTree(repoDir, remote, onOutput);
+    return;
+  }
   try {
-    if (cloning) {
-      await cloneRepo(
-        remote.url,
-        repoDir,
-        remote.branch,
-        remote.sshPrivateKey ?? undefined
-      );
-    } else {
-      await pullRepo(repoDir, remote.sshPrivateKey ?? undefined);
-    }
+    await pullRepo(repoDir, remote.sshPrivateKey ?? undefined);
   } catch (e) {
-    gitFailure(onOutput, e, cloning ? "Clone failed" : "Sync failed");
+    gitFailure(onOutput, e, "Sync failed");
   }
 }
 
@@ -116,9 +112,10 @@ function reconcileAndSummarizeTx(
   tx: StackTx,
   repoId: string,
   discovered: DiscoveredStack[],
+  clearance: RemovableClearance,
   onOutput: (chunk: string) => void
 ) {
-  const reconciled = reconcileStacksTx(tx, repoId, discovered);
+  const reconciled = reconcileStacksTx(tx, repoId, discovered, clearance);
   const summary =
     `Discovered ${discovered.length} stack(s)` +
     ` (${reconciled.added} new, ${reconciled.updated} updated` +
@@ -187,6 +184,9 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
               tx,
               repoId,
               discovered,
+              // Fresh id: no rows exist yet, so nothing disappears — the
+              // empty clearance names the whole removal set (none).
+              { repoId, names: [] },
               onOutput
             );
             return {
@@ -243,19 +243,19 @@ export async function syncRepository(id: string) {
         // Refuse to reconcile away a stack that still has running
         // containers (the fail-closed Docker probe — `stacks.status` is
         // UI/history and not consulted). Runs before the tx because the
-        // sync transaction cannot await a Docker probe. This pre-check is
-        // the only removal gate by design (there is no status-only twin
-        // inside `reconcileStacksTx`). Independent probes run in parallel
-        // under the same fail-closed rule.
+        // sync transaction cannot await a Docker probe. The probe mints a
+        // clearance for exactly the disappearing set, and reconcile
+        // requires it — no path can delete rows without a probe the type
+        // system saw. Independent probes run in parallel under the same
+        // fail-closed rule.
         const names = new Set(discovered.map((s) => s.name));
         const existing = await db
           .select()
           .from(stacks)
           .where(eq(stacks.repositoryId, repo.id));
-        await Promise.all(
-          existing
-            .filter((stack) => !names.has(stack.name))
-            .map((stack) => assertStackRemovable(stack))
+        const clearance = await clearStacksForRemoval(
+          repo.id,
+          existing.filter((stack) => !names.has(stack.name))
         );
         // Reconcile and the `lastSyncedAt` write commit together: stacks
         // can never change while the row stays stale.
@@ -268,6 +268,7 @@ export async function syncRepository(id: string) {
             tx,
             repo.id,
             discovered,
+            clearance,
             onOutput
           );
           return { summary, result: { reconciled } };
@@ -302,14 +303,16 @@ export async function deleteRepository(id: string) {
   // instead of N independent per-stack activities plus an aggregate apology.
   // No per-stop `stacks.status` commits either: the rows disappear in the
   // transaction right after, so status flips would be writes to dead rows
-  // (and lies on partial failure). Runs under the per-repo lock (see
-  // `repo-lock.ts`) so a sync probe→commit window cannot interleave the
-  // teardown or the row delete.
-  const { value } = await withRepoLock(id, () =>
-    runActivity<{ warnings: string[] }>({
-      title: `Deleting repository ${repo.name}`,
-      failureMessage: `Failed to delete repository ${repo.name}`,
-      run: async (onOutput) => {
+  // (and lies on partial failure). The lock nests inside the activity `run`
+  // (same as sync: transcript outside, removable mutations under the mutex),
+  // so a sync probe→commit window cannot interleave the teardown or the row
+  // delete. One rule for every repo mutation: long I/O may sit outside;
+  // removable mutations always run under the lock inside the transcript.
+  const { value } = await runActivity<{ warnings: string[] }>({
+    title: `Deleting repository ${repo.name}`,
+    failureMessage: `Failed to delete repository ${repo.name}`,
+    run: async (onOutput) =>
+      withRepoLock(id, async () => {
         // Re-read inside the lock: a sync may have added/removed stack rows
         // (or the repo row may be gone — same race as sync's pre-check)
         // between the early 404 above and this section. The teardown list
@@ -357,9 +360,8 @@ export async function deleteRepository(id: string) {
           `Deleted repository ${live.name} (${repoStacks.length} stack(s) down)\n` +
           warnings.map((w) => `${w}\n`).join("");
         return { output, value: { warnings } };
-      },
-    })
-  );
+      }),
+  });
 
   return { success: true, warnings: value.warnings };
 }

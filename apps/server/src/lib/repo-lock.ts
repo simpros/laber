@@ -1,22 +1,25 @@
 /**
- * Minimal per-key async mutex over repo ids. The only holders are the two
- * mutations of the removable rule's inputs:
+ * Minimal per-key async mutex over repo ids. The holders are every mutation
+ * of the removable rule's inputs (live containers for a compose project):
  *
  * - sync/register materialize (Docker-aware removable probe → reconcile tx)
  * - repo delete (sequential `down`s → row-delete tx)
+ * - stack deploy (`up -d` creates the containers the probe reads)
+ * - stack stop (`down` removes the containers the probe reads)
  *
  * That closes the probe→commit / teardown→delete window in-process with a
  * single mechanism instead of a second status-only gate inside the sync
  * transaction (which cannot await Docker and would be a split-brain twin of
- * the same rule). Stack deploy/stop/restart/pull do NOT take this lock: the
- * removable gate is the fail-closed Docker probe and `stacks.status` is
- * UI/history, so their status commits cannot orphan a sync reconcile.
- * Process-local by design — a single Bun process owns the SQLite file and
- * the in-memory activity store. Out-of-band Docker changes (another host
- * mutating the daemon) remain best-effort; the fail-closed probe still
- * applies there.
+ * the same rule). `stacks.status` is UI/history: restart/pull and the status
+ * commits themselves never take this lock — the mutex is about containers,
+ * not the column. Process-local by design — a single Bun process owns the
+ * SQLite file and the in-memory activity store. Out-of-band Docker changes
+ * (another host mutating the daemon) remain best-effort; the fail-closed
+ * probe still applies there.
  *
- * Never nest: holders must not call another holder for the same repo id.
+ * Never nest: holders must not call another holder for the same repo id
+ * (repo delete tears down via `downProject` directly, never via the locked
+ * `runStackOp`, for exactly this reason).
  */
 const tails = new Map<string, Promise<void>>();
 

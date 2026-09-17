@@ -60,7 +60,9 @@ async function recordActionOutcome(options: {
       // The one status state machine: only `stack` actions (deploy/stop, the
       // ones carrying `onSuccess`) move the column, and the column is
       // UI/history only — sync/delete never read it (removal is the
-      // fail-closed Docker probe). `stack-log` (pull/restart) leaves the
+      // fail-closed Docker probe, serialized with deploy/stop on the
+      // per-repo lock because those ops change live containers, not
+      // because of the column). `stack-log` (pull/restart) leaves the
       // column alone on success *and* failure, so a failed pull does not
       // paint the UI `"error"` while containers keep running.
       if (options.identity.kind === "stack") {
