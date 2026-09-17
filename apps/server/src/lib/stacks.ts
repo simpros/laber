@@ -12,11 +12,10 @@ import { eq, desc, count } from "drizzle-orm";
 import { listContainersSoft } from "./docker-engine";
 import { loggedDeployAction } from "./compose-actions";
 import {
-  readComposeFile,
+  loadComposeDocument,
   extractServices,
   extractAllEnvVarNames,
   extractNetworkName,
-  extractSecrets,
 } from "./compose-document";
 import {
   getStackAndRepo,
@@ -68,16 +67,18 @@ function loadComposeForDetail(composePath: string, repoId: string) {
       raw: "",
       services: [] as ReturnType<typeof extractServices>,
       detectedEnvVars: [] as string[],
-      detectedSecrets: [] as ReturnType<typeof extractSecrets>,
+      detectedSecrets: [] as ReturnType<typeof loadComposeDocument>["secrets"],
     };
   }
-  // Single disk read: raw text for the editor, parsed doc for detection.
-  const { raw, doc } = readComposeFile(composePath);
+  // Single disk read through the one compose gate (envelope + secret
+  // refs): a present-but-invalid file throws `ValidationError`, the same
+  // gate deploy and save enforce, so the UI looks broken instead of empty.
+  const { raw, doc, secrets: detectedSecrets } = loadComposeDocument(composePath);
   return {
     raw,
     services: extractServices(doc),
     detectedEnvVars: extractAllEnvVarNames(doc),
-    detectedSecrets: extractSecrets(doc, composePath).map((d) => ({
+    detectedSecrets: detectedSecrets.map((d) => ({
       ...d,
       filePath: relative(getRepoDir(repoId), d.filePath),
     })),
@@ -150,13 +151,14 @@ export async function deployStackByName(name: string) {
   const envMap: Record<string, string> = {};
   for (const ev of envVars) envMap[ev.key] = ev.value;
 
-  // Deploy parses through the same `readComposeFile` gate detail and save
-  // use: a broken compose or a missing secret fails instead of falling back
+  // Deploy reads through the one compose gate detail and save use: a
+  // broken compose or a missing secret fails instead of falling back
   // to cached DB values, so a bad file must not produce a secret-less deploy
   // with a stale network name. Only the error phrasing is deploy-specific.
-  let doc: ReturnType<typeof readComposeFile>["doc"];
+  let doc: ReturnType<typeof loadComposeDocument>["doc"];
+  let defs: ReturnType<typeof loadComposeDocument>["secrets"];
   try {
-    doc = readComposeFile(composePath).doc;
+    ({ doc, secrets: defs } = loadComposeDocument(composePath));
   } catch (e) {
     if (e instanceof ValidationError) {
       throw new ValidationError(
@@ -166,7 +168,6 @@ export async function deployStackByName(name: string) {
     throw new ValidationError("Cannot deploy: compose file is missing");
   }
   const networkName = extractNetworkName(doc);
-  const defs = extractSecrets(doc, composePath);
   let secretFiles: { filePath: string; value: string }[] = [];
   if (defs.length > 0) {
     const dbSecrets = await db

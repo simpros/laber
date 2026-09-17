@@ -2,7 +2,7 @@ import { dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { parseComposeDocument } from "./compose-document";
+import { assertComposeReadable } from "./compose-document";
 import { getStackAndRepo, assertStackName, type ConfigValue } from "./config";
 import { ValidationError } from "./errors";
 import type { StackTx } from "./db-tx";
@@ -12,12 +12,10 @@ export async function saveComposeContent(name: string, content: string) {
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
-  // The shared compose gate: syntax errors, a missing `services` section,
-  // and malformed `secrets:`/`networks:` envelopes are rejected before
-  // anything hits disk — the same document deploy will parse, so save can
-  // never accept a file deploy cannot read.
-  parseComposeDocument(content);
+  // The one compose gate (envelope + secret refs): save accepts exactly
+  // what deploy/detail accept, so a saved file can never 400 on read/deploy.
   const { composePath } = await getStackAndRepo(name);
+  assertComposeReadable(content, composePath);
 
   mkdirSync(dirname(composePath), { recursive: true });
   writeFileSync(composePath, content, "utf-8");

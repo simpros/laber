@@ -48,55 +48,65 @@ export function loggedDeployAction(
   });
 }
 
-type StackOp = "stop" | "restart" | "pull";
+type LifecycleOp = "stop" | "restart" | "pull";
 
-type StackOpCtx = {
-  stackName: string;
+type OpCtx = {
+  projectName: string;
   composePath: string;
 };
 
-type StackOpDef = {
-  title: (name: string) => string;
+type OpDef = {
   action: string;
   statusOnSuccess?: StackStatusOnSuccess;
-  failureMessage: (name: string) => string;
-  run: (ctx: StackOpCtx, onOutput: (chunk: string) => void) => Promise<{
+  title: (label: string) => string;
+  failureMessage: (label: string) => string;
+  run: (ctx: OpCtx, onOutput: (chunk: string) => void) => Promise<{
     output: string;
   }>;
 };
 
-// One teardown protocol for every stoppable project: `downProject` by name
-// (compose file optional, label fallback). Restart/pull are plain compose
-// argv. Each op owns its `run`, so `runStackOp` has no `if (op === ...)`
-// branch — the table is the discriminator.
-const STACK_OPS: Record<StackOp, StackOpDef> = {
+// The one lifecycle table for every stoppable project (stacks and core):
+// stop is `downProject` by project name (compose file optional, label
+// fallback); restart/pull are plain compose argv. Each op owns its `run`,
+// so callers have no `if (op === ...)` branch — the table is the
+// discriminator. Stacks label ops with the stack name, core with
+// "core services" (same strings as before, one definition).
+const OPS: Record<LifecycleOp, OpDef> = {
   stop: {
-    title: (name) => `Stopping ${name}`,
     action: "stop",
     statusOnSuccess: "stopped",
-    failureMessage: (name) => `Stopping ${name} failed`,
+    title: (label) => `Stopping ${label}`,
+    failureMessage: (label) => `Stopping ${label} failed`,
     run: (ctx, onOutput) =>
       downProject({
-        projectName: ctx.stackName,
+        projectName: ctx.projectName,
         composePath: ctx.composePath,
         onOutput,
       }),
   },
   restart: {
-    title: (name) => `Restarting ${name}`,
     action: "restart",
-    failureMessage: (name) => `Restarting ${name} failed`,
+    title: (label) => `Restarting ${label}`,
+    failureMessage: (label) => `Restarting ${label} failed`,
     run: (ctx, onOutput) =>
-      runComposeCommand(ctx.composePath, ["restart"], ctx.stackName, onOutput),
+      runComposeCommand(ctx.composePath, ["restart"], ctx.projectName, onOutput),
   },
   pull: {
-    title: (name) => `Pulling images for ${name}`,
     action: "pull",
-    failureMessage: (name) => `Pulling images for ${name} failed`,
+    title: (label) => `Pulling images for ${label}`,
+    failureMessage: (label) => `Pulling images for ${label} failed`,
     run: (ctx, onOutput) =>
-      runComposeCommand(ctx.composePath, ["pull"], ctx.stackName, onOutput),
+      runComposeCommand(ctx.composePath, ["pull"], ctx.projectName, onOutput),
   },
 };
+
+type StackOp = LifecycleOp;
+
+type StackOpDef = OpDef;
+
+// `STACK_OPS` is the one lifecycle table under its historic name: stack and
+// core share it, so a policy change edits one row, not two tables.
+const STACK_OPS: Record<StackOp, StackOpDef> = OPS;
 
 /**
  * One logged-stack-op shell: resolve nothing here, just run the table def
@@ -121,7 +131,7 @@ function executeStackOp(
       opts?.skipStatusCommit === true ? undefined : def.statusOnSuccess,
     failureMessage: def.failureMessage(target.name),
     run: async (onOutput) =>
-      def.run({ stackName: target.name, composePath }, onOutput),
+      def.run({ projectName: target.name, composePath }, onOutput),
   });
 }
 
@@ -173,55 +183,21 @@ export function stopStackRow(stack: StackRowLike): Promise<{
 
 type CoreOp = "stop" | "restart";
 
-type CoreOpDef = {
-  title: string;
-  action: string;
-  failureMessage: string;
-  run: (
-    composePath: string,
-    onOutput: (chunk: string) => void
-  ) => Promise<{ output: string }>;
-};
-
-// Core shares the one teardown protocol: stop is `downProject` by project
-// name (recovers when the core compose file vanished out of band), restart
-// is compose argv. Each op owns its `run`; the compose path is resolved
-// here, never in routes.
-const CORE_OPS: Record<CoreOp, CoreOpDef> = {
-  stop: {
-    title: "Stopping core services",
-    action: "stop",
-    failureMessage: "Stopping core services failed",
-    run: (composePath, onOutput) =>
-      downProject({
-        projectName: CORE_PROJECT,
-        composePath,
-        onOutput,
-      }),
-  },
-  restart: {
-    title: "Restarting core services",
-    action: "restart",
-    failureMessage: "Restarting core services failed",
-    run: (composePath, onOutput) =>
-      runComposeCommand(
-        composePath,
-        ["restart"],
-        CORE_PROJECT,
-        onOutput
-      ),
-  },
-};
-
-/** Table-driven core lifecycle: `runCoreOp("stop")`. */
+/** Table-driven core lifecycle: `runCoreOp("stop")`. Core shares the one
+ * `OPS` table with stacks (same `downProject` stop, same argv restart) —
+ * only the identity (project, label, `isCore`) differs, resolved here so
+ * routes never own the compose path. Core has no stack row, so no status
+ * commit by construction (`stackId` unset). */
 export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
-  const def = CORE_OPS[op];
+  const def = OPS[op];
   const composePath = getCoreComposePath();
+  const label = "core services";
   return runLoggedAction({
-    title: def.title,
+    title: def.title(label),
     action: def.action,
     isCore: true,
-    failureMessage: def.failureMessage,
-    run: async (onOutput) => def.run(composePath, onOutput),
+    failureMessage: def.failureMessage(label),
+    run: async (onOutput) =>
+      def.run({ projectName: CORE_PROJECT, composePath }, onOutput),
   });
 }

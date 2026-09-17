@@ -245,8 +245,9 @@ export function extractSecrets(
   doc: ComposeDocument,
   composePath: string
 ): SecretDefinition[] {
-  if (!doc.secrets) return [];
-
+  // Build the service → secret-name map first, before any early return: a
+  // compose with service `secrets:` refs but no top-level `secrets:` must
+  // fail loud (secret-less deploy), not return [].
   const serviceMap = new Map<string, string[]>();
   for (const [svcName, svc] of Object.entries(doc.services ?? {})) {
     const refs = svc.secrets;
@@ -271,25 +272,43 @@ export function extractSecrets(
     }
   }
 
-  if (doc.secrets) {
-    for (const [ref, svcNames] of serviceMap) {
-      if (!(ref in doc.secrets)) {
-        throw new ValidationError(
-          `Invalid compose file: service "${svcNames.join(", ")}" refers to undefined secret "${ref}"`
-        );
-      }
+  if (!doc.secrets) {
+    if (serviceMap.size > 0) {
+      const [ref, svcNames] = [...serviceMap.entries()][0];
+      throw new ValidationError(
+        `Invalid compose file: service "${svcNames.join(", ")}" refers to undefined secret "${ref}"`
+      );
     }
-  } else if (serviceMap.size > 0) {
-    const [ref, svcNames] = [...serviceMap.entries()][0];
-    throw new ValidationError(
-      `Invalid compose file: service "${svcNames.join(", ")}" refers to undefined secret "${ref}"`
-    );
+    return [];
+  }
+
+  for (const [ref, svcNames] of serviceMap) {
+    if (!(ref in doc.secrets)) {
+      throw new ValidationError(
+        `Invalid compose file: service "${svcNames.join(", ")}" refers to undefined secret "${ref}"`
+      );
+    }
   }
 
   const out: SecretDefinition[] = [];
   for (const [name, def] of Object.entries(doc.secrets)) {
+    const referenced = (serviceMap.get(name)?.length ?? 0) > 0;
+    // Explicit `external: true` secrets are managed outside compose: they
+    // are intentionally omitted from file writes (no `secretFiles`), whether
+    // or not a service references them.
+    if (def.external === true) continue;
     const file = def.file;
-    if (typeof file !== "string" || file === "") continue;
+    if (typeof file !== "string" || file === "") {
+      // A referenced secret without a resolvable file would deploy without
+      // files the compose file intended — fail loud. Unreferenced file-less
+      // entries are inert declarations, so they are skipped.
+      if (referenced) {
+        throw new ValidationError(
+          `Invalid compose file: secret "${name}" has no "file" (only file-based secrets or explicit "external: true" are supported)`
+        );
+      }
+      continue;
+    }
     out.push({
       name,
       filePath: isAbsolute(file)
@@ -299,4 +318,35 @@ export function extractSecrets(
     });
   }
   return out;
+}
+
+/**
+ * The one compose readability gate: envelope parse plus secret-ref
+ * validation. Save, detail, and deploy all pass through it, so a file save
+ * accepts exactly means deploy/detail accept — never a weaker save gate
+ * that stores a file deploy later 400s on.
+ */
+export function assertComposeReadable(
+  content: string,
+  composePathHint: string
+): ComposeDocument {
+  const doc = parseComposeDocument(content);
+  extractSecrets(doc, composePathHint);
+  return doc;
+}
+
+/**
+ * Read + fully validate the on-disk compose file: one disk read, envelope
+ * parse, and secret-ref validation. Detail and deploy share it so both see
+ * the same "valid compose" contract (missing file is the caller's branch —
+ * this throws the raw read error for a missing file).
+ */
+export function loadComposeDocument(composePath: string): {
+  raw: string;
+  doc: ComposeDocument;
+  secrets: SecretDefinition[];
+} {
+  const { raw, doc } = readComposeFile(composePath);
+  const secrets = extractSecrets(doc, composePath);
+  return { raw, doc, secrets };
 }

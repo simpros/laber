@@ -1,4 +1,5 @@
 import { deployedRemovalConflict } from "./stack-presence";
+import { ConflictError } from "./errors";
 import { stacks } from "@laber/db";
 import type { StackTx } from "./db-tx";
 import type { DiscoveredStack } from "./git";
@@ -9,6 +10,14 @@ export type ReconcileCounts = {
   updated: number;
   removed: string[];
 };
+
+function isUniqueViolation(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e);
+  return (
+    /UNIQUE constraint failed/i.test(message) ||
+    /SQLITE_CONSTRAINT_UNIQUE/i.test(message)
+  );
+}
 
 /**
  * Stack-table reconcile: apply filesystem discovery to the stacks table.
@@ -71,16 +80,51 @@ export function reconcileStacksTx(
       .run();
   }
   if (added.length > 0) {
-    tx.insert(stacks)
-      .values(
-        added.map((s) => ({
-          repositoryId: repoId,
-          name: s.name,
-          relativePath: s.relativePath,
-          composeFile: s.composeFile,
-        }))
-      )
-      .run();
+    // Global UNIQUE on `stacks.name`: the API keys every stack by bare name
+    // (and Docker `--project-name` collides on it), so a discovered name
+    // owned by another repo is a 409 with a product message — never a raw
+    // SQLite 500. Checked here (register and sync share this path) plus a
+    // narrow constraint catch below for the race between check and insert.
+    const addedNames = added.map((s) => s.name);
+    const dupInBatch = addedNames.filter(
+      (n, i) => addedNames.indexOf(n) !== i
+    );
+    if (dupInBatch.length > 0) {
+      throw new ConflictError(
+        `Stack name(s) already registered: ${[...new Set(dupInBatch)].join(", ")}`
+      );
+    }
+    const owned = tx
+      .select({ name: stacks.name })
+      .from(stacks)
+      .where(inArray(stacks.name, addedNames))
+      .all();
+    // Rows for this repo with these names cannot exist here: `added` means
+    // "not in this repo" — so any hit is owned by another repo.
+    if (owned.length > 0) {
+      throw new ConflictError(
+        `Stack name(s) already registered: ${owned.map((r) => r.name).join(", ")}`
+      );
+    }
+    try {
+      tx.insert(stacks)
+        .values(
+          added.map((s) => ({
+            repositoryId: repoId,
+            name: s.name,
+            relativePath: s.relativePath,
+            composeFile: s.composeFile,
+          }))
+        )
+        .run();
+    } catch (e) {
+      if (isUniqueViolation(e)) {
+        throw new ConflictError(
+          `Stack name(s) already registered: ${addedNames.join(", ")}`
+        );
+      }
+      throw e;
+    }
   }
   for (const s of changed) {
     tx.update(stacks)
