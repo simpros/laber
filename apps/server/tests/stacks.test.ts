@@ -1,6 +1,6 @@
 import "./setup";
 import { describe, it, expect, beforeAll, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { join } from "path";
 import {
   db,
@@ -158,6 +158,40 @@ describe("GET /api/stacks/:name", () => {
     expect(data.services.map((s) => s.name)).toContain("web");
     expect(data.composeRaw).toContain("nginx");
   });
+
+  it("returns 400 when the compose file is present but invalid", async () => {
+    const { composePath } = await seedStack(
+      "invalid-compose-detail",
+      BASIC_COMPOSE
+    );
+    writeFileSync(composePath, "{unclosed: [", "utf-8");
+
+    // Detail and deploy share one parse: a file deploy would reject must
+    // not render as an empty stack here.
+    const res = await app.handle(
+      req("/api/stacks/invalid-compose-detail", { headers: { cookie } })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns empty compose sections when the compose file is missing", async () => {
+    const { composePath } = await seedStack(
+      "missing-compose-detail",
+      BASIC_COMPOSE
+    );
+    rmSync(composePath);
+
+    const res = await app.handle(
+      req("/api/stacks/missing-compose-detail", { headers: { cookie } })
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      composeRaw: string;
+      services: unknown[];
+    };
+    expect(data.composeRaw).toBe("");
+    expect(data.services).toEqual([]);
+  });
 });
 
 describe("POST /api/stacks/:name/deploy", () => {
@@ -274,6 +308,28 @@ describe("POST /api/stacks/:name/deploy", () => {
       .from(deploymentLogs)
       .where(eq(deploymentLogs.stackId, stack.id));
     expect(logs.some((l) => (l.output ?? "").includes("boom"))).toBe(true);
+  });
+
+  it("marks the stack error when the deploy command fails", async () => {
+    const { stack } = await seedStack("failed-deploy-status", BASIC_COMPOSE);
+    dockerStub.execCompose = async () => ({
+      stdout: "",
+      stderr: "boom",
+      exitCode: 1,
+    });
+
+    const res = await app.handle(
+      jsonReq("/api/stacks/failed-deploy-status/deploy", "POST", {}, cookie)
+    );
+    expect(res.status).toBe(500);
+
+    // The failure transition is automatic: sync/delete gates trust this
+    // column, so a failed redeploy must not keep the old marker.
+    const [updated] = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.id, stack.id));
+    expect(updated.status).toBe("error");
   });
 
   it("removes written secret files when the deploy fails", async () => {
@@ -549,5 +605,23 @@ describe("PUT /api/stacks/:name/compose", () => {
       )
     );
     expect(missing.status).toBe(404);
+  });
+
+  it("rejects compose content whose secrets envelope deploy cannot parse", async () => {
+    await seedStack("bad-secrets-save", BASIC_COMPOSE);
+
+    // Save and deploy share one envelope: a file deploy would 400 on must
+    // not save successfully here.
+    const res = await app.handle(
+      jsonReq(
+        "/api/stacks/bad-secrets-save/compose",
+        "PUT",
+        {
+          content: "services:\n  web:\n    image: nginx:latest\nsecrets: not-a-map\n",
+        },
+        cookie
+      )
+    );
+    expect(res.status).toBe(400);
   });
 });

@@ -2,24 +2,21 @@ import { dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { parseDetailContent } from "./compose-detail";
-import { getStackAndRepo } from "./config";
+import { parseComposeDocument } from "./compose-document";
+import { getStackAndRepo, assertStackName, type ConfigValue } from "./config";
 import { ValidationError } from "./errors";
 import type { StackTx } from "./db-tx";
 
-function requireName(name: string): string {
-  if (!name) throw new ValidationError("Stack name must not be empty");
-  return name;
-}
-
 export async function saveComposeContent(name: string, content: string) {
-  requireName(name);
+  assertStackName(name);
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
-  // Reuse the detail-side compose gate: syntax errors and a missing
-  // `services` section are rejected before anything hits disk.
-  parseDetailContent(content);
+  // The shared compose gate: syntax errors, a missing `services` section,
+  // and malformed `secrets:`/`networks:` envelopes are rejected before
+  // anything hits disk — the same document deploy will parse, so save can
+  // never accept a file deploy cannot read.
+  parseComposeDocument(content);
   const { composePath } = await getStackAndRepo(name);
 
   mkdirSync(dirname(composePath), { recursive: true });
@@ -35,7 +32,7 @@ export async function saveComposeContent(name: string, content: string) {
  */
 export function replaceNullableKeyedRows(
   existingByKey: Map<string, string>,
-  entries: Array<{ key: string; value: string | null }>
+  entries: Array<{ key: string; value: ConfigValue }>
 ): Array<{ key: string; value: string }> {
   return entries.map((e) => ({
     key: e.key,
@@ -45,13 +42,13 @@ export function replaceNullableKeyedRows(
 
 export type EnvEntry = {
   key: string;
-  value: string | null;
+  value: ConfigValue;
   isSecret: boolean;
 };
 
 export type SecretEntry = {
   name: string;
-  value: string | null;
+  value: ConfigValue;
 };
 
 /**
@@ -65,7 +62,7 @@ export type SecretEntry = {
  */
 async function replaceStackKeyedBag(options: {
   name: string;
-  entries: Array<{ key: string; value: string | null }>;
+  entries: Array<{ key: string; value: ConfigValue }>;
   loadExisting: (tx: StackTx, stackId: string) => Map<string, string>;
   writeAll: (
     tx: StackTx,
@@ -73,7 +70,7 @@ async function replaceStackKeyedBag(options: {
     merged: Array<{ key: string; value: string }>
   ) => void;
 }): Promise<{ success: true }> {
-  requireName(options.name);
+  assertStackName(options.name);
   const { stack } = await getStackAndRepo(options.name);
 
   db.transaction((tx) => {

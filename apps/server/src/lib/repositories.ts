@@ -11,7 +11,7 @@ import {
 } from "./git";
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
-import { runComposeCommand } from "./docker";
+import { listContainers, runComposeCommand } from "./docker";
 import { runLoggedAction } from "./logged-action";
 import { NotFoundError, ConflictError, ActionFailedError } from "./errors";
 
@@ -27,6 +27,19 @@ type RemoteTree = Pick<
   typeof repositories.$inferSelect,
   "url" | "branch" | "sshPrivateKey"
 >;
+
+/**
+ * Soft Docker probe: how many containers still run for a compose project.
+ * An unreadable daemon reports zero (like the detail view) — the `down`s
+ * in the delete path are the hard gate, not this probe.
+ */
+async function countLiveContainers(projectName: string): Promise<number> {
+  try {
+    return (await listContainers(projectName)).length;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Ensure the local git tree exists (fresh clone, or clone-if-missing /
@@ -273,17 +286,22 @@ export async function deleteRepository(id: string) {
     );
   }
 
-  // One ordered state machine: the DB delete is authoritative and commits
-  // first; container shutdown and disk removal are best-effort cleanup after
-  // it. Every leftover is reported in `warnings` — nothing fails silently,
-  // and callers get one contract (`{ success: true, warnings }`) instead of
-  // three soft-fail loops with different visibility.
-  db.transaction((tx) => {
-    tx.delete(stacks).where(eq(stacks.repositoryId, id)).run();
-    tx.delete(repositories).where(eq(repositories.id, id)).run();
-  });
+  // A stale `status` column must not orphan live containers: probe Docker
+  // before anything commits. The probe itself is soft (an unreadable daemon
+  // reports no containers, like the detail view) — the `down`s below are
+  // the hard gate.
+  for (const stack of repoStacks) {
+    if ((await countLiveContainers(stack.name)) > 0) {
+      throw new ConflictError(
+        `Cannot delete: stack ${stack.name} still has running containers. Stop it before deleting.`
+      );
+    }
+  }
 
-  const warnings: string[] = [];
+  // Docker first, hard: every stack comes down before any row is deleted.
+  // A `down` throw aborts with no DB change — rows are never deleted while
+  // containers may still be running. Disk removal afterwards is the only
+  // best-effort step left, reported in `warnings`.
   for (const stack of repoStacks) {
     try {
       await runComposeCommand(
@@ -292,14 +310,18 @@ export async function deleteRepository(id: string) {
         stack.name
       );
     } catch (e) {
-      // Containers may still be running, but the DB rows are already gone;
-      // say so explicitly instead of failing the delete after the fact.
-      warnings.push(
-        `Could not bring down stack ${stack.name}: ${e instanceof Error ? e.message : "unknown error"}`
+      throw new ActionFailedError(
+        `Failed to delete repository: could not bring down stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"})`
       );
     }
   }
 
+  db.transaction((tx) => {
+    tx.delete(stacks).where(eq(stacks.repositoryId, id)).run();
+    tx.delete(repositories).where(eq(repositories.id, id)).run();
+  });
+
+  const warnings: string[] = [];
   try {
     rmSync(getRepoDir(id), { recursive: true, force: true });
   } catch (e) {

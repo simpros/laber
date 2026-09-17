@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { auth } from "@laber/auth";
-import { DomainError } from "./lib/errors";
+import { DomainError, type DomainErrorKind } from "./lib/errors";
 import { getSessionUser } from "./lib/auth";
 import { dashboardRoutes } from "./routes/dashboard";
 import { stackRoutes } from "./routes/stacks";
@@ -29,7 +29,15 @@ export function createApp() {
   const app = new Elysia()
     .onError(({ code, error, set }) => {
       if (error instanceof DomainError) {
-        set.status = error.status;
+        // The single kind → status map. Libs only carry the kind; the
+        // adapter owns the wire codes.
+        const statusByKind: Record<DomainErrorKind, number> = {
+          not_found: 404,
+          conflict: 409,
+          validation: 400,
+          action_failed: 500,
+        };
+        set.status = statusByKind[error.kind];
         return { error: error.message };
       }
       if (code === "VALIDATION") {

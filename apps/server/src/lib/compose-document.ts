@@ -1,25 +1,33 @@
 import { readFileSync } from "fs";
+import { dirname, isAbsolute, resolve } from "path";
 import * as v from "valibot";
 import { parse } from "yaml";
 import { ValidationError } from "./errors";
 
 /**
- * Detail-side compose view: services, env references, Traefik routes, raw
- * text. Validates only the services mapping it actually reads — every field
- * below that is narrowed locally at each extractor, so there is no central
- * `as ComposeFile` cast pretending the whole document is typed.
+ * The one compose parse every path shares (detail, deploy, save): a single
+ * envelope with `services` required and `networks`/`secrets` optional. Each
+ * extractor narrows only the slice it reads, so there is no central `as`
+ * cast pretending the whole document is typed — and no second schema that
+ * strips keys another consumer needs.
  */
-export type DetailService = Record<string, unknown>;
+export type ComposeService = Record<string, unknown>;
 
-export type DetailDoc = {
-  services: Record<string, DetailService>;
+export type ComposeDocument = {
+  services: Record<string, ComposeService>;
+  networks?: Record<string, Record<string, unknown>>;
+  secrets?: Record<string, Record<string, unknown>>;
 };
 
-const detailDocumentSchema = v.object({
-  services: v.record(v.string(), v.record(v.string(), v.unknown())),
+const serviceRecord = v.record(v.string(), v.unknown());
+
+const composeDocumentSchema = v.object({
+  services: v.record(v.string(), serviceRecord),
+  networks: v.optional(v.record(v.string(), serviceRecord)),
+  secrets: v.optional(v.record(v.string(), serviceRecord)),
 });
 
-export function parseDetailContent(content: string): DetailDoc {
+export function parseComposeDocument(content: string): ComposeDocument {
   let parsed: unknown;
   try {
     parsed = parse(content);
@@ -28,7 +36,7 @@ export function parseDetailContent(content: string): DetailDoc {
       `Invalid compose file: ${e instanceof Error ? e.message : "unknown error"}`
     );
   }
-  const result = v.safeParse(detailDocumentSchema, parsed);
+  const result = v.safeParse(composeDocumentSchema, parsed);
   if (!result.success) {
     throw new ValidationError(
       "Invalid compose file: missing 'services' section"
@@ -37,25 +45,15 @@ export function parseDetailContent(content: string): DetailDoc {
   return result.output;
 }
 
-export type ParsedDetailFile = {
+export function readComposeFile(filePath: string): {
   raw: string;
-  doc: DetailDoc;
-};
-
-export function readDetailFile(filePath: string): ParsedDetailFile {
+  doc: ComposeDocument;
+} {
   const raw = readFileSync(filePath, "utf-8");
-  return { raw, doc: parseDetailContent(raw) };
+  return { raw, doc: parseComposeDocument(raw) };
 }
 
-function stringField(
-  svc: DetailService,
-  key: string
-): string | undefined {
-  const value = svc[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-type ServiceInfo = {
+export type ServiceInfo = {
   name: string;
   image: string;
   containerName?: string;
@@ -91,6 +89,14 @@ export function extractEnvVarNames(env: unknown): string[] {
   }
 
   return [...names];
+}
+
+function stringField(
+  svc: ComposeService,
+  key: string
+): string | undefined {
+  const value = svc[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function parsePorts(
@@ -181,7 +187,7 @@ function extractTraefikFromLabels(
   return { subdomain, port, routerName };
 }
 
-export function extractServices(doc: DetailDoc): ServiceInfo[] {
+export function extractServices(doc: ComposeDocument): ServiceInfo[] {
   return Object.entries(doc.services).map(([name, svc]) => {
     const labels = normalizeLabels(svc.labels);
     return {
@@ -195,7 +201,7 @@ export function extractServices(doc: DetailDoc): ServiceInfo[] {
   });
 }
 
-export function extractAllEnvVarNames(doc: DetailDoc): string[] {
+export function extractAllEnvVarNames(doc: ComposeDocument): string[] {
   const allNames = new Set<string>();
   for (const svc of Object.values(doc.services)) {
     for (const name of extractEnvVarNames(svc.environment)) {
@@ -203,4 +209,70 @@ export function extractAllEnvVarNames(doc: DetailDoc): string[] {
     }
   }
   return [...allNames];
+}
+
+export function extractNetworkName(doc: ComposeDocument): string | undefined {
+  if (!doc.networks) return undefined;
+
+  for (const net of Object.values(doc.networks)) {
+    if (
+      net.external === true &&
+      typeof net.name === "string" &&
+      net.name !== ""
+    ) {
+      return net.name;
+    }
+  }
+
+  const defaultNet = doc.networks.default;
+  if (
+    defaultNet?.external === true &&
+    typeof defaultNet.name === "string" &&
+    defaultNet.name !== ""
+  ) {
+    return defaultNet.name;
+  }
+
+  return undefined;
+}
+
+export type SecretDefinition = {
+  name: string;
+  filePath: string;
+  services: string[];
+};
+
+export function extractSecrets(
+  doc: ComposeDocument,
+  composePath: string
+): SecretDefinition[] {
+  if (!doc.secrets) return [];
+
+  const serviceMap = new Map<string, string[]>();
+  for (const [svcName, svc] of Object.entries(doc.services ?? {})) {
+    const refs = svc.secrets;
+    // Service `secrets:` entries are names here; long-form objects have no
+    // file to resolve, so they are skipped instead of crashing the deploy.
+    if (!Array.isArray(refs)) continue;
+    for (const ref of refs) {
+      if (typeof ref !== "string") continue;
+      const list = serviceMap.get(ref) ?? [];
+      list.push(svcName);
+      serviceMap.set(ref, list);
+    }
+  }
+
+  const out: SecretDefinition[] = [];
+  for (const [name, def] of Object.entries(doc.secrets)) {
+    const file = def.file;
+    if (typeof file !== "string" || file === "") continue;
+    out.push({
+      name,
+      filePath: isAbsolute(file)
+        ? file
+        : resolve(dirname(composePath), file),
+      services: serviceMap.get(name) ?? [],
+    });
+  }
+  return out;
 }

@@ -1,35 +1,41 @@
 /**
- * Transport-agnostic domain errors. Libs throw these instead of HTTP
- * statuses so the ops domain stays decoupled from the HTTP adapter;
- * `app.ts` maps them to statuses once at the edge via `status`.
+ * Transport-agnostic domain errors. Libs throw these; only the HTTP adapter
+ * (`app.ts`) knows what wire status each kind maps to. No numeric status
+ * lives here by design — the ops domain must not carry HTTP notions.
  */
-export class DomainError extends Error {
-  readonly status: number;
+export type DomainErrorKind =
+  | "not_found"
+  | "conflict"
+  | "validation"
+  | "action_failed";
 
-  constructor(message: string, status: number) {
+export class DomainError extends Error {
+  readonly kind: DomainErrorKind;
+
+  constructor(message: string, kind: DomainErrorKind) {
     super(message);
     this.name = "DomainError";
-    this.status = status;
+    this.kind = kind;
   }
 }
 
 export class NotFoundError extends DomainError {
   constructor(message: string) {
-    super(message, 404);
+    super(message, "not_found");
     this.name = "NotFoundError";
   }
 }
 
 export class ConflictError extends DomainError {
   constructor(message: string) {
-    super(message, 409);
+    super(message, "conflict");
     this.name = "ConflictError";
   }
 }
 
 export class ValidationError extends DomainError {
   constructor(message: string) {
-    super(message, 400);
+    super(message, "validation");
     this.name = "ValidationError";
   }
 }
@@ -41,7 +47,7 @@ export class ValidationError extends DomainError {
  */
 export class ActionFailedError extends DomainError {
   constructor(message: string) {
-    super(message, 500);
+    super(message, "action_failed");
     this.name = "ActionFailedError";
   }
 }

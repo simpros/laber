@@ -2,7 +2,7 @@ import { db, stacks, repositories } from "@laber/db";
 import { resolveDataDir } from "@laber/db/paths";
 import { eq } from "drizzle-orm";
 import { resolve } from "path";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 
 export const DATA_DIR = resolveDataDir();
 
@@ -43,3 +43,21 @@ export async function getStackAndRepo(stackName: string) {
 
   return { stack, repo, composePath };
 }
+
+/** The one stack-name guard. Lives here next to `getStackAndRepo`. */
+export function assertStackName(name: string): string {
+  if (!name) throw new ValidationError("Stack name must not be empty");
+  return name;
+}
+
+/**
+ * Three-state config value shared by every keyed-config write:
+ * `undefined`/`null` = leave unchanged, `""` = clear, string = set.
+ *
+ * Stack env/secrets apply it as replace-all (the whole set is rewritten in
+ * one transaction); core config applies it as a patch upsert (only the
+ * provided keys are touched). The merge vocabulary is the same; only the
+ * write scope differs — core stays patch-only so a partial settings form
+ * never wipes keys it did not render.
+ */
+export type ConfigValue = string | null | undefined;

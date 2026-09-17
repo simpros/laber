@@ -1,5 +1,5 @@
 import "./setup";
-import { describe, it, expect, beforeAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterEach } from "bun:test";
 import { execFileSync } from "child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
@@ -8,11 +8,16 @@ import { db, repositories, stacks } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
+import { dockerStub, resetDockerStub } from "./docker-stub";
 
 let cookie = "";
 
 beforeAll(async () => {
   ({ cookie } = await signUp());
+});
+
+afterEach(() => {
+  resetDockerStub();
 });
 
 const fixtures: string[] = [];
@@ -223,5 +228,122 @@ describe("repositories", () => {
       )
     );
     expect(res.status).toBe(500);
+  });
+
+  it("refuses to delete when live containers exist even if status is stale", async () => {
+    const fixtureDir = initFixtureRepo(["stale"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "stale-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find((r) => r.name === "stale-fixture")!;
+    const repoStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    // Stale column says stopped, but Docker still runs the project.
+    await db
+      .update(stacks)
+      .set({ status: "stopped" })
+      .where(eq(stacks.id, repoStacks[0].id));
+    dockerStub.listContainers = async () => [
+      {
+        id: "abc",
+        name: "stale-web-1",
+        image: "nginx:latest",
+        state: "running",
+        status: "Up",
+        ports: [],
+        labels: {},
+        networks: [],
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    const delRes = await app.handle(
+      req(`/api/repositories/${repo.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      })
+    );
+    expect(delRes.status).toBe(409);
+
+    // Nothing committed: rows survive the refused delete.
+    const remaining = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, repo.id));
+    expect(remaining).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("fails hard without deleting rows when bringing a stack down fails", async () => {
+    const fixtureDir = initFixtureRepo(["stubborn"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "stubborn-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find(
+      (r) => r.name === "stubborn-fixture"
+    )!;
+    dockerStub.listContainers = async () => [];
+    dockerStub.runComposeCommand = async () => {
+      throw new Error("down blew up");
+    };
+
+    const delRes = await app.handle(
+      req(`/api/repositories/${repo.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      })
+    );
+    expect(delRes.status).toBe(500);
+
+    // Docker first, hard: the failed `down` aborts before any DB change.
+    const remaining = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, repo.id));
+    expect(remaining).toHaveLength(1);
+    const remainingStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    expect(remainingStacks).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
   });
 });

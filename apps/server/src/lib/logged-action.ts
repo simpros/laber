@@ -3,12 +3,19 @@ import { db, deploymentLogs, stacks } from "@laber/db";
 import { createActivity, appendOutput, finishActivity } from "./activity";
 import { ActionFailedError } from "./errors";
 
+/**
+ * Success-only transitions. There is no `"error"` member: failure always
+ * moves a tracked stack to `"error"` (see below), so callers never choose
+ * the failure transition and cannot forget it.
+ */
+export type StackStatusOnSuccess = "deployed" | "stopped";
+
 async function recordActionOutcome(options: {
   activityId: string;
   stackId?: string;
   isCore?: boolean;
   action: string;
-  statusOnSuccess?: "deployed" | "stopped" | "error";
+  statusOnSuccess?: StackStatusOnSuccess;
   result: { success: boolean; output: string };
 }): Promise<void> {
   finishActivity(options.activityId, options.result.success ? "success" : "error");
@@ -21,16 +28,20 @@ async function recordActionOutcome(options: {
     output: options.result.output,
   });
 
-  if (
-    options.result.success &&
-    options.statusOnSuccess &&
-    options.stackId
-  ) {
-    const stackId = options.stackId;
-    await db
-      .update(stacks)
-      .set({ status: options.statusOnSuccess, updatedAt: new Date() })
-      .where(eq(stacks.id, stackId));
+  // The one status state machine: success applies the caller's transition,
+  // operational failure moves a tracked stack to "error". Sync/delete gate
+  // on `status === "deployed"`, so a failed redeploy must not keep the old
+  // "deployed" marker — otherwise the gates trust a column that failure
+  // never maintains.
+  if (options.stackId) {
+    const next = options.result.success ? options.statusOnSuccess : "error";
+    if (next) {
+      const stackId = options.stackId;
+      await db
+        .update(stacks)
+        .set({ status: next, updatedAt: new Date() })
+        .where(eq(stacks.id, stackId));
+    }
   }
 }
 
@@ -47,17 +58,18 @@ export type LoggedActionRun<T> = (
  *
  * A throwing `run` never leaves the activity stuck on "running": the
  * streamed transcript plus the error line is persisted to the deployment
- * log, then operational failures (`ActionFailedError`) are mapped to the
- * contextual `failureMessage` while domain errors keep their status at the
- * edge. The full transcript stays in the deployment log and activity
- * stream; the wire message stays short.
+ * log, the stack (when tracked) moves to `"error"`, then operational
+ * failures (`ActionFailedError`) are mapped to the contextual
+ * `failureMessage` while domain errors keep their kind at the edge. The
+ * full transcript stays in the deployment log and activity stream; the
+ * wire message stays short.
  */
 export async function runLoggedAction<T = void>(options: {
   title: string;
   action: string;
   stackId?: string;
   isCore?: boolean;
-  statusOnSuccess?: "deployed" | "stopped" | "error";
+  statusOnSuccess?: StackStatusOnSuccess;
   failureMessage?: string;
   run: LoggedActionRun<T>;
 }): Promise<{ output: string; value: T }> {

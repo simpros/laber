@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "fs";
 import { relative } from "path";
 import {
   db,
@@ -8,30 +9,25 @@ import {
   deploymentLogs,
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
-import { listContainers } from "./docker";
+import { listContainers, runComposeCommand } from "./docker";
+import { deployStack } from "./deploy";
+import { runLoggedAction } from "./logged-action";
 import {
-  runComposeCommandLifecycle,
-  runDeployLifecycle,
-} from "./compose-lifecycle";
-import {
-  readDetailFile,
+  readComposeFile,
+  parseComposeDocument,
   extractServices,
   extractAllEnvVarNames,
-} from "./compose-detail";
-import {
-  readDeployFile,
-  parseDeployContent,
   extractNetworkName,
   extractSecrets,
-} from "./compose-deploy";
-import { getStackAndRepo, getRepoDir, getComposePath } from "./config";
+} from "./compose-document";
+import {
+  getStackAndRepo,
+  getRepoDir,
+  getComposePath,
+  assertStackName,
+} from "./config";
 import { ValidationError, NotFoundError } from "./errors";
 import type { ContainerInfo } from "./types";
-
-function requireName(name: string): string {
-  if (!name) throw new ValidationError("Stack name must not be empty");
-  return name;
-}
 
 export async function listStacks() {
   const [allStacks, envCounts] = await Promise.all([
@@ -64,7 +60,7 @@ export async function listStacks() {
 }
 
 export async function getStackDetail(name: string) {
-  requireName(name);
+  assertStackName(name);
   const [stack] = await db
     .select()
     .from(stacks)
@@ -107,8 +103,8 @@ export async function getStackDetail(name: string) {
   let detectedEnvVars: string[] = [];
   let detectedSecrets: ReturnType<typeof extractSecrets> = [];
   let composeRaw = "";
-  try {
-    const repoDir = repo ? getRepoDir(repo.id) : "";
+  if (repo) {
+    const repoDir = getRepoDir(repo.id);
     if (repoDir) {
       // Single disk read: raw text for the editor, parsed doc for detection.
       const composePath = getComposePath(
@@ -116,20 +112,20 @@ export async function getStackDetail(name: string) {
         stack.relativePath,
         stack.composeFile
       );
-      const { raw, doc } = readDetailFile(composePath);
-      composeRaw = raw;
-      services = extractServices(doc);
-      detectedEnvVars = extractAllEnvVarNames(doc);
-      // Secret detection parses the same text through the deploy-side
-      // schema: the detail parse strips everything outside `services`
-      // (valibot drops unknown keys), so it cannot see `secrets:`.
-      detectedSecrets = extractSecrets(parseDeployContent(raw), composePath).map((d) => ({
-        ...d,
-        filePath: relative(getRepoDir(repo.id), d.filePath),
-      }));
+      // A missing compose file means "nothing to show" (empty defaults);
+      // a present-but-invalid file is a loud ValidationError, the same
+      // gate deploy enforces — the UI must look broken, not empty.
+      if (existsSync(composePath)) {
+        const { raw, doc } = readComposeFile(composePath);
+        composeRaw = raw;
+        services = extractServices(doc);
+        detectedEnvVars = extractAllEnvVarNames(doc);
+        detectedSecrets = extractSecrets(doc, composePath).map((d) => ({
+          ...d,
+          filePath: relative(getRepoDir(repo.id), d.filePath),
+        }));
+      }
     }
-  } catch {
-    // Compose file not available
   }
 
   const secretsByName = new Map(secrets.map((s) => [s.name, s]));
@@ -156,7 +152,7 @@ export async function getStackDetail(name: string) {
 }
 
 export async function deployStackByName(name: string) {
-  requireName(name);
+  assertStackName(name);
   const lookup = await getStackAndRepo(name);
   const { stack, composePath } = lookup;
 
@@ -171,9 +167,17 @@ export async function deployStackByName(name: string) {
   // Deploy parses the compose file fresh and fails instead of falling back
   // to cached DB values: a broken compose or a missing secret must not
   // produce a secret-less deploy with a stale network name.
+  let raw: string;
+  try {
+    raw = readFileSync(composePath, "utf-8");
+  } catch {
+    throw new ValidationError(
+      "Cannot deploy: compose file is missing"
+    );
+  }
   let doc;
   try {
-    doc = readDeployFile(composePath);
+    doc = parseComposeDocument(raw);
   } catch (e) {
     throw new ValidationError(
       `Cannot deploy: failed to parse compose file (${e instanceof Error ? e.message : "unknown error"})`
@@ -202,60 +206,90 @@ export async function deployStackByName(name: string) {
     }));
   }
 
-  return runDeployLifecycle({
+  const { output } = await runLoggedAction({
     title: `Deploying ${name}`,
     action: "deploy",
     stackId: stack.id,
     statusOnSuccess: "deployed",
-    deploy: {
-      composePath,
-      envVars: envMap,
-      secretFiles,
-      networkName,
-      projectName: stack.name,
+    failureMessage: `Deploying ${name} failed`,
+    run: async (onOutput) => {
+      const result = await deployStack({
+        composePath,
+        envVars: envMap,
+        secretFiles,
+        networkName,
+        projectName: stack.name,
+        onOutput,
+      });
+      return { output: result.output, value: undefined };
     },
   });
+  return { output };
 }
 
 /** Compose argv lives here, not in the route module. */
 export async function stopStack(name: string) {
-  requireName(name);
+  assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  return runComposeCommandLifecycle({
+  const { output } = await runLoggedAction({
     title: `Stopping ${name}`,
     action: "stop",
     stackId: stack.id,
     statusOnSuccess: "stopped",
-    composePath,
-    projectName: stack.name,
-    command: ["down"],
+    failureMessage: `Stopping ${name} failed`,
+    run: async (onOutput) => {
+      const result = await runComposeCommand(
+        composePath,
+        ["down"],
+        stack.name,
+        onOutput
+      );
+      return { output: result.output, value: undefined };
+    },
   });
+  return { output };
 }
 
 /** Compose argv lives here, not in the route module. */
 export async function restartStack(name: string) {
-  requireName(name);
+  assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  return runComposeCommandLifecycle({
+  const { output } = await runLoggedAction({
     title: `Restarting ${name}`,
     action: "restart",
     stackId: stack.id,
-    composePath,
-    projectName: stack.name,
-    command: ["restart"],
+    failureMessage: `Restarting ${name} failed`,
+    run: async (onOutput) => {
+      const result = await runComposeCommand(
+        composePath,
+        ["restart"],
+        stack.name,
+        onOutput
+      );
+      return { output: result.output, value: undefined };
+    },
   });
+  return { output };
 }
 
 /** Compose argv lives here, not in the route module. */
 export async function pullStack(name: string) {
-  requireName(name);
+  assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  return runComposeCommandLifecycle({
+  const { output } = await runLoggedAction({
     title: `Pulling images for ${name}`,
     action: "pull",
     stackId: stack.id,
-    composePath,
-    projectName: stack.name,
-    command: ["pull"],
+    failureMessage: `Pulling images for ${name} failed`,
+    run: async (onOutput) => {
+      const result = await runComposeCommand(
+        composePath,
+        ["pull"],
+        stack.name,
+        onOutput
+      );
+      return { output: result.output, value: undefined };
+    },
   });
+  return { output };
 }

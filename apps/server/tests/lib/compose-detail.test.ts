@@ -7,9 +7,9 @@ import {
   extractEnvVarNames,
   extractServices,
   extractAllEnvVarNames,
-  parseDetailContent,
-  readDetailFile,
-} from "../../src/lib/compose-detail";
+  parseComposeDocument,
+  readComposeFile,
+} from "../../src/lib/compose-document";
 import { ValidationError } from "../../src/lib/errors";
 
 describe("extractEnvVarNames", () => {
@@ -227,9 +227,9 @@ describe("extractAllEnvVarNames", () => {
 });
 
 
-describe("parseDetailContent", () => {
+describe("parseComposeDocument", () => {
   it("parses a valid compose document", () => {
-    const doc = parseDetailContent(
+    const doc = parseComposeDocument(
       "services:\n  web:\n    image: nginx:latest\n"
     );
     expect(Object.keys(doc.services)).toEqual(["web"]);
@@ -237,31 +237,31 @@ describe("parseDetailContent", () => {
   });
 
   it("rejects YAML syntax errors", () => {
-    expect(() => parseDetailContent("{unclosed: [")).toThrow(
+    expect(() => parseComposeDocument("{unclosed: [")).toThrow(
       ValidationError
     );
   });
 
   it("rejects documents without a services section", () => {
-    expect(() => parseDetailContent("version: '3'\n")).toThrow(
+    expect(() => parseComposeDocument("version: '3'\n")).toThrow(
       "missing 'services' section"
     );
   });
 
   it("rejects non-object services", () => {
-    expect(() => parseDetailContent("services: just-a-string\n")).toThrow(
+    expect(() => parseComposeDocument("services: just-a-string\n")).toThrow(
       ValidationError
     );
   });
 
   it("rejects non-object service entries", () => {
     expect(() =>
-      parseDetailContent("services:\n  web: just-a-string\n")
+      parseComposeDocument("services:\n  web: just-a-string\n")
     ).toThrow(ValidationError);
   });
 
   it("tolerates exotic but valid shapes (numeric ports, extension fields)", () => {
-    const doc = parseDetailContent(
+    const doc = parseComposeDocument(
       [
         "services:",
         "  web:",
@@ -275,9 +275,29 @@ describe("parseDetailContent", () => {
     );
     expect(doc.services.web.image).toBe("nginx:latest");
   });
+
+  it("keeps networks and secrets visible to deploy-side extractors", () => {
+    const doc = parseComposeDocument(
+      [
+        "services:",
+        "  web:",
+        "    image: nginx:latest",
+        "networks:",
+        "  proxy:",
+        "    name: traefik-net",
+        "    external: true",
+        "secrets:",
+        "  mysecret:",
+        "    file: ./mysecret.txt",
+        "",
+      ].join("\n")
+    );
+    expect(doc.networks?.proxy?.name).toBe("traefik-net");
+    expect(doc.secrets?.mysecret?.file).toBe("./mysecret.txt");
+  });
 });
 
-describe("readDetailFile", () => {
+describe("readComposeFile", () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -293,7 +313,7 @@ describe("readDetailFile", () => {
     const filePath = join(tempDir, "docker-compose.yaml");
     writeFileSync(filePath, content, "utf-8");
 
-    const { raw, doc } = readDetailFile(filePath);
+    const { raw, doc } = readComposeFile(filePath);
     expect(raw).toBe(content);
     expect(doc.services.web.image).toBe("nginx:latest");
   });
@@ -302,6 +322,6 @@ describe("readDetailFile", () => {
     const filePath = join(tempDir, "docker-compose.yaml");
     writeFileSync(filePath, "version: '3'\n", "utf-8");
 
-    expect(() => readDetailFile(filePath)).toThrow(ValidationError);
+    expect(() => readComposeFile(filePath)).toThrow(ValidationError);
   });
 });
