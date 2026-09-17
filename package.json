@@ -1,7 +1,7 @@
 {
   "name": "laber",
   "private": true,
-  "packageManager": "bun@1.3.10",
+  "packageManager": "bun@1.3.13",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -30,13 +30,13 @@
     "@testcontainers/postgresql": "^11.12.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",
-    "eslint": "10.0.0",
+    "eslint": "10.3.0",
     "eslint-plugin-svelte": "^3.0.0",
     "globals": "^15.0.0",
     "happy-dom": "^20.7.0",
     "prettier": "^3.8.1",
     "prettier-plugin-svelte": "^3.4.1",
-    "prettier-plugin-tailwindcss": "0.7.2",
+    "prettier-plugin-tailwindcss": "0.8.0",
     "svelte": "^5.53.6",
     "testcontainers": "^11.12.0",
     "turbo": "^2.4.0",

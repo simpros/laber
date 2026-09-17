@@ -1,6 +1,6 @@
 ARG COMMIT_SHA=unknown
 
-FROM oven/bun:1.3.10-alpine AS base
+FROM oven/bun:1.3.13-alpine AS base
 
 WORKDIR /app
 
@@ -41,6 +41,9 @@ ENV PORT=3000
 ENV COMMIT_SHA=${COMMIT_SHA}
 
 COPY --from=builder --chown=app:app /app/apps/web/build ./
+# Deploy invariant: the image ships drizzle migrations from @laber/db.
+# Run `bun run db:generate` (once @laber/db has a schema) before building;
+# local/CI `bun run build` intentionally does NOT fabricate this directory.
 COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
 
 EXPOSE 3000/tcp
