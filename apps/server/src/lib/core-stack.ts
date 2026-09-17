@@ -3,9 +3,8 @@ import { join } from "path";
 import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
-import { listContainers, runComposeCommand } from "./docker";
-import { deployStack } from "./deploy";
-import { runLoggedAction } from "./logged-action";
+import { listContainers } from "./docker";
+import { loggedComposeAction, loggedDeployAction } from "./compose-actions";
 import { DATA_DIR, type ConfigValue } from "./config";
 import { getCoreComposeContent } from "./core-compose";
 import { CORE_KEYS, type CoreConfigShape } from "./core-keys";
@@ -157,58 +156,39 @@ export async function deployCore() {
     envVars.TUNNEL_TOKEN = config.tunnelToken;
   }
 
-  const { output } = await runLoggedAction({
+  return loggedDeployAction({
     title: "Deploying core services",
     action: "deploy",
     isCore: true,
     failureMessage: "Deploying core services failed",
-    run: async (onOutput) => {
-      const result = await deployStack({
-        composePath,
-        envVars,
-        projectName: "laber-core",
-        onOutput,
-      });
-      return { output: result.output };
+    deploy: {
+      composePath,
+      envVars,
+      projectName: "laber-core",
     },
   });
-  return { output };
 }
 
 export async function stopCore() {
-  const { output } = await runLoggedAction({
+  return loggedComposeAction({
     title: "Stopping core services",
     action: "stop",
     isCore: true,
     failureMessage: "Stopping core services failed",
-    run: async (onOutput) => {
-      const result = await runComposeCommand(
-        getComposePath(),
-        ["down"],
-        "laber-core",
-        onOutput
-      );
-      return { output: result.output };
-    },
+    composePath: getComposePath(),
+    projectName: "laber-core",
+    argv: ["down"],
   });
-  return { output };
 }
 
 export async function restartCore() {
-  const { output } = await runLoggedAction({
+  return loggedComposeAction({
     title: "Restarting core services",
     action: "restart",
     isCore: true,
     failureMessage: "Restarting core services failed",
-    run: async (onOutput) => {
-      const result = await runComposeCommand(
-        getComposePath(),
-        ["restart"],
-        "laber-core",
-        onOutput
-      );
-      return { output: result.output };
-    },
+    composePath: getComposePath(),
+    projectName: "laber-core",
+    argv: ["restart"],
   });
-  return { output };
 }

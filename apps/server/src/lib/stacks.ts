@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { relative } from "path";
 import {
   db,
@@ -9,12 +9,10 @@ import {
   deploymentLogs,
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
-import { listContainers, runComposeCommand } from "./docker";
-import { deployStack } from "./deploy";
-import { runLoggedAction } from "./logged-action";
+import { listContainers } from "./docker";
+import { loggedComposeAction, loggedDeployAction } from "./compose-actions";
 import {
   readComposeFile,
-  parseComposeDocument,
   extractServices,
   extractAllEnvVarNames,
   extractNetworkName,
@@ -164,24 +162,20 @@ export async function deployStackByName(name: string) {
   const envMap: Record<string, string> = {};
   for (const ev of envVars) envMap[ev.key] = ev.value;
 
-  // Deploy parses the compose file fresh and fails instead of falling back
-  // to cached DB values: a broken compose or a missing secret must not
-  // produce a secret-less deploy with a stale network name.
-  let raw: string;
+  // Deploy parses through the same `readComposeFile` gate detail and save
+  // use: a broken compose or a missing secret fails instead of falling back
+  // to cached DB values, so a bad file must not produce a secret-less deploy
+  // with a stale network name. Only the error phrasing is deploy-specific.
+  let doc: ReturnType<typeof readComposeFile>["doc"];
   try {
-    raw = readFileSync(composePath, "utf-8");
-  } catch {
-    throw new ValidationError(
-      "Cannot deploy: compose file is missing"
-    );
-  }
-  let doc;
-  try {
-    doc = parseComposeDocument(raw);
+    doc = readComposeFile(composePath).doc;
   } catch (e) {
-    throw new ValidationError(
-      `Cannot deploy: failed to parse compose file (${e instanceof Error ? e.message : "unknown error"})`
-    );
+    if (e instanceof ValidationError) {
+      throw new ValidationError(
+        `Cannot deploy: failed to parse compose file (${e.message})`
+      );
+    }
+    throw new ValidationError("Cannot deploy: compose file is missing");
   }
   const networkName = extractNetworkName(doc);
   const defs = extractSecrets(doc, composePath);
@@ -206,91 +200,66 @@ export async function deployStackByName(name: string) {
     }));
   }
 
-  const { output } = await runLoggedAction({
+  return loggedDeployAction({
     title: `Deploying ${name}`,
     action: "deploy",
     stackId: stack.id,
     statusOnSuccess: "deployed",
     failureMessage: `Deploying ${name} failed`,
-    run: async (onOutput) => {
-      const result = await deployStack({
-        composePath,
-        envVars: envMap,
-        secretFiles,
-        networkName,
-        projectName: stack.name,
-        onOutput,
-      });
-      return { output: result.output };
+    deploy: {
+      composePath,
+      envVars: envMap,
+      secretFiles,
+      networkName,
+      projectName: stack.name,
     },
   });
-  return { output };
 }
 
 /** Compose argv lives here, not in the route module. */
 export async function stopStack(name: string) {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  const { output } = await runLoggedAction({
+  return loggedComposeAction({
     title: `Stopping ${name}`,
     action: "stop",
     stackId: stack.id,
     statusOnSuccess: "stopped",
     failureMessage: `Stopping ${name} failed`,
-    run: async (onOutput) => {
-      const result = await runComposeCommand(
-        composePath,
-        ["down"],
-        stack.name,
-        onOutput
-      );
-      return { output: result.output };
-    },
+    composePath,
+    projectName: stack.name,
+    argv: ["down"],
   });
-  return { output };
 }
 
-/** Compose argv lives here, not in the route module. Pull/restart never touch
- * `stacks.status` (no `stackId`/`statusOnSuccess`): they do not change
- * desired runtime, so even a failure must keep the deploy/stop marker that
- * sync gates on. */
+/** Pull/restart always carry `stackId` (log attribution) but no
+ * `statusOnSuccess`: they do not change desired runtime, so even a failure
+ * must keep the deploy/stop marker that sync gates on. */
 export async function restartStack(name: string) {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  const { output } = await runLoggedAction({
+  return loggedComposeAction({
     title: `Restarting ${name}`,
     action: "restart",
+    stackId: stack.id,
     failureMessage: `Restarting ${name} failed`,
-    run: async (onOutput) => {
-      const result = await runComposeCommand(
-        composePath,
-        ["restart"],
-        stack.name,
-        onOutput
-      );
-      return { output: result.output };
-    },
+    composePath,
+    projectName: stack.name,
+    argv: ["restart"],
   });
-  return { output };
 }
 
 /** Same status contract as restart: pull never touches `stacks.status`. */
 export async function pullStack(name: string) {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  const { output } = await runLoggedAction({
+  return loggedComposeAction({
     title: `Pulling images for ${name}`,
     action: "pull",
+    stackId: stack.id,
     failureMessage: `Pulling images for ${name} failed`,
-    run: async (onOutput) => {
-      const result = await runComposeCommand(
-        composePath,
-        ["pull"],
-        stack.name,
-        onOutput
-      );
-      return { output: result.output };
-    },
+    composePath,
+    projectName: stack.name,
+    argv: ["pull"],
   });
-  return { output };
 }

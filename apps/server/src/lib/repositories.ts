@@ -6,15 +6,15 @@ import {
   cloneRepo,
   pullRepo,
   discoverStacks,
-  reconcileStacksTx,
   type DiscoveredStack,
 } from "./git";
+import { reconcileStacksTx } from "./stack-reconcile";
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
-import { runComposeCommand } from "./docker";
+import { stopStack } from "./stacks";
 import {
   assertStackRemovable,
-  hasRunningContainers,
+  countProjectContainers,
 } from "./stack-presence";
 import { runLoggedAction } from "./logged-action";
 import { NotFoundError, ActionFailedError } from "./errors";
@@ -291,8 +291,12 @@ export async function deleteRepository(id: string) {
 
   // Docker first, hard: every stack comes down before any row is deleted.
   // `down` is the gate — there is no status refuse and no soft container
-  // probe here. A `down` throw aborts with no DB change, so rows are never
-  // deleted while containers may still be running. (Sync keeps the shared
+  // probe here. Teardown reuses the logged stop path, so each stack gets an
+  // activity, a deployment log, and an honest status transition
+  // ("stopped", or "error" on partial failure) before rows move. A `down`
+  // throw aborts with no DB change, so rows are never deleted while
+  // containers may still be running — and a partial failure leaves a status
+  // sync understands instead of a sync dead-end. (Sync keeps the shared
   // `assertStackRemovable` check because sync does not bring stacks down;
   // delete does, so it needs no pre-gate.)
   for (const stack of repoStacks) {
@@ -302,10 +306,19 @@ export async function deleteRepository(id: string) {
       stack.composeFile
     );
     if (!existsSync(composePath)) {
-      // No compose project to bring down (dir removed out of band). Fall
-      // back to the soft probe so a missing file never orphans live
-      // containers — and never wedges the repo undeletable either.
-      if (await hasRunningContainers(stack.name)) {
+      // No compose project to bring down (dir removed out of band). Fail
+      // closed: an unreadable daemon must not read as "no containers" —
+      // that would delete rows while live containers keep running. And a
+      // missing file never wedges the repo undeletable either.
+      let running: number;
+      try {
+        running = await countProjectContainers(stack.name);
+      } catch (e) {
+        throw new ActionFailedError(
+          `Failed to delete repository: cannot verify running containers for stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"}); remove them manually, then retry`
+        );
+      }
+      if (running > 0) {
         throw new ActionFailedError(
           `Failed to delete repository: stack ${stack.name} still has running containers but its compose file is gone; remove them manually, then retry`
         );
@@ -313,7 +326,7 @@ export async function deleteRepository(id: string) {
       continue;
     }
     try {
-      await runComposeCommand(composePath, ["down"], stack.name);
+      await stopStack(stack.name);
     } catch (e) {
       throw new ActionFailedError(
         `Failed to delete repository: could not bring down stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"})`

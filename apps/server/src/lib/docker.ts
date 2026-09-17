@@ -192,15 +192,20 @@ export async function execCompose(options: {
 
 /**
  * Single failure contract: returns the command output on success, throws
- * `ActionFailedError` on a nonzero exit. `runLoggedAction` maps that to the
- * contextual failure message; direct callers (repo delete) surface the
- * message in their own warnings.
+ * `ActionFailedError` on a nonzero exit. This is the only place that
+ * understands compose exit codes — `execCompose` above is the raw primitive
+ * callers never touch directly. `onFailure` runs best-effort cleanup (e.g.
+ * wiping freshly-written secret files) before the throw, so resource owners
+ * never need to read exit codes themselves. `runLoggedAction` maps the throw
+ * to the contextual failure message; direct callers (repo delete) surface
+ * the message in their own warnings.
  */
 export async function runComposeCommand(
   composePath: string,
   command: string[],
   projectName?: string,
-  onOutput?: (chunk: string) => void
+  onOutput?: (chunk: string) => void,
+  options?: { onFailure?: () => void }
 ): Promise<{ output: string }> {
   const result = await execCompose({
     composePath,
@@ -211,6 +216,11 @@ export async function runComposeCommand(
 
   const output = result.stdout + result.stderr;
   if (result.exitCode !== 0) {
+    try {
+      options?.onFailure?.();
+    } catch {
+      // Cleanup is best-effort; the compose failure below is what matters.
+    }
     throw new ActionFailedError(
       `Compose ${command.join(" ")} failed${projectName ? ` for ${projectName}` : ""}`
     );

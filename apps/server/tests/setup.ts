@@ -50,13 +50,15 @@ mock.module("../src/lib/docker.ts", () => ({
     composePath: string,
     command: string[],
     projectName?: string,
-    onOutput?: (chunk: string) => void
+    onOutput?: (chunk: string) => void,
+    options?: { onFailure?: () => void }
   ) =>
     dockerStub.runComposeCommand(
       composePath,
       command,
       projectName,
-      onOutput
+      onOutput,
+      options
     ),
   connectTraefikToNetwork: (networkName: string) =>
     dockerStub.connectTraefikToNetwork(networkName),

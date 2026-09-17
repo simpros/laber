@@ -4,6 +4,7 @@ import { db, coreConfig, deploymentLogs } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
+import { ActionFailedError } from "../src/lib/errors";
 import { dockerStub, resetDockerStub } from "./docker-stub";
 
 let cookie = "";
@@ -128,10 +129,15 @@ describe("POST /api/core/deploy|stop|restart", () => {
         cookie
       )
     );
-    dockerStub.execCompose = async () => ({
-      stdout: "core up",
-      stderr: "",
-      exitCode: 0,
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      command,
+      _projectName,
+      _onOutput
+    ) => ({
+      // Deploy and stop/restart share one compose runner now; answer by
+      // command so each action's output stays distinguishable.
+      output: command.includes("up") ? "core up" : "mocked",
     });
 
     const deploy = await app.handle(
@@ -163,15 +169,16 @@ describe("POST /api/core/deploy|stop|restart", () => {
         cookie
       )
     );
-    dockerStub.execCompose = async (options) => {
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      _command,
+      _projectName,
+      onOutput
+    ) => {
       // Streamed detail is what the deployment log records; the wire
       // message stays short.
-      options.onOutput?.("core blew up");
-      return {
-        stdout: "",
-        stderr: "core blew up",
-        exitCode: 1,
-      };
+      onOutput?.("core blew up");
+      throw new ActionFailedError("Compose up -d failed for laber-core");
     };
 
     const res = await app.handle(

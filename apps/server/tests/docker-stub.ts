@@ -47,7 +47,8 @@ const defaults = {
     _composePath: string,
     _command: string[],
     _projectName?: string,
-    _onOutput?: (chunk: string) => void
+    _onOutput?: (chunk: string) => void,
+    _options?: { onFailure?: () => void }
   ): Promise<{ output: string }> => ({
     output: "mocked",
   }),

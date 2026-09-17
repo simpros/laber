@@ -8,6 +8,7 @@ import { db, repositories, stacks } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
+import { getRepoDir } from "../src/lib/config";
 import { dockerStub, resetDockerStub } from "./docker-stub";
 
 let cookie = "";
@@ -464,8 +465,7 @@ describe("repositories", () => {
     rmSync(fixtureDir, { recursive: true, force: true });
   });
 
-  it("fails hard without deleting rows when bringing a stack down fails", async () => {
-    const fixtureDir = initFixtureRepo(["stubborn"]);
+  it("fails hard without deleting rows when bringing a stack down fails", async () => {    const fixtureDir = initFixtureRepo(["stubborn"]);
     const addRes = await app.handle(
       jsonReq(
         "/api/repositories",
@@ -503,6 +503,132 @@ describe("repositories", () => {
     expect(delRes.status).toBe(500);
 
     // Docker first, hard: the failed `down` aborts before any DB change.
+    const remaining = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, repo.id));
+    expect(remaining).toHaveLength(1);
+    const remainingStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    expect(remainingStacks).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("refuses to sync away a stack when Docker is unreadable", async () => {
+    const fixtureDir = initFixtureRepo(["dark"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "dark-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find((r) => r.name === "dark-fixture")!;
+    const repoStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    // Stale column says stopped, and the daemon cannot be reached: a soft
+    // probe would read "no containers" and orphan the live project. The
+    // hard gate refuses instead.
+    await db
+      .update(stacks)
+      .set({ status: "stopped" })
+      .where(eq(stacks.id, repoStacks[0].id));
+    dockerStub.listContainers = async () => {
+      throw new Error("daemon down");
+    };
+
+    rmSync(join(fixtureDir, "stacks", "dark"), {
+      recursive: true,
+      force: true,
+    });
+    execFileSync("git", ["add", "-A"], { cwd: fixtureDir });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=Test",
+        "commit",
+        "-m",
+        "remove dark",
+      ],
+      { cwd: fixtureDir }
+    );
+
+    const syncRes = await app.handle(
+      jsonReq(`/api/repositories/${repo.id}/sync`, "POST", {}, cookie)
+    );
+    expect(syncRes.status).toBe(500);
+
+    const remaining = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    expect(remaining).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("refuses to delete when the compose file is gone and Docker is unreadable", async () => {
+    const fixtureDir = initFixtureRepo(["ghost"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "ghost-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find((r) => r.name === "ghost-fixture")!;
+    // The compose project vanished out of band; the daemon cannot be
+    // reached. Fail closed: rows stay instead of assuming "no containers".
+    rmSync(join(getRepoDir(repo.id), "stacks", "ghost"), {
+      recursive: true,
+      force: true,
+    });
+    dockerStub.listContainers = async () => {
+      throw new Error("daemon down");
+    };
+
+    const delRes = await app.handle(
+      req(`/api/repositories/${repo.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      })
+    );
+    expect(delRes.status).toBe(500);
+
     const remaining = await db
       .select()
       .from(repositories)

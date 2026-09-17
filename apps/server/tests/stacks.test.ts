@@ -211,16 +211,21 @@ describe("POST /api/stacks/:name/deploy", () => {
       name: "mysecret",
       value: "s3cr3t",
     });
-    dockerStub.execCompose = async (options) => {
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      command,
+      projectName,
+      onOutput
+    ) => {
       // Single env channel: stack vars travel via --env-file (there is no
       // second process-env overlay on execCompose anymore).
-      const envFlag = options.command.indexOf("--env-file");
+      const envFlag = command.indexOf("--env-file");
       expect(envFlag).toBeGreaterThanOrEqual(0);
-      const envContent = readFileSync(options.command[envFlag + 1], "utf-8");
+      const envContent = readFileSync(command[envFlag + 1], "utf-8");
       expect(envContent).toContain("FOO=bar");
-      expect(options.projectName).toBe("deploy-me");
-      options.onOutput?.("deploying...\n");
-      return { stdout: "deployed\n", stderr: "", exitCode: 0 };
+      expect(projectName).toBe("deploy-me");
+      onOutput?.("deploying...\n");
+      return { output: "deployed\n" };
     };
 
     const res = await app.handle(
@@ -281,16 +286,16 @@ describe("POST /api/stacks/:name/deploy", () => {
 
   it("returns 500 when the deploy command fails", async () => {
     const { stack } = await seedStack("failed-deploy", BASIC_COMPOSE);
-    dockerStub.execCompose = async (options) => {
-      // The stub streams what the real docker CLI would stream; the shell
-      // records the transcript in the deployment log and keeps the wire
-      // message short.
-      options.onOutput?.("boom");
-      return {
-        stdout: "",
-        stderr: "boom",
-        exitCode: 1,
-      };
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      _command,
+      _projectName,
+      onOutput
+    ) => {
+      // Operational failure is a throw, not a flag; the streamed detail is
+      // what the deployment log records.
+      onOutput?.("boom");
+      throw new ActionFailedError("Compose up -d failed for failed-deploy");
     };
 
     const res = await app.handle(
@@ -312,11 +317,9 @@ describe("POST /api/stacks/:name/deploy", () => {
 
   it("marks the stack error when the deploy command fails", async () => {
     const { stack } = await seedStack("failed-deploy-status", BASIC_COMPOSE);
-    dockerStub.execCompose = async () => ({
-      stdout: "",
-      stderr: "boom",
-      exitCode: 1,
-    });
+    dockerStub.runComposeCommand = async () => {
+      throw new ActionFailedError("Compose up -d failed");
+    };
 
     const res = await app.handle(
       jsonReq("/api/stacks/failed-deploy-status/deploy", "POST", {}, cookie)
@@ -349,11 +352,19 @@ describe("POST /api/stacks/:name/deploy", () => {
       value: "s3cr3t",
     });
 
-    dockerStub.execCompose = async () => ({
-      stdout: "",
-      stderr: "compose blew up",
-      exitCode: 1,
-    });
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      _command,
+      _projectName,
+      _onOutput,
+      options
+    ) => {
+      // Mirror the real `runComposeCommand` contract: cleanup runs before
+      // the throw. This proves deploy passes secret wipe as `onFailure` —
+      // without that wiring the file below would survive.
+      options?.onFailure?.();
+      throw new ActionFailedError("Compose up -d failed");
+    };
 
     const res = await app.handle(
       jsonReq(
@@ -456,6 +467,13 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       .from(stacks)
       .where(eq(stacks.id, stack.id));
     expect(updated.status).toBe("deployed");
+
+    // But the run is still attributed: stack detail's log list shows it.
+    const logs = await db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id));
+    expect(logs.some((l) => l.action === "pull")).toBe(true);
   });
 
   it("leaves status alone when restart fails", async () => {
@@ -478,6 +496,13 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       .from(stacks)
       .where(eq(stacks.id, stack.id));
     expect(updated.status).toBe("stopped");
+
+    // Same attribution contract as pull: status untouched, log kept.
+    const restartLogs = await db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id));
+    expect(restartLogs.some((l) => l.action === "restart")).toBe(true);
   });
 
   it("restarts and pulls without changing status", async () => {

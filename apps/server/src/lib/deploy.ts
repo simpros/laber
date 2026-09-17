@@ -2,11 +2,10 @@ import { writeFileSync, unlinkSync, mkdirSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
-  execCompose,
+  runComposeCommand,
   ensureNetwork,
   connectTraefikToNetwork,
 } from "./docker";
-import { ActionFailedError } from "./errors";
 
 type SecretFile = {
   filePath: string;
@@ -62,10 +61,12 @@ function removeSecretFiles(files: SecretFile[]): void {
 
 /**
  * Single failure contract: returns the deploy output on success, throws
- * `ActionFailedError` on a nonzero exit (after wiping freshly-written secret
- * files). `runLoggedAction` maps that to the contextual failure message, so
- * the message here stays short — the transcript is already in the activity
- * stream and deployment log.
+ * `ActionFailedError` (via `runComposeCommand`) on a nonzero exit — deploy
+ * never reads exit codes itself. Freshly-written secret files are wiped via
+ * `onFailure` cleanup; on success they stay (running containers mount these
+ * paths). `runLoggedAction` maps the throw to the contextual failure message,
+ * so the message here stays short — the transcript is already in the
+ * activity stream and deployment log.
  */
 export async function deployStack(
   options: DeployOptions
@@ -88,21 +89,27 @@ export async function deployStack(
       envArgs.push("--env-file", envFilePath);
     }
 
-    const command = [...envArgs, "up", "-d"];
-
     // Single env channel: everything the stack needs travels via --env-file.
     // (execCompose still inherits process.env, but stack vars are no longer
     // overlaid a second time, so there is only one fact to fix.)
-    const result = await execCompose({
-      composePath: options.composePath,
-      command,
-      projectName: options.projectName,
-      onOutput: options.onOutput,
-    });
+    // A failed deploy must not leave freshly-written secret files behind.
+    const { output: base } = await runComposeCommand(
+      options.composePath,
+      [...envArgs, "up", "-d"],
+      options.projectName,
+      options.onOutput,
+      {
+        onFailure: () => {
+          if (options.secretFiles?.length) {
+            removeSecretFiles(options.secretFiles);
+          }
+        },
+      }
+    );
 
-    let output = result.stdout + result.stderr;
+    let output = base;
 
-    if (result.exitCode === 0 && options.networkName) {
+    if (options.networkName) {
       try {
         await connectTraefikToNetwork(options.networkName);
       } catch (e) {
@@ -114,15 +121,6 @@ export async function deployStack(
         // output too so callers don't have to watch the activity stream.
         output += warning;
       }
-    }
-
-    if (result.exitCode !== 0) {
-      if (options.secretFiles?.length) {
-        // A failed deploy must not leave freshly-written secret files behind.
-        // (On success they stay: running containers mount these paths.)
-        removeSecretFiles(options.secretFiles);
-      }
-      throw new ActionFailedError("Deploy failed");
     }
 
     return { output };
