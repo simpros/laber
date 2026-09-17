@@ -1,4 +1,7 @@
 import simpleGit from "simple-git";
+import { error } from "@sveltejs/kit";
+import { db, stacks } from "@laber/db";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   mkdtempSync,
   writeFileSync,
@@ -109,4 +112,84 @@ export async function discoverStacks(
   }
 
   return stacks;
+}
+
+export type DiscoveredStack = Awaited<ReturnType<typeof discoverStacks>>[number];
+
+export async function reconcileDiscoveredStacks(
+  repoId: string,
+  discovered: DiscoveredStack[]
+): Promise<{ added: number; updated: number; removed: string[] }> {
+  const existing = await db
+    .select()
+    .from(stacks)
+    .where(eq(stacks.repositoryId, repoId));
+  const existingByName = new Map(existing.map((s) => [s.name, s]));
+  const discoveredByName = new Map(discovered.map((s) => [s.name, s]));
+
+  const added = discovered.filter((s) => !existingByName.has(s.name));
+  const changed = discovered.filter((s) => {
+    const prev = existingByName.get(s.name);
+    return (
+      prev &&
+      (prev.relativePath !== s.relativePath ||
+        prev.composeFile !== s.composeFile ||
+        prev.networkName !== s.networkName)
+    );
+  });
+  const removed = existing.filter((s) => !discoveredByName.has(s.name));
+  const removedNames = removed.map((s) => s.name);
+
+  // Removal policy: refuse to silently orphan a deployed stack; otherwise
+  // delete the stale rows (env/secrets cascade, logs detach) in the same
+  // transaction as the adds/updates so sync never leaves zombies behind.
+  const deployedRemoved = removed
+    .filter((s) => s.status === "deployed")
+    .map((s) => s.name);
+  if (deployedRemoved.length > 0) {
+    error(
+      409,
+      `Cannot sync: stack(s) no longer in repo but still deployed: ${deployedRemoved.join(", ")}. Stop them before syncing.`
+    );
+  }
+
+  db.transaction((tx) => {
+    if (removedNames.length > 0) {
+      tx.delete(stacks).where(
+        and(
+          eq(stacks.repositoryId, repoId),
+          inArray(stacks.name, removedNames)
+        )
+      );
+    }
+    if (added.length > 0) {
+      tx.insert(stacks).values(
+        added.map((s) => ({
+          repositoryId: repoId,
+          name: s.name,
+          relativePath: s.relativePath,
+          composeFile: s.composeFile,
+          networkName: s.networkName,
+        }))
+      );
+    }
+    for (const s of changed) {
+      tx.update(stacks)
+        .set({
+          relativePath: s.relativePath,
+          composeFile: s.composeFile,
+          networkName: s.networkName,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(stacks.repositoryId, repoId), eq(stacks.name, s.name))
+        );
+    }
+  });
+
+  return {
+    added: added.length,
+    updated: changed.length,
+    removed: removedNames,
+  };
 }
