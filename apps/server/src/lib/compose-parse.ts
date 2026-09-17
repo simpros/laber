@@ -219,19 +219,42 @@ export function loadComposeDocument(composePath: string): {
 /**
  * The one on-disk compose load policy: a single `existsSync` + read + parse
  * gate. Detail passes `{ missing: "empty" }` (nothing on disk is valid empty
- * UI state); deploy passes `{ missing: "error" }` (nothing on disk is a
- * loud `ValidationError`). Present-but-invalid throws `ValidationError`
- * either way. Callers are call sites, not policy owners — every new gate
- * rule lands here.
+ * UI state); deploy passes `{ missing: "error", errorPrefix: "Cannot deploy" }`
+ * (nothing on disk is a loud `ValidationError` in deploy's product phrasing).
+ * Present-but-invalid throws `ValidationError` either way. Callers are call
+ * sites, not policy owners — every new gate rule lands here, including the
+ * product phrasing (no `startsWith` re-branching or `unreachable` narrowing
+ * at call sites: the overloads type `doc` non-null in `"error"` mode).
  */
 export function loadCompose(
   composePath: string,
-  opts: { missing: "empty" | "error" }
+  opts: { missing: "error"; errorPrefix?: string }
+): { raw: string; doc: ComposeDocument; secrets: SecretDefinition[] };
+export function loadCompose(
+  composePath: string,
+  opts: { missing: "empty" }
+): { raw: string; doc: ComposeDocument | null; secrets: SecretDefinition[] };
+export function loadCompose(
+  composePath: string,
+  opts: { missing: "empty" | "error"; errorPrefix?: string }
 ): { raw: string; doc: ComposeDocument | null; secrets: SecretDefinition[] } {
   if (!existsSync(composePath)) {
     if (opts.missing === "empty") return { raw: "", doc: null, secrets: [] };
-    throw new ValidationError(`Compose file is missing: ${composePath}`);
+    throw new ValidationError(
+      opts.errorPrefix
+        ? `${opts.errorPrefix}: compose file is missing`
+        : `Compose file is missing: ${composePath}`
+    );
   }
-  const { raw, doc, secrets } = loadComposeDocument(composePath);
-  return { raw, doc, secrets };
+  try {
+    const { raw, doc, secrets } = loadComposeDocument(composePath);
+    return { raw, doc, secrets };
+  } catch (e) {
+    if (e instanceof ValidationError && opts.errorPrefix) {
+      throw new ValidationError(
+        `${opts.errorPrefix}: failed to parse compose file (${e.message})`
+      );
+    }
+    throw e;
+  }
 }

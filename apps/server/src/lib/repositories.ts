@@ -14,9 +14,8 @@ import {
 } from "./stack-reconcile";
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
-import { downProject } from "./compose-cli";
-import { clearStacksForRemoval, emptyClearance } from "./stack-presence";
-import type { RemovableClearance } from "./stack-presence";
+import { downStackProject } from "./compose-actions";
+import { RemovableClearance } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
 import { runActivity } from "./logged-action";
 import { NotFoundError, ActionFailedError } from "./errors";
@@ -112,7 +111,7 @@ function reconcileAndSummarizeTx(
   tx: StackTx,
   repoId: string,
   discovered: DiscoveredStack[],
-  clearance: RemovableClearance,
+  clearance: RemovableClearance | undefined,
   onOutput: (chunk: string) => void
 ) {
   const reconciled = reconcileStacksTx(tx, repoId, discovered, clearance);
@@ -184,9 +183,9 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
               tx,
               repoId,
               discovered,
-              // Fresh id: no rows exist yet, so nothing disappears — the
-              // empty clearance names the whole removal set (none).
-              emptyClearance(repoId),
+              // Fresh id: no rows exist yet, so nothing disappears — no
+              // clearance needed (reconcile only requires one for removals).
+              undefined,
               onOutput
             );
             return {
@@ -253,7 +252,7 @@ export async function syncRepository(id: string) {
           .select()
           .from(stacks)
           .where(eq(stacks.repositoryId, repo.id));
-        const clearance = await clearStacksForRemoval(
+        const clearance = await RemovableClearance.clear(
           repo.id,
           existing.filter((stack) => !names.has(stack.name))
         );
@@ -326,15 +325,19 @@ export async function deleteRepository(id: string) {
         for (const stack of repoStacks) {
           onOutput(`Bringing down ${stack.name}...\n`);
           try {
-            await downProject({
-              projectName: stack.name,
-              composePath: getComposePath(
-                stack.repositoryId,
-                stack.relativePath,
-                stack.composeFile
-              ),
-              onOutput,
-            });
+            // Same `downStackProject` primitive stop uses (not `runStackOp`:
+            // delete already holds `withRepoLock` and would self-deadlock).
+            await downStackProject(
+              {
+                projectName: stack.name,
+                composePath: getComposePath(
+                  stack.repositoryId,
+                  stack.relativePath,
+                  stack.composeFile
+                ),
+              },
+              onOutput
+            );
           } catch (e) {
             throw new ActionFailedError(
               `Could not bring down stack ${stack.name} (${e instanceof Error ? e.message : "unknown error"})`

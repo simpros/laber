@@ -1,8 +1,5 @@
-import { db, stacks, repositories } from "@laber/db";
 import { resolveDataDir } from "@laber/db/paths";
-import { eq } from "drizzle-orm";
 import { resolve } from "path";
-import { NotFoundError, ValidationError } from "./errors";
 
 export const DATA_DIR = resolveDataDir();
 
@@ -18,37 +15,9 @@ export function getComposePath(
   return resolve(DATA_DIR, "repos", repoId, relativePath, composeFile);
 }
 
-export async function getStackAndRepo(stackName: string) {
-  const [stack] = await db
-    .select()
-    .from(stacks)
-    .where(eq(stacks.name, stackName))
-    .limit(1);
-
-  if (!stack) throw new NotFoundError("Stack not found");
-
-  const [repo] = await db
-    .select()
-    .from(repositories)
-    .where(eq(repositories.id, stack.repositoryId))
-    .limit(1);
-
-  if (!repo) throw new NotFoundError("Repository not found");
-
-  const composePath = getComposePath(
-    repo.id,
-    stack.relativePath,
-    stack.composeFile
-  );
-
-  return { stack, repo, composePath };
-}
-
-/** The one stack-name guard. Lives here next to `getStackAndRepo`. */
-export function assertStackName(name: string): string {
-  if (!name) throw new ValidationError("Stack name must not be empty");
-  return name;
-}
+// `getStackAndRepo` / `assertStackName` live in `stack-context.ts` — import
+// from there. This module owns `DATA_DIR` / path builders / `ConfigValue`
+// only.
 
 /**
  * Three-state config value shared by every keyed-config write: `null` (or

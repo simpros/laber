@@ -9,7 +9,7 @@ import {
 import {
   getStackAndRepo,
   assertStackName,
-} from "./config";
+} from "./stack-context";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
 
 type LifecycleOp = "stop" | "restart" | "pull";
@@ -79,12 +79,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
     }),
     title: (label) => `Stopping ${label}`,
     failureMessage: (label) => `Stopping ${label} failed`,
-    run: (ctx, onOutput) =>
-      downProject({
-        projectName: ctx.projectName,
-        composePath: ctx.composePath,
-        onOutput,
-      }),
+    run: (ctx, onOutput) => downStackProject(ctx, onOutput),
   },
   restart: {
     action: "restart",
@@ -105,6 +100,44 @@ const OPS: Record<LifecycleOp, OpDef> = {
       runComposeCommand(ctx.composePath, ["pull"], ctx.projectName, onOutput),
   },
 };
+
+/**
+ * The one "bring a compose project down" primitive for every stoppable
+ * project: `downProject` by project name (compose file optional, label
+ * fallback). `OPS.stop.run` and repo delete both call this — delete must
+ * never call `runStackOp` (it already holds `withRepoLock` for the repo and
+ * would self-deadlock the per-repo mutex), so the shared door is this
+ * function, not the locked op shell.
+ */
+export function downStackProject(
+  ctx: OpCtx,
+  onOutput: (chunk: string) => void
+): Promise<{ output: string }> {
+  return downProject({
+    projectName: ctx.projectName,
+    composePath: ctx.composePath,
+    onOutput,
+  });
+}
+
+/**
+ * The one lock choreography for stack-scoped mutations: sample the lock key
+ * cheaply outside, then re-resolve identity + compose path *under* the lock
+ * so a sync that deletes the row between the two reads 404s instead of
+ * mutating an orphan project. Deploy and stop are call sites, not policy
+ * owners — sample + mutate share one mutex, one helper.
+ */
+export async function withLockedStack<T>(
+  name: string,
+  fn: (ctx: { stack: Awaited<ReturnType<typeof getStackAndRepo>>["stack"]; composePath: string }) => Promise<T>
+): Promise<T> {
+  assertStackName(name);
+  const { stack: pre } = await getStackAndRepo(name);
+  return withRepoLock(pre.repositoryId, async () => {
+    const { stack, composePath } = await getStackAndRepo(name);
+    return fn({ stack, composePath });
+  });
+}
 
 /**
  * The one logged-lifecycle shell for every stoppable project: `runStackOp`
@@ -157,19 +190,15 @@ export async function runStackOp(
       { projectName: stack.name, composePath, label: stack.name }
     );
   }
-  // Lock key sampled cheaply outside; identity + compose path are re-resolved
-  // *under* the lock so a sync that deletes this row between the two reads
-  // 404s instead of `down`ing an orphan project — sample + mutate share one
-  // mutex, same rule as deploy.
-  const { stack: pre } = await getStackAndRepo(name);
-  return withRepoLock(pre.repositoryId, async () => {
-    const { stack, composePath } = await getStackAndRepo(name);
-    return runLifecycleOp(
+  // Stop removes the containers the sync probe reads: same `withLockedStack`
+  // choreography as deploy, one helper instead of a copy-pasted lock block.
+  return withLockedStack(name, async ({ stack, composePath }) =>
+    runLifecycleOp(
       op,
       def.stackIdentity(stack.id),
       { projectName: stack.name, composePath, label: stack.name }
-    );
-  });
+    )
+  );
 }
 
 type CoreOp = "stop" | "restart";

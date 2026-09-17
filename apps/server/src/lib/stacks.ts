@@ -14,7 +14,8 @@ import {
   extractServices,
   extractAllEnvVarNames,
 } from "./compose-services";
-import { getStackAndRepo, getRepoDir } from "./config";
+import { getStackAndRepo } from "./stack-context";
+import { getRepoDir } from "./config";
 
 export async function listStacks() {
   const [allStacks, envCounts] = await Promise.all([

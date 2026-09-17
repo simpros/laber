@@ -18,8 +18,8 @@
  * probe still applies there.
  *
  * Never nest: holders must not call another holder for the same repo id
- * (repo delete tears down via `downProject` directly, never via the locked
- * `runStackOp`, for exactly this reason).
+ * (repo delete tears down via the shared `downStackProject` primitive
+ * directly, never via the locked `runStackOp`, for exactly this reason).
  */
 const tails = new Map<string, Promise<void>>();
 

@@ -21,23 +21,35 @@ import { listContainers } from "./docker-engine";
 
 /**
  * Capability proving the fail-closed Docker probe ran for an exact removal
- * set. Branded so only `clearStacksForRemoval` (and `emptyClearance` for the
- * fresh-register case) can mint it: a plain `{ repoId, names }` literal does
- * not typecheck, so `reconcileStacksTx` cannot be called with a forged
- * clearance that skipped Docker. The probe and the commit still run under
- * `withRepoLock` — the clearance is the typed proof, the lock is the timing.
+ * set. An opaque class with a private constructor: the only mint paths are
+ * the static factories below (`clear` runs the Docker probe; register passes
+ * no clearance at all — `reconcileStacksTx` only requires one when rows
+ * would actually disappear). No object literal typechecks, and no cast in
+ * this module mints one — a forged literal cannot skip Docker.
  */
-declare const clearanceBrand: unique symbol;
-export type RemovableClearance = {
-  readonly [clearanceBrand]: true;
-  repoId: string;
-  /** Stack names the probe cleared for removal. */
-  names: string[];
-};
+export class RemovableClearance {
+  private constructor(
+    readonly repoId: string,
+    /** Stack names the probe cleared for removal. */
+    readonly names: readonly string[]
+  ) {}
 
-/** Mint an empty clearance: fresh register removes nothing, so no probe runs. */
-export function emptyClearance(repoId: string): RemovableClearance {
-  return { repoId, names: [] } as unknown as RemovableClearance;
+  /**
+   * Mint a clearance for an exact candidate set: probes every name in
+   * parallel under the same fail-closed rule, then seals the cleared set.
+   * Callers pass the disappearing stacks (not the whole table) so the
+   * clearance names exactly what reconcile may delete.
+   */
+  static async clear(
+    repoId: string,
+    disappearing: { name: string }[]
+  ): Promise<RemovableClearance> {
+    await Promise.all(disappearing.map((stack) => assertStackRemovable(stack)));
+    return new RemovableClearance(
+      repoId,
+      disappearing.map((s) => s.name)
+    );
+  }
 }
 /** Running containers for a compose project. Throws when Docker is unreadable. */
 export async function countProjectContainers(
@@ -69,16 +81,4 @@ export async function assertStackRemovable(stack: {
   }
 }
 
-/**
- * Mint a `RemovableClearance` for an exact candidate set: probes every name
- * in parallel under the same fail-closed rule, then seals the cleared set.
- * Callers pass the disappearing stacks (not the whole table) so the
- * clearance names exactly what reconcile may delete.
- */
-export async function clearStacksForRemoval(
-  repoId: string,
-  disappearing: { name: string }[]
-): Promise<RemovableClearance> {
-  await Promise.all(disappearing.map((stack) => assertStackRemovable(stack)));
-  return { repoId, names: disappearing.map((s) => s.name) } as unknown as RemovableClearance;
-}
+

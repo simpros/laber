@@ -64,7 +64,7 @@ export function reconcileStacksTx(
   tx: StackTx,
   repoId: string,
   discovered: DiscoveredStack[],
-  clearance: RemovableClearance
+  clearance?: RemovableClearance
 ): ReconcileCounts {
   const existing = tx
     .select()
@@ -95,17 +95,21 @@ export function reconcileStacksTx(
   // consulted. Out-of-band daemon changes are best-effort either way. Stale
   // rows are deleted (env/secrets cascade, logs detach) in the same
   // transaction as the adds/updates so sync never leaves zombies behind.
-  if (clearance.repoId !== repoId) {
-    throw new ActionFailedError(
-      "Cannot sync: stale removable clearance for another repository; refusing to remove stacks"
-    );
-  }
-  const cleared = new Set(clearance.names);
-  const uncleared = removedNames.filter((n) => !cleared.has(n));
-  if (uncleared.length > 0) {
-    throw new ActionFailedError(
-      `Cannot sync: stacks were never cleared for removal: ${uncleared.join(", ")}`
-    );
+  // No clearance is needed when nothing disappears (fresh register passes
+  // none) — the gate only runs for actual removals.
+  if (removedNames.length > 0) {
+    if (!clearance || clearance.repoId !== repoId) {
+      throw new ActionFailedError(
+        "Cannot sync: stale removable clearance for another repository; refusing to remove stacks"
+      );
+    }
+    const cleared = new Set(clearance.names);
+    const uncleared = removedNames.filter((n) => !cleared.has(n));
+    if (uncleared.length > 0) {
+      throw new ActionFailedError(
+        `Cannot sync: stacks were never cleared for removal: ${uncleared.join(", ")}`
+      );
+    }
   }
 
   // NOTE: drizzle only executes queries that are awaited (async tx) or
