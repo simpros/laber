@@ -1,0 +1,45 @@
+diff --git a/node_modules/ssh2/.bun-tag-eaf6bb3037b62b2a b/.bun-tag-eaf6bb3037b62b2a
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/lib/protocol/constants.js b/lib/protocol/constants.js
+index ad7759257d6bdbcafa353dec8946258d64c14eb0..a2616f85c4f74da891d10947a4d38f76c6fee3ae 100644
+--- a/lib/protocol/constants.js
++++ b/lib/protocol/constants.js
+@@ -3,9 +3,15 @@
+ const crypto = require('crypto');
+ 
+ let cpuInfo;
++// NOTE(laber): same as the sshcrypto patch in ./crypto.js — Bun 1.x panics
++// (process abort) loading this NAPI module, so the try/catch cannot
++// protect us. cpuInfo only selects optimized cipher implementations;
++// undefined falls back to the defaults.
++if (typeof globalThis.Bun === "undefined") {
+ try {
+   cpuInfo = require('cpu-features')();
+ } catch {}
++}
+ 
+ const { bindingAvailable, CIPHER_INFO, MAC_INFO } = require('./crypto.js');
+ 
+diff --git a/lib/protocol/crypto.js b/lib/protocol/crypto.js
+index 851cc73817537c1eace3442c792bc1e5e5289cd2..33ca73848c822d1f1293bda5f6721e6b908cb91f 100644
+--- a/lib/protocol/crypto.js
++++ b/lib/protocol/crypto.js
+@@ -26,11 +26,17 @@ let GenericCipher;
+ let AESGCMDecipher;
+ let ChaChaPolyDecipher;
+ let GenericDecipher;
++// NOTE(laber): skip the native sshcrypto binding under Bun. Bun 1.x panics
++// (process abort, not a catchable error) when loading this NAPI module, so
++// the try/catch below cannot protect us. The pure-JS fallback is used
++// instead, which is the same path Node takes when the binding is absent.
++if (typeof globalThis.Bun === "undefined") {
+ try {
+   binding = require('./crypto/build/Release/sshcrypto.node');
+   ({ AESGCMCipher, ChaChaPolyCipher, GenericCipher,
+      AESGCMDecipher, ChaChaPolyDecipher, GenericDecipher } = binding);
+ } catch {}
++}
+ 
+ const CIPHER_STREAM = 1 << 0;
+ const CIPHER_INFO = (() => {

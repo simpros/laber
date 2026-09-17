@@ -40,10 +40,20 @@ CREATE TABLE `stack_env_vars` (
 	CONSTRAINT `fk_stack_env_vars_stack_id_stacks_id_fk` FOREIGN KEY (`stack_id`) REFERENCES `stacks`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
+CREATE TABLE `stack_secrets` (
+	`id` text PRIMARY KEY,
+	`stack_id` text NOT NULL,
+	`name` text NOT NULL,
+	`value` text DEFAULT '' NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	CONSTRAINT `fk_stack_secrets_stack_id_stacks_id_fk` FOREIGN KEY (`stack_id`) REFERENCES `stacks`(`id`) ON DELETE CASCADE
+);
+--> statement-breakpoint
 CREATE TABLE `stacks` (
 	`id` text PRIMARY KEY,
 	`repository_id` text NOT NULL,
-	`name` text NOT NULL,
+	`name` text NOT NULL UNIQUE,
 	`relative_path` text NOT NULL,
 	`compose_file` text DEFAULT 'docker-compose.yaml' NOT NULL,
 	`status` text DEFAULT 'discovered' NOT NULL,
