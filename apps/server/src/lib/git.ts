@@ -1,6 +1,6 @@
 import simpleGit from "simple-git";
 import { ConflictError } from "./errors";
-import { db, stacks } from "@laber/db";
+import { db, stacks, type Db } from "@laber/db";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   mkdtempSync,
@@ -118,14 +118,30 @@ export type DiscoveredStack = Awaited<
   ReturnType<typeof discoverStacks>
 >[number];
 
-export async function reconcileDiscoveredStacks(
+export type StackTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export type ReconcileCounts = {
+  added: number;
+  updated: number;
+  removed: string[];
+};
+
+/**
+ * Apply the reconcile inside the caller's transaction (sync drizzle-tx
+ * style: reads via `.all()`, writes via `.run()`). Throwing rolls back
+ * everything the outer transaction did — repo insert and `lastSyncedAt`
+ * included — so callers stay atomic by construction.
+ */
+export function reconcileStacksTx(
+  tx: StackTx,
   repoId: string,
   discovered: DiscoveredStack[]
-): Promise<{ added: number; updated: number; removed: string[] }> {
-  const existing = await db
+): ReconcileCounts {
+  const existing = tx
     .select()
     .from(stacks)
-    .where(eq(stacks.repositoryId, repoId));
+    .where(eq(stacks.repositoryId, repoId))
+    .all();
   const existingByName = new Map(existing.map((s) => [s.name, s]));
   const discoveredByName = new Map(discovered.map((s) => [s.name, s]));
 
@@ -157,48 +173,55 @@ export async function reconcileDiscoveredStacks(
   // NOTE: drizzle only executes queries that are awaited (async tx) or
   // finished with `.run()` (sync tx). Bare `tx.delete(...)` chains are
   // lazy and would silently persist nothing.
-  db.transaction((tx) => {
-    if (removedNames.length > 0) {
-      tx.delete(stacks)
-        .where(
-          and(
-            eq(stacks.repositoryId, repoId),
-            inArray(stacks.name, removedNames)
-          )
+  if (removedNames.length > 0) {
+    tx.delete(stacks)
+      .where(
+        and(
+          eq(stacks.repositoryId, repoId),
+          inArray(stacks.name, removedNames)
         )
-        .run();
-    }
-    if (added.length > 0) {
-      tx.insert(stacks)
-        .values(
-          added.map((s) => ({
-            repositoryId: repoId,
-            name: s.name,
-            relativePath: s.relativePath,
-            composeFile: s.composeFile,
-            networkName: s.networkName,
-          }))
-        )
-        .run();
-    }
-    for (const s of changed) {
-      tx.update(stacks)
-        .set({
+      )
+      .run();
+  }
+  if (added.length > 0) {
+    tx.insert(stacks)
+      .values(
+        added.map((s) => ({
+          repositoryId: repoId,
+          name: s.name,
           relativePath: s.relativePath,
           composeFile: s.composeFile,
           networkName: s.networkName,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(stacks.repositoryId, repoId), eq(stacks.name, s.name))
-        )
-        .run();
-    }
-  });
+        }))
+      )
+      .run();
+  }
+  for (const s of changed) {
+    tx.update(stacks)
+      .set({
+        relativePath: s.relativePath,
+        composeFile: s.composeFile,
+        networkName: s.networkName,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(stacks.repositoryId, repoId), eq(stacks.name, s.name)))
+      .run();
+  }
 
   return {
     added: added.length,
     updated: changed.length,
     removed: removedNames,
   };
+}
+
+export async function reconcileDiscoveredStacks(
+  repoId: string,
+  discovered: DiscoveredStack[]
+): Promise<ReconcileCounts> {
+  let result!: ReconcileCounts;
+  db.transaction((tx) => {
+    result = reconcileStacksTx(tx, repoId, discovered);
+  });
+  return result;
 }

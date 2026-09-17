@@ -22,7 +22,10 @@ type ComposeService = {
   container_name?: string;
   environment?: string[] | Record<string, string>;
   labels?: string[] | Record<string, string>;
-  ports?: string[];
+  // Widened on purpose: the shape gate only checks the services mapping,
+  // so exotic-but-valid compose (numeric or long-form ports) arrives here
+  // as-is and `parsePorts` coerces defensively.
+  ports?: unknown;
   volumes?: string[];
   restart?: string;
   networks?: string[] | Record<string, unknown>;
@@ -110,21 +113,43 @@ export function extractEnvVarNames(
 }
 
 function parsePorts(
-  ports: string[] | undefined
+  ports: unknown
 ): Array<{ host?: number; container: number }> {
-  if (!ports) return [];
-  return ports.map((p) => {
-    const parts = p.toString().split(":");
-    if (parts.length >= 2) {
-      return {
-        host: parseInt(parts[0], 10) || undefined,
-        container: parseInt(parts[1].split("/")[0], 10),
-      };
+  if (!ports || !Array.isArray(ports)) return [];
+  const out: Array<{ host?: number; container: number }> = [];
+  for (const entry of ports) {
+    // Long-form `ports:` objects ({ target, published }) have no short
+    // string to split: read the fields directly instead of String(entry).
+    if (typeof entry === "object" && entry !== null) {
+      const target = Number(
+        (entry as Record<string, unknown>).target
+      );
+      if (!Number.isFinite(target)) continue;
+      const published = Number(
+        (entry as Record<string, unknown>).published
+      );
+      out.push(
+        Number.isFinite(published) && published !== 0
+          ? { host: published, container: target }
+          : { container: target }
+      );
+      continue;
     }
-    return {
-      container: parseInt(parts[0].split("/")[0], 10),
-    };
-  });
+    const parts = entry.toString().split(":");
+    if (parts.length >= 2) {
+      const container = parseInt(parts[1].split("/")[0], 10);
+      if (!Number.isFinite(container)) continue;
+      out.push({
+        host: parseInt(parts[0], 10) || undefined,
+        container,
+      });
+    } else {
+      const container = parseInt(parts[0].split("/")[0], 10);
+      if (!Number.isFinite(container)) continue;
+      out.push({ container });
+    }
+  }
+  return out;
 }
 
 function normalizeLabels(

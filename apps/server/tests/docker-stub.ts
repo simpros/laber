@@ -3,7 +3,6 @@ import type { ContainerInfo } from "../src/lib/types";
 type ExecComposeOptions = {
   composePath: string;
   command: string[];
-  envVars?: Record<string, string>;
   projectName?: string;
   onOutput?: (chunk: string) => void;
 };

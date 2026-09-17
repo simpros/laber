@@ -8,9 +8,8 @@ import {
   stackSecrets,
   repositories,
   deploymentLogs,
-  type Db,
 } from "@laber/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { listContainers, runComposeCommand } from "./docker";
 import { deployStack } from "./stack-manager";
 import {
@@ -24,11 +23,43 @@ import {
 import { getStackAndRepo, getRepoDir, getComposePath } from "./config";
 import { runLoggedAction, ensureActionSuccess } from "./logged-action";
 import { ValidationError, NotFoundError } from "./errors";
+import type { StackTx } from "./git";
 import type { ContainerInfo } from "./types";
 
 function requireName(name: string): string {
   if (!name) throw new ValidationError("Stack name must not be empty");
   return name;
+}
+
+export async function listStacks() {
+  const [allStacks, envCounts] = await Promise.all([
+    db
+      .select({
+        id: stacks.id,
+        name: stacks.name,
+        status: stacks.status,
+        relativePath: stacks.relativePath,
+        composeFile: stacks.composeFile,
+        networkName: stacks.networkName,
+        repositoryId: stacks.repositoryId,
+        createdAt: stacks.createdAt,
+        updatedAt: stacks.updatedAt,
+        repoName: repositories.name,
+        repoUrl: repositories.url,
+      })
+      .from(stacks)
+      .leftJoin(repositories, eq(stacks.repositoryId, repositories.id)),
+    db
+      .select({ stackId: stackEnvVars.stackId, count: count() })
+      .from(stackEnvVars)
+      .groupBy(stackEnvVars.stackId),
+  ]);
+  const countByStackId = new Map(envCounts.map((r) => [r.stackId, r.count]));
+
+  return allStacks.map((stack) => ({
+    ...stack,
+    envVarCount: countByStackId.get(stack.id) ?? 0,
+  }));
 }
 
 export async function getStackDetail(name: string) {
@@ -40,35 +71,36 @@ export async function getStackDetail(name: string) {
     .limit(1);
   if (!stack) throw new NotFoundError("Stack not found");
 
-  const [repo] = await db
-    .select()
-    .from(repositories)
-    .where(eq(repositories.id, stack.repositoryId))
-    .limit(1);
-
-  const envVars = await db
-    .select()
-    .from(stackEnvVars)
-    .where(eq(stackEnvVars.stackId, stack.id));
-
-  const secrets = await db
-    .select()
-    .from(stackSecrets)
-    .where(eq(stackSecrets.stackId, stack.id));
-
-  const logs = await db
-    .select()
-    .from(deploymentLogs)
-    .where(eq(deploymentLogs.stackId, stack.id))
-    .orderBy(desc(deploymentLogs.createdAt))
-    .limit(20);
-
-  let containers: ContainerInfo[] = [];
-  try {
-    containers = await listContainers(stack.name);
-  } catch {
-    // Docker not available
-  }
+  // Independent reads, fetched together: repo row, env, secrets, logs,
+  // Docker state. The compose file needs the repo row, so it is parsed
+  // after the join (single disk read, sync, with internal fallback).
+  const [repoRows, envVars, secrets, logs, containers] = await Promise.all([
+    db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, stack.repositoryId))
+      .limit(1),
+    db
+      .select()
+      .from(stackEnvVars)
+      .where(eq(stackEnvVars.stackId, stack.id)),
+    db
+      .select()
+      .from(stackSecrets)
+      .where(eq(stackSecrets.stackId, stack.id)),
+    db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id))
+      .orderBy(desc(deploymentLogs.createdAt))
+      .limit(20),
+    // The docker stub throws synchronously (no promise), so the call is
+    // wrapped lazily — .catch on a sync throw would never attach.
+    Promise.resolve()
+      .then(() => listContainers(stack.name))
+      .catch((): ContainerInfo[] => []),
+  ]);
+  const repo = repoRows[0];
 
   let services: ReturnType<typeof extractServices> = [];
   let detectedEnvVars: string[] = [];
@@ -251,46 +283,54 @@ export type SecretEntry = {
 };
 
 /**
- * One transaction shell for the nullable keyed-bag tables (stack env vars,
- * stack secrets): delete-all + insert replaces the whole set. Callers only
- * differ in the row mapping.
+ * One replace-all for the nullable keyed-bag tables (stack env vars, stack
+ * secrets): `null` means "leave unchanged" (keep the stored value, default
+ * ""), anything else replaces the whole set in one transaction. Each table
+ * is ~5 lines of column mapping; the load → merge → delete+insert shell
+ * lives here exactly once.
  */
-type StackTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+async function replaceStackKeyedBag(options: {
+  name: string;
+  entries: Array<{ key: string; value: string | null }>;
+  loadExisting: (stackId: string) => Promise<Map<string, string>>;
+  writeAll: (
+    tx: StackTx,
+    stackId: string,
+    merged: Array<{ key: string; value: string }>
+  ) => void;
+}): Promise<{ success: true }> {
+  requireName(options.name);
+  const { stack } = await getStackAndRepo(options.name);
 
-function replaceStackRows(
-  clear: (tx: StackTx) => void,
-  fill: (tx: StackTx) => void
-): void {
+  const existingByKey = await options.loadExisting(stack.id);
+  const merged = replaceNullableKeyedRows(existingByKey, options.entries);
+
   db.transaction((tx) => {
-    clear(tx);
-    fill(tx);
+    options.writeAll(tx, stack.id, merged);
   });
+
+  return { success: true };
 }
 
 export async function replaceStackEnv(name: string, entries: EnvEntry[]) {
-  requireName(name);
-  const { stack } = await getStackAndRepo(name);
-
-  const existing = await db
-    .select()
-    .from(stackEnvVars)
-    .where(eq(stackEnvVars.stackId, stack.id));
-  const existingByKey = new Map(existing.map((e) => [e.key, e.value]));
   const isSecretByKey = new Map(entries.map((e) => [e.key, e.isSecret]));
-  const merged = replaceNullableKeyedRows(existingByKey, entries);
-
-  replaceStackRows(
-    (tx) => {
-      tx.delete(stackEnvVars)
-        .where(eq(stackEnvVars.stackId, stack.id))
-        .run();
+  return replaceStackKeyedBag({
+    name,
+    entries,
+    loadExisting: async (stackId) => {
+      const existing = await db
+        .select()
+        .from(stackEnvVars)
+        .where(eq(stackEnvVars.stackId, stackId));
+      return new Map(existing.map((e) => [e.key, e.value]));
     },
-    (tx) => {
+    writeAll: (tx, stackId, merged) => {
+      tx.delete(stackEnvVars).where(eq(stackEnvVars.stackId, stackId)).run();
       if (merged.length > 0) {
         tx.insert(stackEnvVars)
           .values(
             merged.map((e) => ({
-              stackId: stack.id,
+              stackId,
               key: e.key,
               value: e.value,
               isSecret: isSecretByKey.get(e.key) ?? false,
@@ -298,49 +338,37 @@ export async function replaceStackEnv(name: string, entries: EnvEntry[]) {
           )
           .run();
       }
-    }
-  );
-
-  return { success: true };
+    },
+  });
 }
 
 export async function replaceStackSecrets(
   name: string,
   entries: SecretEntry[]
 ) {
-  requireName(name);
-  const { stack } = await getStackAndRepo(name);
-
-  const existing = await db
-    .select()
-    .from(stackSecrets)
-    .where(eq(stackSecrets.stackId, stack.id));
-  const existingByName = new Map(existing.map((s) => [s.name, s.value]));
-  const merged = replaceNullableKeyedRows(
-    existingByName,
-    entries.map((e) => ({ key: e.name, value: e.value }))
-  );
-
-  replaceStackRows(
-    (tx) => {
-      tx.delete(stackSecrets)
-        .where(eq(stackSecrets.stackId, stack.id))
-        .run();
+  return replaceStackKeyedBag({
+    name,
+    entries: entries.map((e) => ({ key: e.name, value: e.value })),
+    loadExisting: async (stackId) => {
+      const existing = await db
+        .select()
+        .from(stackSecrets)
+        .where(eq(stackSecrets.stackId, stackId));
+      return new Map(existing.map((s) => [s.name, s.value]));
     },
-    (tx) => {
+    writeAll: (tx, stackId, merged) => {
+      tx.delete(stackSecrets).where(eq(stackSecrets.stackId, stackId)).run();
       if (merged.length > 0) {
         tx.insert(stackSecrets)
           .values(
             merged.map((e) => ({
-              stackId: stack.id,
+              stackId,
               name: e.key,
               value: e.value,
             }))
           )
           .run();
       }
-    }
-  );
-
-  return { success: true };
+    },
+  });
 }

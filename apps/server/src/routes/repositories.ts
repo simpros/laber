@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import * as v from "valibot";
-import { db, repositories, stacks } from "@laber/db";
 import {
+  listRepositories,
   cloneAndRegisterRepo,
   syncRepository,
   deleteRepository,
@@ -17,10 +17,7 @@ const addRepositoryBodySchema = v.object({
 
 export const repositoryRoutes = new Elysia()
   .get("/api/repositories", async () => {
-    const repos = await db.select().from(repositories);
-    const allStacks = await db.select().from(stacks);
-
-    return { repositories: repos, stacks: allStacks };
+    return listRepositories();
   })
   .post(
     "/api/repositories",

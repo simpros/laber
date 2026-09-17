@@ -177,9 +177,8 @@ describe("POST /api/stacks/:name/deploy", () => {
       value: "s3cr3t",
     });
     dockerStub.execCompose = async (options) => {
-      // Single env channel: stack vars travel via --env-file, not a second
-      // process-env overlay.
-      expect(options.envVars).toBeUndefined();
+      // Single env channel: stack vars travel via --env-file (there is no
+      // second process-env overlay on execCompose anymore).
       const envFlag = options.command.indexOf("--env-file");
       expect(envFlag).toBeGreaterThanOrEqual(0);
       const envContent = readFileSync(options.command[envFlag + 1], "utf-8");
@@ -248,7 +247,7 @@ describe("POST /api/stacks/:name/deploy", () => {
   });
 
   it("returns 500 when the deploy command fails", async () => {
-    await seedStack("failed-deploy", BASIC_COMPOSE);
+    const { stack } = await seedStack("failed-deploy", BASIC_COMPOSE);
     dockerStub.execCompose = async () => ({
       stdout: "",
       stderr: "boom",
@@ -260,7 +259,16 @@ describe("POST /api/stacks/:name/deploy", () => {
     );
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("boom");
+    // Short failure contract: the wire message stays short; the full
+    // transcript lives in the deployment log and activity stream.
+    expect(body.error).toContain("Deploying failed-deploy failed");
+    expect(body.error).not.toContain("boom");
+
+    const logs = await db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id));
+    expect(logs.some((l) => (l.output ?? "").includes("boom"))).toBe(true);
   });
 
   it("removes written secret files when the deploy fails", async () => {
@@ -328,7 +336,7 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
   });
 
   it("returns 500 when stopping fails", async () => {
-    await seedStack("unstoppable", BASIC_COMPOSE);
+    const { stack } = await seedStack("unstoppable", BASIC_COMPOSE);
     dockerStub.runComposeCommand = async () => ({
       success: false,
       output: "down blew up",
@@ -339,7 +347,16 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
     );
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("down blew up");
+    expect(body.error).toContain("Stopping unstoppable failed");
+    expect(body.error).not.toContain("down blew up");
+
+    const logs = await db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id));
+    expect(logs.some((l) => (l.output ?? "").includes("down blew up"))).toBe(
+      true
+    );
   });
 
   it("restarts and pulls without changing status", async () => {

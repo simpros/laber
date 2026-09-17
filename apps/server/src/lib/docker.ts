@@ -129,7 +129,6 @@ export async function connectContainerToNetwork(
 export async function execCompose(options: {
   composePath: string;
   command: string[];
-  envVars?: Record<string, string>;
   projectName?: string;
   onOutput?: (chunk: string) => void;
 }): Promise<{ stdout: string; stderr: string; exitCode: number }> {
@@ -139,11 +138,11 @@ export async function execCompose(options: {
   }
   args.push(...options.command);
 
+  // Stack env travels only via --env-file (see deployStack). The spawned
+  // process inherits process.env for the docker CLI itself; there is no
+  // second stack-env overlay here by design.
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[key] = value;
-  }
-  for (const [key, value] of Object.entries(options.envVars ?? {})) {
     if (value !== undefined) env[key] = value;
   }
 

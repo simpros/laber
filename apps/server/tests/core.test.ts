@@ -1,6 +1,7 @@
 import "./setup";
 import { describe, it, expect, beforeAll, afterEach } from "bun:test";
-import { db, coreConfig } from "@laber/db";
+import { db, coreConfig, deploymentLogs } from "@laber/db";
+import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
 import { dockerStub, resetDockerStub } from "./docker-stub";
@@ -175,6 +176,17 @@ describe("POST /api/core/deploy|stop|restart", () => {
     );
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("core blew up");
+    // Short failure contract: the wire message stays short; the full
+    // transcript lives in the deployment log and activity stream.
+    expect(body.error).toContain("Deploying core services failed");
+    expect(body.error).not.toContain("core blew up");
+
+    const logs = await db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.isCore, true));
+    expect(logs.some((l) => (l.output ?? "").includes("core blew up"))).toBe(
+      true
+    );
   });
 });

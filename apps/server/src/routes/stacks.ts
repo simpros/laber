@@ -1,8 +1,7 @@
 import { Elysia } from "elysia";
 import * as v from "valibot";
-import { db, stacks, stackEnvVars, repositories } from "@laber/db";
-import { eq, count } from "drizzle-orm";
 import {
+  listStacks,
   getStackDetail,
   deployStackByName,
   runStackLifecycle,
@@ -39,35 +38,7 @@ const saveComposeBodySchema = v.object({
 
 export const stackRoutes = new Elysia()
   .get("/api/stacks", async () => {
-    const allStacks = await db
-      .select({
-        id: stacks.id,
-        name: stacks.name,
-        status: stacks.status,
-        relativePath: stacks.relativePath,
-        composeFile: stacks.composeFile,
-        networkName: stacks.networkName,
-        repositoryId: stacks.repositoryId,
-        createdAt: stacks.createdAt,
-        updatedAt: stacks.updatedAt,
-        repoName: repositories.name,
-        repoUrl: repositories.url,
-      })
-      .from(stacks)
-      .leftJoin(repositories, eq(stacks.repositoryId, repositories.id));
-
-    const envCounts = await db
-      .select({ stackId: stackEnvVars.stackId, count: count() })
-      .from(stackEnvVars)
-      .groupBy(stackEnvVars.stackId);
-    const countByStackId = new Map(
-      envCounts.map((r) => [r.stackId, r.count])
-    );
-
-    return allStacks.map((stack) => ({
-      ...stack,
-      envVarCount: countByStackId.get(stack.id) ?? 0,
-    }));
+    return listStacks();
   })
   .get("/api/stacks/:name", async ({ params }) => {
     return getStackDetail(params.name);

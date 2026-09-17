@@ -43,7 +43,6 @@ mock.module("../src/lib/docker.ts", () => ({
   execCompose: (options: {
     composePath: string;
     command: string[];
-    envVars?: Record<string, string>;
     projectName?: string;
     onOutput?: (chunk: string) => void;
   }) => dockerStub.execCompose(options),
