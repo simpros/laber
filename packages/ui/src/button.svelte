@@ -2,46 +2,22 @@
   import type { Snippet } from "svelte";
   import type { HTMLButtonAttributes } from "svelte/elements";
   import type { ClassNameValue } from "tailwind-merge";
-  import { tv, type VariantProps } from "tailwind-variants";
   import { cn } from "./cn.js";
 
-  const button = tv({
-    base: "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:opacity-50",
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground",
-        outline: "border border-input bg-transparent",
-        ghost: "bg-transparent",
-      },
-      size: {
-        default: "h-9 px-4 text-sm",
-        sm: "h-8 px-3 text-xs",
-        lg: "h-10 px-6 text-base",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  });
-
-  interface Props
-    extends
-      Omit<HTMLButtonAttributes, "class">,
-      VariantProps<typeof button> {
+  interface Props extends Omit<HTMLButtonAttributes, "class"> {
     children?: Snippet;
     class?: ClassNameValue;
   }
 
-  let {
-    variant,
-    size,
-    class: className,
-    children,
-    ...rest
-  }: Props = $props();
+  let { class: className, children, ...rest }: Props = $props();
 </script>
 
-<button class={cn(button({ variant, size }), className)} {...rest}>
+<button
+  class={cn(
+    "inline-flex h-9 items-center justify-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-50",
+    className
+  )}
+  {...rest}
+>
   {@render children?.()}
 </button>
