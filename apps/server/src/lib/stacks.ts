@@ -240,6 +240,37 @@ export async function runStackLifecycle(options: {
   return ensureActionSuccess(result, `${options.title} failed`);
 }
 
+/** Compose argv lives here, not in the route module. */
+export async function stopStack(name: string) {
+  return runStackLifecycle({
+    name,
+    title: `Stopping ${name}`,
+    action: "stop",
+    command: ["down"],
+    statusOnSuccess: "stopped",
+  });
+}
+
+/** Compose argv lives here, not in the route module. */
+export async function restartStack(name: string) {
+  return runStackLifecycle({
+    name,
+    title: `Restarting ${name}`,
+    action: "restart",
+    command: ["restart"],
+  });
+}
+
+/** Compose argv lives here, not in the route module. */
+export async function pullStack(name: string) {
+  return runStackLifecycle({
+    name,
+    title: `Pulling images for ${name}`,
+    action: "pull",
+    command: ["pull"],
+  });
+}
+
 export async function saveComposeContent(name: string, content: string) {
   requireName(name);
   if (!content) {
@@ -285,14 +316,16 @@ export type SecretEntry = {
 /**
  * One replace-all for the nullable keyed-bag tables (stack env vars, stack
  * secrets): `null` means "leave unchanged" (keep the stored value, default
- * ""), anything else replaces the whole set in one transaction. Each table
- * is ~5 lines of column mapping; the load → merge → delete+insert shell
- * lives here exactly once.
+ * ""), anything else replaces the whole set. The snapshot read and the
+ * delete+insert share one transaction, so concurrent PUTs merge against
+ * committed state instead of clobbering each other's keys. Each table is
+ * ~5 lines of column mapping; the load → merge → delete+insert shell lives
+ * here exactly once.
  */
 async function replaceStackKeyedBag(options: {
   name: string;
   entries: Array<{ key: string; value: string | null }>;
-  loadExisting: (stackId: string) => Promise<Map<string, string>>;
+  loadExisting: (tx: StackTx, stackId: string) => Map<string, string>;
   writeAll: (
     tx: StackTx,
     stackId: string,
@@ -302,10 +335,9 @@ async function replaceStackKeyedBag(options: {
   requireName(options.name);
   const { stack } = await getStackAndRepo(options.name);
 
-  const existingByKey = await options.loadExisting(stack.id);
-  const merged = replaceNullableKeyedRows(existingByKey, options.entries);
-
   db.transaction((tx) => {
+    const existingByKey = options.loadExisting(tx, stack.id);
+    const merged = replaceNullableKeyedRows(existingByKey, options.entries);
     options.writeAll(tx, stack.id, merged);
   });
 
@@ -317,11 +349,12 @@ export async function replaceStackEnv(name: string, entries: EnvEntry[]) {
   return replaceStackKeyedBag({
     name,
     entries,
-    loadExisting: async (stackId) => {
-      const existing = await db
+    loadExisting: (tx, stackId) => {
+      const existing = tx
         .select()
         .from(stackEnvVars)
-        .where(eq(stackEnvVars.stackId, stackId));
+        .where(eq(stackEnvVars.stackId, stackId))
+        .all();
       return new Map(existing.map((e) => [e.key, e.value]));
     },
     writeAll: (tx, stackId, merged) => {
@@ -349,11 +382,12 @@ export async function replaceStackSecrets(
   return replaceStackKeyedBag({
     name,
     entries: entries.map((e) => ({ key: e.name, value: e.value })),
-    loadExisting: async (stackId) => {
-      const existing = await db
+    loadExisting: (tx, stackId) => {
+      const existing = tx
         .select()
         .from(stackSecrets)
-        .where(eq(stackSecrets.stackId, stackId));
+        .where(eq(stackSecrets.stackId, stackId))
+        .all();
       return new Map(existing.map((s) => [s.name, s.value]));
     },
     writeAll: (tx, stackId, merged) => {

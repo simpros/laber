@@ -59,6 +59,74 @@ async function ensureRemoteTree(
 }
 
 /**
+ * One shared clone/sync pipeline: ensure the local git tree, discover
+ * stacks, then apply discovery inside a single transaction. `fresh` selects
+ * clone-vs-pull wording and wipes a failed fresh clone's dir; each caller
+ * only supplies what its transaction writes and what it returns.
+ */
+async function materializeRepoTree<T>(options: {
+  title: string;
+  action: string;
+  repoDir: string;
+  remote: RemoteTree;
+  stacksPath: string;
+  fresh: boolean;
+  failureMessage: string;
+  applyDiscovery: (
+    tx: StackTx,
+    discovered: DiscoveredStack[],
+    onOutput: (chunk: string) => void
+  ) => { summary: string; result: T };
+}): Promise<T> {
+  let captured!: T;
+
+  const result = await runLoggedAction({
+    title: options.title,
+    action: options.action,
+    run: async (onOutput) => {
+      onOutput(
+        options.fresh
+          ? `Cloning ${options.remote.url} (branch: ${options.remote.branch})...\n`
+          : `Pulling latest changes from ${options.remote.url}...\n`
+      );
+      const failure = await ensureRemoteTree(
+        options.repoDir,
+        options.remote,
+        onOutput,
+        options.fresh
+      );
+      if (failure !== null) {
+        if (options.fresh) {
+          rmSync(options.repoDir, { recursive: true, force: true });
+        }
+        return { success: false, output: failure };
+      }
+      onOutput(
+        options.fresh
+          ? "Clone complete. Discovering stacks...\n"
+          : "Pull complete. Discovering stacks...\n"
+      );
+
+      const discovered = await discoverStacks(
+        options.repoDir,
+        options.stacksPath
+      );
+      let summary = "";
+      db.transaction((tx) => {
+        const applied = options.applyDiscovery(tx, discovered, onOutput);
+        captured = applied.result;
+        summary = applied.summary;
+      });
+      return { success: true, output: summary };
+    },
+  });
+
+  ensureActionSuccess(result, options.failureMessage);
+
+  return captured;
+}
+
+/**
  * Shared reconcile → summarize step inside the caller's transaction.
  * Reconcile failures propagate (a deliberate `ConflictError` must not be
  * flattened into a 500); `runLoggedAction` finishes the activity on throw.
@@ -95,67 +163,50 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
   // after the clone succeeds, so a failed clone leaves no ghost repo.
   const repoId = randomUUID();
   const repoDir = getRepoDir(repoId);
-  let discoveredCount = 0;
 
-  const result = await runLoggedAction({
-    title: `Cloning ${input.name}`,
-    action: "clone",
-    run: async (onOutput) => {
-      onOutput(`Cloning ${input.url} (branch: ${input.branch})...\n`);
-      const failure = await ensureRemoteTree(
-        repoDir,
-        {
-          url: input.url,
-          branch: input.branch,
-          sshPrivateKey: input.sshPrivateKey,
-        },
-        onOutput,
-        true
-      );
-      if (failure !== null) {
-        rmSync(repoDir, { recursive: true, force: true });
-        return { success: false, output: failure };
-      }
-      onOutput("Clone complete. Discovering stacks...\n");
+  try {
+    const discovered = await materializeRepoTree({
+      title: `Cloning ${input.name}`,
+      action: "clone",
+      repoDir,
+      remote: {
+        url: input.url,
+        branch: input.branch,
+        sshPrivateKey: input.sshPrivateKey,
+      },
+      stacksPath: input.stacksPath,
+      fresh: true,
+      failureMessage: `Failed to clone repository ${input.name}`,
+      applyDiscovery: (tx, discoveredStacks, onOutput) => {
+        // One transaction for the repo insert *and* the stack reconcile:
+        // any throw rolls the row back, and the dir is wiped below so no
+        // committed repo survives without stacks (and vice versa).
+        tx.insert(repositories)
+          .values({
+            id: repoId,
+            name: input.name,
+            url: input.url,
+            branch: input.branch,
+            stacksPath: input.stacksPath,
+            sshPrivateKey: input.sshPrivateKey,
+            lastSyncedAt: new Date(),
+          })
+          .run();
+        const { summary } = reconcileAndSummarizeTx(
+          tx,
+          repoId,
+          discoveredStacks,
+          onOutput
+        );
+        return { summary, result: discoveredStacks.length };
+      },
+    });
 
-      const discovered = await discoverStacks(repoDir, input.stacksPath);
-      // One transaction for the repo insert *and* the stack reconcile: any
-      // throw after the clone rolls the row back, and the dir is wiped so
-      // no committed repo survives without stacks (and vice versa).
-      let summary = "";
-      try {
-        db.transaction((tx) => {
-          tx.insert(repositories)
-            .values({
-              id: repoId,
-              name: input.name,
-              url: input.url,
-              branch: input.branch,
-              stacksPath: input.stacksPath,
-              sshPrivateKey: input.sshPrivateKey,
-              lastSyncedAt: new Date(),
-            })
-            .run();
-          const out = reconcileAndSummarizeTx(
-            tx,
-            repoId,
-            discovered,
-            onOutput
-          );
-          discoveredCount = discovered.length;
-          summary = out.summary;
-        });
-      } catch (e) {
-        rmSync(repoDir, { recursive: true, force: true });
-        throw e;
-      }
-      return { success: true, output: summary };
-    },
-  });
-
-  ensureActionSuccess(result, `Failed to clone repository ${input.name}`);
-
-  return { discovered: discoveredCount };
+    return { discovered };
+  } catch (e) {
+    rmSync(repoDir, { recursive: true, force: true });
+    throw e;
+  }
 }
 
 export async function syncRepository(id: string) {
@@ -166,46 +217,30 @@ export async function syncRepository(id: string) {
     .limit(1);
   if (!repo) throw new NotFoundError("Repository not found");
 
-  let counts = { added: 0, updated: 0, removed: [] as string[] };
-
-  const result = await runLoggedAction({
+  const counts = await materializeRepoTree({
     title: `Syncing ${repo.name}`,
     action: "sync",
-    run: async (onOutput) => {
-      onOutput(`Pulling latest changes from ${repo.url}...\n`);
-
-      const failure = await ensureRemoteTree(
-        getRepoDir(repo.id),
-        repo,
-        onOutput,
-        false
-      );
-      if (failure !== null) {
-        return { success: false, output: failure };
-      }
-      onOutput("Pull complete. Discovering stacks...\n");
-
-      const discovered = await discoverStacks(
-        getRepoDir(repo.id),
-        repo.stacksPath
-      );
+    repoDir: getRepoDir(repo.id),
+    remote: repo,
+    stacksPath: repo.stacksPath,
+    fresh: false,
+    failureMessage: `Failed to sync repository ${repo.name}`,
+    applyDiscovery: (tx, discoveredStacks, onOutput) => {
       // Reconcile and `lastSyncedAt` commit together: stacks can never
       // change while the timestamp stays stale.
-      let summary = "";
-      db.transaction((tx) => {
-        const out = reconcileAndSummarizeTx(tx, repo.id, discovered, onOutput);
-        tx.update(repositories)
-          .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-          .where(eq(repositories.id, repo.id))
-          .run();
-        counts = out.reconciled;
-        summary = out.summary;
-      });
-      return { success: true, output: summary };
+      const { reconciled, summary } = reconcileAndSummarizeTx(
+        tx,
+        repo.id,
+        discoveredStacks,
+        onOutput
+      );
+      tx.update(repositories)
+        .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+        .where(eq(repositories.id, repo.id))
+        .run();
+      return { summary, result: reconciled };
     },
   });
-
-  ensureActionSuccess(result, `Failed to sync repository ${repo.name}`);
 
   return {
     newStacks: counts.added,

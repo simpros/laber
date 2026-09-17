@@ -1,105 +1,35 @@
-export type CoreKeyGroup = "proxy" | "tunnel" | "companion";
-
-export const CORE_KEY_GROUPS: Record<
-  CoreKeyGroup,
-  { label: string; optional: boolean }
-> = {
-  proxy: { label: "Reverse Proxy", optional: false },
-  tunnel: { label: "Cloudflare Tunnel", optional: true },
-  companion: { label: "Cloudflare Companion", optional: true },
-};
-
+/**
+ * Server catalog of core config keys: only what the API needs (storage key,
+ * typed config prop, secrecy, requiredness). Presentation metadata (labels,
+ * placeholders, groups) lives with the future SPA — `GET /api/core` never
+ * serves it, so the backend must not own a copy that can drift.
+ */
 export const CORE_KEYS = [
-  {
-    key: "ROOT_DOMAIN",
-    prop: "rootDomain",
-    label: "Root Domain",
-    secret: false,
-    required: true,
-    placeholder: "yourdomain.com",
-    group: "proxy",
-  },
+  { key: "ROOT_DOMAIN", prop: "rootDomain", secret: false, required: true },
   {
     key: "CF_DNS_API_TOKEN",
     prop: "cfDnsApiToken",
-    label: "Cloudflare DNS API Token",
     secret: true,
     required: true,
-    placeholder: "Your CF API token",
-    group: "proxy",
   },
-  {
-    key: "ACME_EMAIL",
-    prop: "acmeEmail",
-    label: "ACME Email",
-    secret: false,
-    required: false,
-    placeholder: "admin@yourdomain.com",
-    group: "proxy",
-  },
-  {
-    key: "LOG_LEVEL",
-    prop: "logLevel",
-    label: "Log Level",
-    secret: false,
-    required: false,
-    placeholder: "INFO",
-    group: "proxy",
-  },
-  {
-    key: "TUNNEL_TOKEN",
-    prop: "tunnelToken",
-    label: "Tunnel Token",
-    secret: true,
-    required: false,
-    placeholder: "Your tunnel token",
-    group: "tunnel",
-  },
-  {
-    key: "ZONE_ID",
-    prop: "zoneId",
-    label: "Zone ID",
-    secret: true,
-    required: false,
-    placeholder: "Your CF Zone ID",
-    group: "companion",
-  },
-  {
-    key: "HTTP_TIMEOUT",
-    prop: "httpTimeout",
-    label: "HTTP Timeout",
-    secret: false,
-    required: false,
-    placeholder: "60",
-    group: "companion",
-  },
+  { key: "ACME_EMAIL", prop: "acmeEmail", secret: false, required: false },
+  { key: "LOG_LEVEL", prop: "logLevel", secret: false, required: false },
+  { key: "TUNNEL_TOKEN", prop: "tunnelToken", secret: true, required: false },
+  { key: "ZONE_ID", prop: "zoneId", secret: true, required: false },
+  { key: "HTTP_TIMEOUT", prop: "httpTimeout", secret: false, required: false },
   {
     key: "POLLING_INTERVAL",
     prop: "pollingInterval",
-    label: "Polling Interval",
     secret: false,
     required: false,
-    placeholder: "10",
-    group: "companion",
   },
   {
     key: "PROPAGATION_TIMEOUT",
     prop: "propagationTimeout",
-    label: "Propagation Timeout",
     secret: false,
     required: false,
-    placeholder: "3600",
-    group: "companion",
   },
-  {
-    key: "TTL",
-    prop: "ttl",
-    label: "TTL",
-    secret: false,
-    required: false,
-    placeholder: "300",
-    group: "companion",
-  },
+  { key: "TTL", prop: "ttl", secret: false, required: false },
 ] as const;
 
 export type CoreKey = (typeof CORE_KEYS)[number]["key"];

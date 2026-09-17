@@ -1,9 +1,7 @@
 import "../setup";
 import { describe, it, expect } from "bun:test";
-import {
-  getCoreComposeContent,
-  type CoreConfig,
-} from "../../src/lib/core-stack";
+import { getCoreComposeContent } from "../../src/lib/core-compose";
+import type { CoreConfig } from "../../src/lib/core-stack";
 import { parse } from "yaml";
 
 const minimalConfig: CoreConfig = {

@@ -1,6 +1,6 @@
 import simpleGit from "simple-git";
 import { ConflictError } from "./errors";
-import { db, stacks, type Db } from "@laber/db";
+import { stacks, type Db } from "@laber/db";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   mkdtempSync,
@@ -213,15 +213,4 @@ export function reconcileStacksTx(
     updated: changed.length,
     removed: removedNames,
   };
-}
-
-export async function reconcileDiscoveredStacks(
-  repoId: string,
-  discovered: DiscoveredStack[]
-): Promise<ReconcileCounts> {
-  let result!: ReconcileCounts;
-  db.transaction((tx) => {
-    result = reconcileStacksTx(tx, repoId, discovered);
-  });
-  return result;
 }

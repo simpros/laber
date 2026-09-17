@@ -4,7 +4,9 @@ import {
   listStacks,
   getStackDetail,
   deployStackByName,
-  runStackLifecycle,
+  stopStack,
+  restartStack,
+  pullStack,
   replaceStackEnv,
   replaceStackSecrets,
   saveComposeContent,
@@ -47,29 +49,13 @@ export const stackRoutes = new Elysia()
     return deployStackByName(params.name);
   })
   .post("/api/stacks/:name/stop", async ({ params }) => {
-    return runStackLifecycle({
-      name: params.name,
-      title: `Stopping ${params.name}`,
-      action: "stop",
-      command: ["down"],
-      statusOnSuccess: "stopped",
-    });
+    return stopStack(params.name);
   })
   .post("/api/stacks/:name/restart", async ({ params }) => {
-    return runStackLifecycle({
-      name: params.name,
-      title: `Restarting ${params.name}`,
-      action: "restart",
-      command: ["restart"],
-    });
+    return restartStack(params.name);
   })
   .post("/api/stacks/:name/pull", async ({ params }) => {
-    return runStackLifecycle({
-      name: params.name,
-      title: `Pulling images for ${params.name}`,
-      action: "pull",
-      command: ["pull"],
-    });
+    return pullStack(params.name);
   })
   .put(
     "/api/stacks/:name/compose",
