@@ -68,6 +68,7 @@ export default defineConfig({
       PORT: String(PORT),
       ORIGIN: BASE_URL,
       DATA_DIR: E2E_DATA_DIR,
+      MIGRATIONS_FOLDER: join(__dirname, "../../packages/db/drizzle"),
       BETTER_AUTH_SECRET: "e2e-test-secret-key-for-testing-only",
       BETTER_AUTH_BASE_URL: BASE_URL,
     },
