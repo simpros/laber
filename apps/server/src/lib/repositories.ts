@@ -17,7 +17,7 @@ import { getRepoDir } from "./config";
 import { stopStackRow } from "./compose-actions";
 import { assertStackRemovable } from "./stack-presence";
 import { runLoggedAction } from "./logged-action";
-import { DomainError, NotFoundError, ActionFailedError } from "./errors";
+import { NotFoundError, ActionFailedError } from "./errors";
 
 export type AddRepositoryInput = {
   name: string;
@@ -230,15 +230,15 @@ export async function deleteRepository(id: string) {
   // Docker first, hard: every stack comes down before any row is deleted.
   // `down` is the gate — the same logged `downProject` teardown the stop
   // route uses (`stopStackRow` runs it against the already-loaded rows, so
-  // delete issues no second lookup per stack). Each stack gets an activity,
-  // a deployment log, and an honest status transition ("stopped", or "error"
-  // on partial failure) before rows move. Independent projects teardown in
-  // parallel; a `down` failure aborts with no DB change, so rows are never
-  // deleted while containers may still be running. Every rejection is
-  // collected: one failure keeps its domain kind (a failed stop already
-  // carries its logged context); several failures become one
-  // `ActionFailedError` naming every failed stack — never a silent
-  // first-only report.
+  // delete issues no second lookup per stack). Each stack gets an activity
+  // and a deployment log, but no `stacks.status` commit: rows are deleted in
+  // one transaction after every down succeeds, so per-stop status flips would
+  // be writes to rows about to disappear. Independent projects teardown in
+  // parallel; a `down` failure aborts with no stack/repo row or status
+  // change (only activity + deployment-log history is recorded), so rows are
+  // never deleted while containers may still be running. One delete-scoped
+  // `ActionFailedError` names every failed stack — never a silent first-only
+  // report, never a count-discriminated wire shape.
   const settlements = await Promise.allSettled(
     repoStacks.map((stack) => stopStackRow(stack))
   );
@@ -255,14 +255,7 @@ export async function deleteRepository(id: string) {
         stack: (typeof repoStacks)[number];
       } => item.settlement.status === "rejected"
     );
-  if (failures.length === 1) {
-    const reason = failures[0].settlement.reason;
-    if (reason instanceof DomainError) throw reason;
-    throw new ActionFailedError(
-      `Failed to delete repository: could not bring down stack ${failures[0].stack.name} (${reason instanceof Error ? reason.message : "unknown error"})`
-    );
-  }
-  if (failures.length > 1) {
+  if (failures.length > 0) {
     const details = failures
       .map((f) => {
         const reason = f.settlement.reason;
@@ -270,7 +263,7 @@ export async function deleteRepository(id: string) {
       })
       .join("; ");
     throw new ActionFailedError(
-      `Failed to delete repository: could not bring down stacks: ${details}`
+      `Failed to delete repository: could not bring down stack${failures.length > 1 ? "s" : ""}: ${details}`
     );
   }
 

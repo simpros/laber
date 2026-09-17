@@ -502,7 +502,8 @@ describe("repositories", () => {
     );
     expect(delRes.status).toBe(500);
 
-    // Docker first, hard: the failed `down` aborts before any DB change.
+    // Docker first, hard: the failed `down` aborts with no stack/repo row
+    // or status change (only activity + deployment-log history is recorded).
     const remaining = await db
       .select()
       .from(repositories)
@@ -513,6 +514,7 @@ describe("repositories", () => {
       .from(stacks)
       .where(eq(stacks.repositoryId, repo.id));
     expect(remainingStacks).toHaveLength(1);
+    expect(remainingStacks[0].status).toBe("discovered");
 
     rmSync(fixtureDir, { recursive: true, force: true });
   });

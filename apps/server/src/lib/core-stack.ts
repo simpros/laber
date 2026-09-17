@@ -2,7 +2,7 @@ import { writeFileSync } from "fs";
 import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
-import { listContainers, listContainersSoft } from "./docker-engine";
+import { listContainersSoft } from "./docker-engine";
 import { loggedDeployAction } from "./compose-actions";
 import { type ConfigValue } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
@@ -58,14 +58,6 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
   }
 
   return config;
-}
-
-/** Compose file for the core project. Re-exported here; owned by `core-identity`. */
-export { getCoreComposePath };
-
-export async function getCoreStatus(): Promise<CoreServiceStatus[]> {
-  const containers = await listContainers(CORE_PROJECT);
-  return containers.map(toCoreServiceStatus);
 }
 
 /** Docker state that never throws: routes show "unknown" instead of 500. */

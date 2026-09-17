@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import type { CoreConfigShape } from "./core-keys";
-import { TRAEFIK_CONTAINER } from "./core-identity";
+import { TRAEFIK_CONTAINER, TRAEFIK_SERVICE } from "./core-identity";
 
 /**
  * Traefik compose-template construction for the core stack. This file owns
@@ -17,8 +17,11 @@ export function buildCoreCompose(
   const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
 
+  // The Traefik service key is the centralized `TRAEFIK_SERVICE`: discovery
+  // in `docker-engine` matches on it, so a rename touches `core-identity`,
+  // not the template and the engine in parallel.
   const services: Record<string, unknown> = {
-    "reverse-proxy": {
+    [TRAEFIK_SERVICE]: {
       image: "traefik:v3",
       container_name: TRAEFIK_CONTAINER,
       restart: "unless-stopped",
