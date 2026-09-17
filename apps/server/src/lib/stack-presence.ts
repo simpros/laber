@@ -4,9 +4,8 @@ import { listContainers } from "./docker";
 /**
  * Stack presence: does a compose project still have *running* containers?
  * Exited containers do not block removal (`listContainers` reports `all`,
- * so the state filter matters). Lives here — not under "repositories" —
- * because sync (via `git.ts`) and delete both need it and neither owns the
- * concept.
+ * so the state filter matters). Lives here — next to the sync/delete gates
+ * that need it — so the removable rule is defined once, not once per path.
  */
 
 /** Running containers for a compose project. Throws when Docker is unreadable. */
@@ -18,29 +17,13 @@ export async function countProjectContainers(
 }
 
 /**
- * Soft probe: an unreadable daemon reports "none" (detail-view parity).
- * UI-only — never a commit gate. Sync/delete gates below stay hard and
- * fail closed; a soft `false` there would orphan live containers under the
- * exact failure mode that needs the gate most.
- */
-export async function hasRunningContainers(
-  projectName: string
-): Promise<boolean> {
-  try {
-    return (await countProjectContainers(projectName)) > 0;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * The one removable-stack check. Sync calls it for every stack that would
  * be reconciled away (a Docker-aware pre-check before the transaction; the
  * `status === "deployed"` guard inside `reconcileStacksTx` remains as the
  * transactional last resort since the probe cannot run inside a sync tx).
  *
  * Hard and fail-closed: an unreadable daemon refuses the removal instead of
- * reporting "no containers". Never derive this from the soft probe above.
+ * reporting "no containers". This is a commit gate, never a soft probe.
  */
 export async function assertStackRemovable(stack: {
   name: string;

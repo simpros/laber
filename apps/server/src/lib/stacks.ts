@@ -10,7 +10,7 @@ import {
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
 import { listContainers } from "./docker";
-import { loggedComposeAction, loggedDeployAction } from "./compose-actions";
+import { runStackOp, loggedDeployAction } from "./compose-actions";
 import {
   readComposeFile,
   extractServices,
@@ -49,7 +49,9 @@ export async function listStacks() {
       .from(stackEnvVars)
       .groupBy(stackEnvVars.stackId),
   ]);
-  const countByStackId = new Map(envCounts.map((r) => [r.stackId, r.count]));
+  const countByStackId = new Map(
+    envCounts.map((r) => [r.stackId, r.count])
+  );
 
   return allStacks.map((stack) => ({
     ...stack,
@@ -69,32 +71,34 @@ export async function getStackDetail(name: string) {
   // Independent reads, fetched together: repo row, env, secrets, logs,
   // Docker state. The compose file needs the repo row, so it is parsed
   // after the join (single disk read, sync, with internal fallback).
-  const [repoRows, envVars, secrets, logs, containers] = await Promise.all([
-    db
-      .select()
-      .from(repositories)
-      .where(eq(repositories.id, stack.repositoryId))
-      .limit(1),
-    db
-      .select()
-      .from(stackEnvVars)
-      .where(eq(stackEnvVars.stackId, stack.id)),
-    db
-      .select()
-      .from(stackSecrets)
-      .where(eq(stackSecrets.stackId, stack.id)),
-    db
-      .select()
-      .from(deploymentLogs)
-      .where(eq(deploymentLogs.stackId, stack.id))
-      .orderBy(desc(deploymentLogs.createdAt))
-      .limit(20),
-    // The docker stub throws synchronously (no promise), so the call is
-    // wrapped lazily — .catch on a sync throw would never attach.
-    Promise.resolve()
-      .then(() => listContainers(stack.name))
-      .catch((): ContainerInfo[] => []),
-  ]);
+  const [repoRows, envVars, secrets, logs, containers] = await Promise.all(
+    [
+      db
+        .select()
+        .from(repositories)
+        .where(eq(repositories.id, stack.repositoryId))
+        .limit(1),
+      db
+        .select()
+        .from(stackEnvVars)
+        .where(eq(stackEnvVars.stackId, stack.id)),
+      db
+        .select()
+        .from(stackSecrets)
+        .where(eq(stackSecrets.stackId, stack.id)),
+      db
+        .select()
+        .from(deploymentLogs)
+        .where(eq(deploymentLogs.stackId, stack.id))
+        .orderBy(desc(deploymentLogs.createdAt))
+        .limit(20),
+      // The docker stub throws synchronously (no promise), so the call is
+      // wrapped lazily — .catch on a sync throw would never attach.
+      Promise.resolve()
+        .then(() => listContainers(stack.name))
+        .catch((): ContainerInfo[] => []),
+    ]
+  );
   const repo = repoRows[0];
 
   let services: ReturnType<typeof extractServices> = [];
@@ -216,50 +220,19 @@ export async function deployStackByName(name: string) {
   });
 }
 
-/** Compose argv lives here, not in the route module. */
+/** Compose argv lives in `STACK_OPS` (`compose-actions.ts`), not in routes. */
 export async function stopStack(name: string) {
-  assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
-  return loggedComposeAction({
-    title: `Stopping ${name}`,
-    action: "stop",
-    stackId: stack.id,
-    statusOnSuccess: "stopped",
-    failureMessage: `Stopping ${name} failed`,
-    composePath,
-    projectName: stack.name,
-    argv: ["down"],
-  });
+  return runStackOp(name, "stop");
 }
 
-/** Pull/restart always carry `stackId` (log attribution) but no
- * `statusOnSuccess`: they do not change desired runtime, so even a failure
- * must keep the deploy/stop marker that sync gates on. */
+/** Restart carries `stackId` (log attribution) but no `statusOnSuccess`: it
+ * does not change desired runtime, so even a failure must keep the
+ * deploy/stop marker that sync gates on. */
 export async function restartStack(name: string) {
-  assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
-  return loggedComposeAction({
-    title: `Restarting ${name}`,
-    action: "restart",
-    stackId: stack.id,
-    failureMessage: `Restarting ${name} failed`,
-    composePath,
-    projectName: stack.name,
-    argv: ["restart"],
-  });
+  return runStackOp(name, "restart");
 }
 
 /** Same status contract as restart: pull never touches `stacks.status`. */
 export async function pullStack(name: string) {
-  assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
-  return loggedComposeAction({
-    title: `Pulling images for ${name}`,
-    action: "pull",
-    stackId: stack.id,
-    failureMessage: `Pulling images for ${name} failed`,
-    composePath,
-    projectName: stack.name,
-    argv: ["pull"],
-  });
+  return runStackOp(name, "pull");
 }

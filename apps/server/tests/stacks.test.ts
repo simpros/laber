@@ -1,6 +1,12 @@
 import "./setup";
 import { describe, it, expect, beforeAll, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+} from "fs";
 import { join } from "path";
 import {
   db,
@@ -295,7 +301,9 @@ describe("POST /api/stacks/:name/deploy", () => {
       // Operational failure is a throw, not a flag; the streamed detail is
       // what the deployment log records.
       onOutput?.("boom");
-      throw new ActionFailedError("Compose up -d failed for failed-deploy");
+      throw new ActionFailedError(
+        "Compose up -d failed for failed-deploy"
+      );
     };
 
     const res = await app.handle(
@@ -316,13 +324,21 @@ describe("POST /api/stacks/:name/deploy", () => {
   });
 
   it("marks the stack error when the deploy command fails", async () => {
-    const { stack } = await seedStack("failed-deploy-status", BASIC_COMPOSE);
+    const { stack } = await seedStack(
+      "failed-deploy-status",
+      BASIC_COMPOSE
+    );
     dockerStub.runComposeCommand = async () => {
       throw new ActionFailedError("Compose up -d failed");
     };
 
     const res = await app.handle(
-      jsonReq("/api/stacks/failed-deploy-status/deploy", "POST", {}, cookie)
+      jsonReq(
+        "/api/stacks/failed-deploy-status/deploy",
+        "POST",
+        {},
+        cookie
+      )
     );
     expect(res.status).toBe(500);
 
@@ -333,6 +349,45 @@ describe("POST /api/stacks/:name/deploy", () => {
       .from(stacks)
       .where(eq(stacks.id, stack.id));
     expect(updated.status).toBe("error");
+  });
+
+  it("fails the deploy when Traefik attach fails", async () => {
+    const NETWORK_COMPOSE = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "networks:",
+      "  frontend:",
+      "    name: traefik-net",
+      "    external: true",
+      "",
+    ].join("\n");
+    const { stack } = await seedStack("traefik-deploy", NETWORK_COMPOSE);
+    dockerStub.runComposeCommand = async () => ({ output: "up\n" });
+    dockerStub.connectTraefikToNetwork = async () => {
+      throw new Error("network traefik-net not found");
+    };
+
+    const res = await app.handle(
+      jsonReq("/api/stacks/traefik-deploy/deploy", "POST", {}, cookie)
+    );
+    // Attach is part of the success contract: `up` succeeding while ingress
+    // is broken must not report success or mark the stack deployed.
+    expect(res.status).toBe(500);
+
+    const [updated] = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.id, stack.id));
+    expect(updated.status).toBe("error");
+
+    const logs = await db
+      .select()
+      .from(deploymentLogs)
+      .where(eq(deploymentLogs.stackId, stack.id));
+    expect(
+      logs.some((l) => (l.output ?? "").includes("traefik-net"))
+    ).toBe(true);
   });
 
   it("removes written secret files when the deploy fails", async () => {
@@ -432,9 +487,9 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       .select()
       .from(deploymentLogs)
       .where(eq(deploymentLogs.stackId, stack.id));
-    expect(logs.some((l) => (l.output ?? "").includes("down blew up"))).toBe(
-      true
-    );
+    expect(
+      logs.some((l) => (l.output ?? "").includes("down blew up"))
+    ).toBe(true);
 
     // Stop owns runtime intent, so its failure moves the stack to "error".
     const [updated] = await db
@@ -696,7 +751,8 @@ describe("PUT /api/stacks/:name/compose", () => {
         "/api/stacks/bad-secrets-save/compose",
         "PUT",
         {
-          content: "services:\n  web:\n    image: nginx:latest\nsecrets: not-a-map\n",
+          content:
+            "services:\n  web:\n    image: nginx:latest\nsecrets: not-a-map\n",
         },
         cookie
       )

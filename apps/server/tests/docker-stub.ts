@@ -55,6 +55,15 @@ const defaults = {
   connectTraefikToNetwork: async (
     _networkName: string
   ): Promise<void> => {},
+  stopContainer: async (_containerId: string): Promise<void> => {},
+  removeContainer: async (_containerId: string): Promise<void> => {},
+  downProject: async (_options: {
+    projectName: string;
+    composePath?: string;
+    onOutput?: (chunk: string) => void;
+  }): Promise<{ output: string }> => ({
+    output: "mocked",
+  }),
 };
 
 /**

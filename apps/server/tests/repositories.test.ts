@@ -190,7 +190,9 @@ describe("repositories", () => {
     ).json()) as {
       repositories: Array<{ id: string; name: string }>;
     };
-    const repo = list.repositories.find((r) => r.name === "doomed-fixture")!;
+    const repo = list.repositories.find(
+      (r) => r.name === "doomed-fixture"
+    )!;
     const repoStacks = await db
       .select()
       .from(stacks)
@@ -202,15 +204,12 @@ describe("repositories", () => {
       .where(eq(stacks.id, repoStacks[0].id));
 
     // Delete is down-first: `down` is the gate, not the status column.
-    const downs: string[][] = [];
-    dockerStub.listContainers = async () => [];
-    dockerStub.runComposeCommand = async (
-      _composePath,
-      command,
-      _projectName,
-      _onOutput
-    ) => {
-      downs.push(command);
+    const downs: Array<{ projectName: string; composePath?: string }> = [];
+    dockerStub.downProject = async (options) => {
+      downs.push({
+        projectName: options.projectName,
+        composePath: options.composePath,
+      });
       return { output: "down" };
     };
 
@@ -221,7 +220,9 @@ describe("repositories", () => {
       })
     );
     expect(delRes.status).toBe(200);
-    expect(downs).toEqual([["down"]]);
+    expect(downs).toHaveLength(1);
+    expect(downs[0].projectName).toBe("doomed");
+    expect(downs[0].composePath).toContain("docker-compose.yaml");
 
     const remaining = await db
       .select()
@@ -266,7 +267,9 @@ describe("repositories", () => {
     ).json()) as {
       repositories: Array<{ id: string; name: string }>;
     };
-    const repo = list.repositories.find((r) => r.name === "stale-fixture")!;
+    const repo = list.repositories.find(
+      (r) => r.name === "stale-fixture"
+    )!;
     const repoStacks = await db
       .select()
       .from(stacks)
@@ -290,14 +293,9 @@ describe("repositories", () => {
         createdAt: new Date().toISOString(),
       },
     ];
-    const downs: string[][] = [];
-    dockerStub.runComposeCommand = async (
-      _composePath,
-      command,
-      _projectName,
-      _onOutput
-    ) => {
-      downs.push(command);
+    const downs: string[] = [];
+    dockerStub.downProject = async (options) => {
+      downs.push(options.projectName);
       return { output: "down" };
     };
 
@@ -308,7 +306,7 @@ describe("repositories", () => {
       })
     );
     expect(delRes.status).toBe(200);
-    expect(downs).toEqual([["down"]]);
+    expect(downs).toEqual(["stale"]);
 
     const remaining = await db
       .select()
@@ -341,7 +339,9 @@ describe("repositories", () => {
     ).json()) as {
       repositories: Array<{ id: string; name: string }>;
     };
-    const repo = list.repositories.find((r) => r.name === "guarded-fixture")!;
+    const repo = list.repositories.find(
+      (r) => r.name === "guarded-fixture"
+    )!;
     const repoStacks = await db
       .select()
       .from(stacks)
@@ -465,7 +465,8 @@ describe("repositories", () => {
     rmSync(fixtureDir, { recursive: true, force: true });
   });
 
-  it("fails hard without deleting rows when bringing a stack down fails", async () => {    const fixtureDir = initFixtureRepo(["stubborn"]);
+  it("fails hard without deleting rows when bringing a stack down fails", async () => {
+    const fixtureDir = initFixtureRepo(["stubborn"]);
     const addRes = await app.handle(
       jsonReq(
         "/api/repositories",
@@ -489,8 +490,7 @@ describe("repositories", () => {
     const repo = list.repositories.find(
       (r) => r.name === "stubborn-fixture"
     )!;
-    dockerStub.listContainers = async () => [];
-    dockerStub.runComposeCommand = async () => {
+    dockerStub.downProject = async () => {
       throw new Error("down blew up");
     };
 
@@ -610,7 +610,9 @@ describe("repositories", () => {
     ).json()) as {
       repositories: Array<{ id: string; name: string }>;
     };
-    const repo = list.repositories.find((r) => r.name === "ghost-fixture")!;
+    const repo = list.repositories.find(
+      (r) => r.name === "ghost-fixture"
+    )!;
     // The compose project vanished out of band; the daemon cannot be
     // reached. Fail closed: rows stay instead of assuming "no containers".
     rmSync(join(getRepoDir(repo.id), "stacks", "ghost"), {
@@ -619,6 +621,12 @@ describe("repositories", () => {
     });
     dockerStub.listContainers = async () => {
       throw new Error("daemon down");
+    };
+    // The label-based fallback must fail closed on an unreadable daemon,
+    // not read it as "no containers".
+    dockerStub.downProject = async (options) => {
+      await dockerStub.listContainers(options.projectName);
+      return { output: "" };
     };
 
     const delRes = await app.handle(
@@ -639,6 +647,63 @@ describe("repositories", () => {
       .from(stacks)
       .where(eq(stacks.repositoryId, repo.id));
     expect(remainingStacks).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("deletes when the compose file is gone and no containers remain", async () => {
+    const fixtureDir = initFixtureRepo(["vanished"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "vanished-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find(
+      (r) => r.name === "vanished-fixture"
+    )!;
+    // The compose project vanished out of band, but the daemon is reachable
+    // and reports nothing running: the label-based teardown clears the way.
+    rmSync(join(getRepoDir(repo.id), "stacks", "vanished"), {
+      recursive: true,
+      force: true,
+    });
+    dockerStub.listContainers = async () => [];
+    const seen: string[] = [];
+    dockerStub.downProject = async (options) => {
+      seen.push(options.projectName);
+      await dockerStub.listContainers(options.projectName);
+      return { output: "" };
+    };
+
+    const delRes = await app.handle(
+      req(`/api/repositories/${repo.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      })
+    );
+    expect(delRes.status).toBe(200);
+    expect(seen).toEqual(["vanished"]);
+
+    const remaining = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, repo.id));
+    expect(remaining).toHaveLength(0);
 
     rmSync(fixtureDir, { recursive: true, force: true });
   });

@@ -6,6 +6,7 @@ import {
   ensureNetwork,
   connectTraefikToNetwork,
 } from "./docker";
+import { ActionFailedError } from "./errors";
 
 type SecretFile = {
   filePath: string;
@@ -109,17 +110,23 @@ export async function deployStack(
 
     let output = base;
 
+    // Traefik attach is part of the deploy success contract, not a warning:
+    // the product contract is "reachable via Traefik", and the stack status
+    // becomes `"deployed"` on success — a soft warning here would mark a
+    // stack live while ingress is broken. A failure throws, so the shared
+    // status machine moves the stack to `"error"` and the transcript keeps
+    // the reason (the wire message stays short by design).
     if (options.networkName) {
       try {
         await connectTraefikToNetwork(options.networkName);
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
-        const warning =
-          `Warning: could not attach Traefik to network ${options.networkName}: ${reason}\n`;
-        options.onOutput?.(warning);
-        // The deploy itself succeeded; surface the warning in the returned
-        // output too so callers don't have to watch the activity stream.
-        output += warning;
+        const detail = `Could not attach Traefik to network ${options.networkName}: ${reason}\n`;
+        output += detail;
+        options.onOutput?.(detail);
+        throw new ActionFailedError(
+          `Could not attach Traefik to network ${options.networkName}: ${reason}`
+        );
       }
     }
 

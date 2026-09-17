@@ -4,10 +4,14 @@ import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainers } from "./docker";
-import { loggedComposeAction, loggedDeployAction } from "./compose-actions";
+import { runCoreOp, loggedDeployAction } from "./compose-actions";
 import { DATA_DIR, type ConfigValue } from "./config";
 import { getCoreComposeContent } from "./core-compose";
-import { CORE_KEYS, type CoreConfigShape } from "./core-keys";
+import {
+  CORE_KEYS,
+  type CoreKey,
+  type CoreConfigShape,
+} from "./core-keys";
 
 export type CoreConfig = CoreConfigShape;
 
@@ -31,12 +35,19 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
     );
   }
 
-  // Required props are assigned directly after the missing check, so the
-  // result is a `CoreConfig` with no assertion; optionals land only when
+  // Required props come straight from the `CORE_KEYS` catalog: the missing
+  // check above guarantees every required key is present, and `required`
+  // re-reads through the same map so the return type is `CoreConfig` with
+  // no assertion and no parallel key literals. Optionals land only when
   // present (empty string counts as unset).
+  const required = (key: CoreKey): string => {
+    const value = configMap.get(key);
+    if (!value) throw new ValidationError(`${key} is required`);
+    return value;
+  };
   const config: CoreConfig = {
-    rootDomain: configMap.get("ROOT_DOMAIN")!,
-    cfDnsApiToken: configMap.get("CF_DNS_API_TOKEN")!,
+    rootDomain: required("ROOT_DOMAIN"),
+    cfDnsApiToken: required("CF_DNS_API_TOKEN"),
   };
   for (const field of CORE_KEYS) {
     if (field.required) continue;
@@ -119,8 +130,10 @@ export async function getCoreOverview() {
   };
 }
 
-/** null / undefined = leave unchanged; "" = clear; string = set (patch upsert — see `ConfigValue`). */
-export async function saveCoreConfig(input: Record<string, ConfigValue>) {
+/** `null` (or an omitted key) = leave unchanged; `""` = clear; string = set (patch upsert — see `ConfigValue`). */
+export async function saveCoreConfig(
+  input: Record<string, ConfigValue | undefined>
+) {
   const rows = CORE_KEYS.flatMap((keyDef) => {
     const value = input[keyDef.key];
     if (value === undefined || value === null) return [];
@@ -170,25 +183,9 @@ export async function deployCore() {
 }
 
 export async function stopCore() {
-  return loggedComposeAction({
-    title: "Stopping core services",
-    action: "stop",
-    isCore: true,
-    failureMessage: "Stopping core services failed",
-    composePath: getComposePath(),
-    projectName: "laber-core",
-    argv: ["down"],
-  });
+  return runCoreOp("stop", getComposePath());
 }
 
 export async function restartCore() {
-  return loggedComposeAction({
-    title: "Restarting core services",
-    action: "restart",
-    isCore: true,
-    failureMessage: "Restarting core services failed",
-    composePath: getComposePath(),
-    projectName: "laber-core",
-    argv: ["restart"],
-  });
+  return runCoreOp("restart", getComposePath());
 }

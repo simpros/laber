@@ -62,6 +62,15 @@ mock.module("../src/lib/docker.ts", () => ({
     ),
   connectTraefikToNetwork: (networkName: string) =>
     dockerStub.connectTraefikToNetwork(networkName),
+  stopContainer: (containerId: string) =>
+    dockerStub.stopContainer(containerId),
+  removeContainer: (containerId: string) =>
+    dockerStub.removeContainer(containerId),
+  downProject: (options: {
+    projectName: string;
+    composePath?: string;
+    onOutput?: (chunk: string) => void;
+  }) => dockerStub.downProject(options),
 }));
 
 export const TEST_DATA_DIR = process.env.DATA_DIR;

@@ -1,4 +1,5 @@
 import Docker from "dockerode";
+import { existsSync } from "fs";
 import { dirname } from "path";
 import { ActionFailedError } from "./errors";
 import type { ContainerInfo } from "./types";
@@ -253,4 +254,60 @@ export async function connectTraefikToNetwork(
   }
 
   await connectContainerToNetwork(traefik.Id, networkName);
+}
+
+/** Stop a single container by id. Thin dockerode wrapper (mockable). */
+export async function stopContainer(containerId: string): Promise<void> {
+  await getDocker().getContainer(containerId).stop();
+}
+
+/** Remove a single container by id. Thin dockerode wrapper (mockable). */
+export async function removeContainer(containerId: string): Promise<void> {
+  await getDocker().getContainer(containerId).remove();
+}
+
+/**
+ * The one project teardown: bring down a compose project by name, not by
+ * compose path. When the compose file still exists this is a regular
+ * `compose down` (stops containers, removes project networks); when the
+ * file is gone (dir removed out of band) containers are stopped/removed by
+ * their `com.docker.compose.project` label instead. Either way the failure
+ * contract is the same — throw `ActionFailedError`, never fail open — so
+ * callers (stop, repo delete) never branch on file existence themselves.
+ */
+export async function downProject(options: {
+  projectName: string;
+  composePath?: string;
+  onOutput?: (chunk: string) => void;
+}): Promise<{ output: string }> {
+  const { projectName, composePath, onOutput } = options;
+  if (composePath && existsSync(composePath)) {
+    return runComposeCommand(composePath, ["down"], projectName, onOutput);
+  }
+  onOutput?.(
+    `Compose file gone for ${projectName}; removing containers by project label...\n`
+  );
+  let containers: ContainerInfo[];
+  try {
+    containers = await listContainers(projectName);
+  } catch (e) {
+    throw new ActionFailedError(
+      `Cannot bring down ${projectName}: Docker is unreadable (${e instanceof Error ? e.message : "unknown error"})`
+    );
+  }
+  let output = "";
+  for (const c of containers) {
+    try {
+      if (c.state === "running") await stopContainer(c.id);
+      await removeContainer(c.id);
+      const line = `Removed container ${c.name}\n`;
+      output += line;
+      onOutput?.(line);
+    } catch (e) {
+      throw new ActionFailedError(
+        `Cannot bring down ${projectName}: failed to remove container ${c.name} (${e instanceof Error ? e.message : "unknown error"})`
+      );
+    }
+  }
+  return { output };
 }
