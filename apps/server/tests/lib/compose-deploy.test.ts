@@ -7,7 +7,7 @@ import {
   extractNetworkName,
   extractSecrets,
   parseComposeDocument,
-  readComposeFile,
+  loadComposeDocument,
 } from "../../src/lib/compose-document";
 import { ValidationError } from "../../src/lib/errors";
 
@@ -102,32 +102,39 @@ describe("extractSecrets", () => {
   });
 
   it("rejects long-form service secret references", () => {
-    const compose = {
-      services: {
-        web: { secrets: [{ source: "db_password" }] },
-      },
-      secrets: {
-        db_password: { file: "./secrets/db_password.txt" },
-      },
-    };
+    // Long-form shapes fail at the parse gate (schema), not in the
+    // extractor: there are no unparsed production callers.
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - source: db_password",
+      "secrets:",
+      "  db_password:",
+      "    file: ./secrets/db_password.txt",
+      "",
+    ].join("\n");
     // Skipping these would deploy without files the compose file intended.
-    expect(() => extractSecrets(compose, COMPOSE_PATH)).toThrow(
+    expect(() => parseComposeDocument(content, COMPOSE_PATH)).toThrow(
       ValidationError
     );
   });
 
   it("rejects non-list service secrets sections", () => {
-    // Bypasses the parse gate on purpose: the extractor itself must stay
-    // loud for direct (unparsed) callers, not just for parsed documents.
-    const compose = {
-      services: {
-        web: { secrets: "db_password" as unknown as string[] },
-      },
-      secrets: {
-        db_password: { file: "./secrets/db_password.txt" },
-      },
-    };
-    expect(() => extractSecrets(compose, COMPOSE_PATH)).toThrow(
+    // Bypasses nothing: the parse gate owns shape validation — a bare
+    // string where a list belongs is a schema failure.
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets: db_password",
+      "secrets:",
+      "  db_password:",
+      "    file: ./secrets/db_password.txt",
+      "",
+    ].join("\n");
+    expect(() => parseComposeDocument(content, COMPOSE_PATH)).toThrow(
       ValidationError
     );
   });
@@ -263,7 +270,7 @@ describe("parseComposeDocument", () => {
   });
 });
 
-describe("readComposeFile", () => {
+describe("loadComposeDocument", () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -288,7 +295,7 @@ describe("readComposeFile", () => {
     const filePath = join(tempDir, "docker-compose.yaml");
     writeFileSync(filePath, content, "utf-8");
 
-    const { doc } = readComposeFile(filePath);
+    const { doc } = loadComposeDocument(filePath);
     expect(doc.services.web.image).toBe("nginx:latest");
     expect(extractNetworkName(doc)).toBe("traefik-net");
   });
@@ -297,6 +304,6 @@ describe("readComposeFile", () => {
     const filePath = join(tempDir, "docker-compose.yaml");
     writeFileSync(filePath, "version: '3'\n", "utf-8");
 
-    expect(() => readComposeFile(filePath)).toThrow(ValidationError);
+    expect(() => loadComposeDocument(filePath)).toThrow(ValidationError);
   });
 });

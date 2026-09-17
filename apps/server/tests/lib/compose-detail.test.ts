@@ -8,7 +8,7 @@ import {
   extractServices,
   extractAllEnvVarNames,
   parseComposeDocument,
-  readComposeFile,
+  loadComposeDocument,
 } from "../../src/lib/compose-document";
 import { ValidationError } from "../../src/lib/errors";
 
@@ -297,7 +297,7 @@ describe("parseComposeDocument", () => {
   });
 });
 
-describe("readComposeFile", () => {
+describe("loadComposeDocument", () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -313,7 +313,7 @@ describe("readComposeFile", () => {
     const filePath = join(tempDir, "docker-compose.yaml");
     writeFileSync(filePath, content, "utf-8");
 
-    const { raw, doc } = readComposeFile(filePath);
+    const { raw, doc } = loadComposeDocument(filePath);
     expect(raw).toBe(content);
     expect(doc.services.web.image).toBe("nginx:latest");
   });
@@ -322,6 +322,6 @@ describe("readComposeFile", () => {
     const filePath = join(tempDir, "docker-compose.yaml");
     writeFileSync(filePath, "version: '3'\n", "utf-8");
 
-    expect(() => readComposeFile(filePath)).toThrow(ValidationError);
+    expect(() => loadComposeDocument(filePath)).toThrow(ValidationError);
   });
 });

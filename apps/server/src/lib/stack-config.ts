@@ -2,7 +2,7 @@ import { dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { assertComposeReadable } from "./compose-document";
+import { parseComposeDocument } from "./compose-document";
 import { getStackAndRepo, assertStackName, type ConfigValue } from "./config";
 import { ValidationError } from "./errors";
 import type { StackTx } from "./db-tx";
@@ -15,7 +15,7 @@ export async function saveComposeContent(name: string, content: string) {
   // The one compose gate (envelope + secret refs): save accepts exactly
   // what deploy/detail accept, so a saved file can never 400 on read/deploy.
   const { composePath } = await getStackAndRepo(name);
-  assertComposeReadable(content, composePath);
+  parseComposeDocument(content, composePath);
 
   mkdirSync(dirname(composePath), { recursive: true });
   writeFileSync(composePath, content, "utf-8");

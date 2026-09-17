@@ -110,8 +110,9 @@ export function reconcileStacksTx(
     // Global UNIQUE on `stacks.name`: the API keys every stack by bare name
     // (and Docker `--project-name` collides on it), so a discovered name
     // owned by another repo is a 409 with a product message — never a raw
-    // SQLite 500. Checked here (register and sync share this path) plus a
-    // narrow constraint catch below for the race between check and insert.
+    // SQLite 500. The batch-duplicate check below is the cheap synchronous
+    // case; cross-repo races surface through the constraint catch, which
+    // re-reads to name the real foreign owners.
     const addedNames = added.map((s) => s.name);
     const dupInBatch = addedNames.filter(
       (n, i) => addedNames.indexOf(n) !== i
@@ -119,18 +120,6 @@ export function reconcileStacksTx(
     if (dupInBatch.length > 0) {
       throw new ConflictError(
         `Stack name(s) already registered: ${[...new Set(dupInBatch)].join(", ")}`
-      );
-    }
-    const owned = tx
-      .select({ name: stacks.name })
-      .from(stacks)
-      .where(inArray(stacks.name, addedNames))
-      .all();
-    // Rows for this repo with these names cannot exist here: `added` means
-    // "not in this repo" — so any hit is owned by another repo.
-    if (owned.length > 0) {
-      throw new ConflictError(
-        `Stack name(s) already registered: ${owned.map((r) => r.name).join(", ")}`
       );
     }
     try {

@@ -95,81 +95,6 @@ export async function listRepositories() {
   return { repositories: repos, stacks: allStacks };
 }
 
-/**
- * The one register/sync pipeline: ensure the local git tree → discover
- * stacks → optional pre-reconcile check → reconcile inside a transaction.
- * Register and sync differ only in data passed by the caller (which git op,
- * progress copy, repo-row write, and — for sync only — the Docker-aware
- * removable pre-check), so this function never branches on register-vs-sync
- * and never knows the word "sync". Returns the reconcile counts plus the
- * discovered total (register reports the total; sync reports the counts).
- */
-async function materializeRepository(options: {
-  repoId: string;
-  title: string;
-  action: string;
-  failureMessage: string;
-  ensure: "clone" | "pull";
-  progressStart: string;
-  progressDone: string;
-  stacksPath: string;
-  remote: RemoteTree;
-  applyRepoRow: (tx: StackTx) => void;
-  preReconcile?: (discovered: DiscoveredStack[]) => Promise<void>;
-}): Promise<{ reconciled: ReconcileCounts; total: number }> {
-  const repoDir = getRepoDir(options.repoId);
-  const { value } = await runLoggedAction<{
-    reconciled: ReconcileCounts;
-    total: number;
-  }>({
-    title: options.title,
-    action: options.action,
-    identity: { kind: "none" },
-    failureMessage: options.failureMessage,
-    run: async (onOutput) => {
-      onOutput(options.progressStart);
-      await ensureRemoteTree(
-        repoDir,
-        options.remote,
-        onOutput,
-        options.ensure === "clone"
-      );
-      onOutput(options.progressDone);
-
-      const discoveredStacks = await discoverStacks(
-        repoDir,
-        options.stacksPath
-      );
-      // Serialized per repo: the Docker-aware removable probe and the
-      // reconcile transaction commit under one lock, so a concurrent repo
-      // delete cannot interleave a teardown or a row delete between the
-      // probe and the commit. (Out-of-band daemon changes remain
-      // best-effort — fail-closed probe still applies there.)
-      const applied = await withRepoLock(options.repoId, async () => {
-        await options.preReconcile?.(discoveredStacks);
-        // Reconcile and the repo-row write commit together: stacks can never
-        // change while the row (insert on register, `lastSyncedAt` on sync)
-        // stays stale — and a failed register leaves no ghost repo.
-        return db.transaction((tx) => {
-          options.applyRepoRow(tx);
-          const { reconciled, summary } = reconcileAndSummarizeTx(
-            tx,
-            options.repoId,
-            discoveredStacks,
-            onOutput
-          );
-          return {
-            summary,
-            result: { reconciled, total: discoveredStacks.length },
-          };
-        });
-      });
-      return { output: applied.summary, value: applied.result };
-    },
-  });
-  return value;
-}
-
 export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
   // Clone first with a pre-generated id (the same `nanoid` generator the
   // schema `$defaultFn` uses — one ID dialect for the table); the DB row is
@@ -184,32 +109,55 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
   };
 
   try {
-    const { total } = await materializeRepository({
-      repoId,
+    const { value } = await runLoggedAction<{
+      reconciled: ReconcileCounts;
+      total: number;
+    }>({
       title: `Cloning ${input.name}`,
       action: "clone",
+      identity: { kind: "none" },
       failureMessage: `Failed to clone repository ${input.name}`,
-      ensure: "clone",
-      progressStart: `Cloning ${input.url} (branch: ${input.branch})...\n`,
-      progressDone: "Clone complete. Discovering stacks...\n",
-      stacksPath: input.stacksPath,
-      remote,
-      applyRepoRow: (tx) => {
-        tx.insert(repositories)
-          .values({
-            id: repoId,
-            name: input.name,
-            url: input.url,
-            branch: input.branch,
-            stacksPath: input.stacksPath,
-            sshPrivateKey: input.sshPrivateKey,
-            lastSyncedAt: new Date(),
-          })
-          .run();
+      run: async (onOutput) => {
+        // Long I/O outside the lock; filesystem discovery is cheap, so it
+        // is sampled inside the lock below — the tx commits the fresh tree,
+        // never a stale pre-lock snapshot.
+        onOutput(`Cloning ${input.url} (branch: ${input.branch})...\n`);
+        await ensureRemoteTree(repoDir, remote, onOutput, true);
+        onOutput("Clone complete. Discovering stacks...\n");
+
+        // Fresh id: no contention possible, but the insert + reconcile
+        // still commit together so a failed register leaves no ghost repo.
+        const applied = await withRepoLock(repoId, async () => {
+          const discovered = await discoverStacks(repoDir, input.stacksPath);
+          return db.transaction((tx) => {
+            tx.insert(repositories)
+              .values({
+                id: repoId,
+                name: input.name,
+                url: input.url,
+                branch: input.branch,
+                stacksPath: input.stacksPath,
+                sshPrivateKey: input.sshPrivateKey,
+                lastSyncedAt: new Date(),
+              })
+              .run();
+            const { reconciled, summary } = reconcileAndSummarizeTx(
+              tx,
+              repoId,
+              discovered,
+              onOutput
+            );
+            return {
+              summary,
+              result: { reconciled, total: discovered.length },
+            };
+          });
+        });
+        return { output: applied.summary, value: applied.result };
       },
     });
 
-    return { discovered: total };
+    return { discovered: value.total };
   } catch (e) {
     rmSync(repoDir, { recursive: true, force: true });
     throw e;
@@ -224,59 +172,84 @@ export async function syncRepository(id: string) {
     .limit(1);
   if (!repo) throw new NotFoundError("Repository not found");
 
-  const { reconciled: counts } = await materializeRepository({
-    repoId: repo.id,
+  const { value } = await runLoggedAction<{
+    reconciled: ReconcileCounts;
+  }>({
     title: `Syncing ${repo.name}`,
     action: "sync",
+    identity: { kind: "none" },
     failureMessage: `Failed to sync repository ${repo.name}`,
-    ensure: "pull",
-    progressStart: `Pulling latest changes from ${repo.url}...\n`,
-    progressDone: "Pull complete. Discovering stacks...\n",
-    stacksPath: repo.stacksPath,
-    remote: repo,
-    // Sync-only: refuse to reconcile away a stack that still has running
-    // containers (the fail-closed Docker probe — `stacks.status` is
-    // UI/history and not consulted). Runs before the tx because the sync
-    // transaction cannot await a Docker probe. This pre-check is the only
-    // removal gate by design (there is no status-only twin inside
-    // `reconcileStacksTx`): it runs under the same per-repo lock as repo
-    // delete, so the probe→commit window is closed in-process. Independent
-    // probes run in parallel under the same fail-closed rule.
-    preReconcile: async (discoveredStacks) => {
-      // Inside the lock: a concurrent delete may have committed between the
-      // early lookup above and this section. Confirm the repo still exists
-      // before probing and reconciling against its id — otherwise the tx
-      // below would `update` a gone row and `insert` stacks against a
-      // deleted `repository_id` (raw FK failure, not a clean 404).
-      const [live] = await db
-        .select({ id: repositories.id })
-        .from(repositories)
-        .where(eq(repositories.id, repo.id))
-        .limit(1);
-      if (!live) throw new NotFoundError("Repository not found");
-      const names = new Set(discoveredStacks.map((s) => s.name));
-      const existing = await db
-        .select()
-        .from(stacks)
-        .where(eq(stacks.repositoryId, repo.id));
-      await Promise.all(
-        existing
-          .filter((stack) => !names.has(stack.name))
-          .map((stack) => assertStackRemovable(stack))
-      );
-    },
-    applyRepoRow: (tx) => {
-      tx.update(repositories)
-        .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-        .where(eq(repositories.id, repo.id))
-        .run();
+    run: async (onOutput) => {
+      // Long I/O outside the lock; discovery is re-sampled inside the lock
+      // so two overlapping syncs cannot commit a stale set (A discovers,
+      // B removes, A re-inserts).
+      onOutput(`Pulling latest changes from ${repo.url}...\n`);
+      const repoDir = getRepoDir(repo.id);
+      await ensureRemoteTree(repoDir, repo, onOutput, false);
+      onOutput("Pull complete. Discovering stacks...\n");
+
+      // Serialized per repo: the Docker-aware removable probe and the
+      // reconcile transaction commit under one lock, so a concurrent repo
+      // delete cannot interleave a teardown or a row delete between the
+      // probe and the commit. (Out-of-band daemon changes remain
+      // best-effort — fail-closed probe still applies there.)
+      const applied = await withRepoLock(repo.id, async () => {
+        // Inside the lock: a concurrent delete may have committed between
+        // the early lookup above and this section. Confirm the repo still
+        // exists before probing and reconciling against its id — otherwise
+        // the tx below would `update` a gone row and `insert` stacks
+        // against a deleted `repository_id` (raw FK failure, not a clean
+        // 404).
+        const [live] = await db
+          .select({ id: repositories.id })
+          .from(repositories)
+          .where(eq(repositories.id, repo.id))
+          .limit(1);
+        if (!live) throw new NotFoundError("Repository not found");
+        // Fresh discovery under the lock: the reconcile input, the probe
+        // set, and the tx commit all read the same tree.
+        const discovered = await discoverStacks(repoDir, repo.stacksPath);
+        // Refuse to reconcile away a stack that still has running
+        // containers (the fail-closed Docker probe — `stacks.status` is
+        // UI/history and not consulted). Runs before the tx because the
+        // sync transaction cannot await a Docker probe. This pre-check is
+        // the only removal gate by design (there is no status-only twin
+        // inside `reconcileStacksTx`). Independent probes run in parallel
+        // under the same fail-closed rule.
+        const names = new Set(discovered.map((s) => s.name));
+        const existing = await db
+          .select()
+          .from(stacks)
+          .where(eq(stacks.repositoryId, repo.id));
+        await Promise.all(
+          existing
+            .filter((stack) => !names.has(stack.name))
+            .map((stack) => assertStackRemovable(stack))
+        );
+        // Reconcile and the `lastSyncedAt` write commit together: stacks
+        // can never change while the row stays stale.
+        return db.transaction((tx) => {
+          tx.update(repositories)
+            .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+            .where(eq(repositories.id, repo.id))
+            .run();
+          const { reconciled, summary } = reconcileAndSummarizeTx(
+            tx,
+            repo.id,
+            discovered,
+            onOutput
+          );
+          return { summary, result: { reconciled } };
+        });
+      });
+      return { output: applied.summary, value: applied.result };
     },
   });
 
   return {
-    newStacks: counts.added,
-    updatedStacks: counts.updated,
-    removedStacks: counts.removed,
+    newStacks: value.reconciled.added,
+    updatedStacks: value.reconciled.updated,
+    removedStacks: value.reconciled.removed,
   };
 }
 

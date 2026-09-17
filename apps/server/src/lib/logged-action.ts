@@ -60,13 +60,11 @@ async function recordActionOutcome(options: {
 
       // The one status state machine: only stack actions that own runtime
       // intent (deploy/stop, the ones carrying `statusOnSuccess`) move the
-      // column. Success applies the caller's transition; operational failure
-      // of those same actions moves a tracked stack to "error" so sync/delete
-      // gates stop trusting a stale "deployed" after a failed redeploy.
-      // Pull/restart carry no transition and leave the column alone on
-      // success *and* failure — a failed pull must not clear the "deployed"
-      // marker while containers keep running, or sync would reconcile the
-      // still-live stack away.
+      // column, and the column is UI/history only — sync/delete never read
+      // it (removal is the fail-closed Docker probe). Pull/restart carry no
+      // transition and leave the column alone on success *and* failure, so
+      // a failed pull does not paint the UI `"error"` while containers keep
+      // running.
       if (
         options.identity.kind === "stack" &&
         options.identity.statusOnSuccess !== undefined

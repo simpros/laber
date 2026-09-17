@@ -35,7 +35,7 @@ const serviceLabelsSchema = v.union([
   v.record(v.string(), v.unknown()),
 ]);
 
-const serviceSecretsSchema = v.array(v.unknown());
+const serviceSecretsSchema = v.array(v.string());
 
 const composeServiceSchema = v.object({
   image: v.optional(v.string()),
@@ -68,7 +68,10 @@ export type ComposeService = v.InferOutput<typeof composeServiceSchema>;
 
 export type ComposeDocument = v.InferOutput<typeof composeDocumentSchema>;
 
-export function parseComposeDocument(content: string): ComposeDocument {
+export function parseComposeDocument(
+  content: string,
+  composePathHint = "."
+): ComposeDocument {
   let parsed: unknown;
   try {
     parsed = parse(content);
@@ -108,15 +111,11 @@ export function parseComposeDocument(content: string): ComposeDocument {
       .join("; ");
     throw new ValidationError(`Invalid compose file: ${detail}`);
   }
+  // Secret-ref validation is part of the parse gate (not a second pass the
+  // caller must remember): save/detail/deploy all reject dangling refs,
+  // long-form refs, and file-less referenced secrets alike.
+  extractSecrets(result.output, composePathHint);
   return result.output;
-}
-
-export function readComposeFile(filePath: string): {
-  raw: string;
-  doc: ComposeDocument;
-} {
-  const raw = readFileSync(filePath, "utf-8");
-  return { raw, doc: parseComposeDocument(raw) };
 }
 
 export type ServiceInfo = {
@@ -299,26 +298,13 @@ export function extractSecrets(
   // Build the service → secret-name map first, before any early return: a
   // compose with service `secrets:` refs but no top-level `secrets:` must
   // fail loud (secret-less deploy), not return [].
+  // Service `secrets:` refs are short-syntax names (enforced by the schema
+  // above): each one must resolve to a top-level entry.
   const serviceMap = new Map<string, string[]>();
   for (const [svcName, svc] of Object.entries(doc.services)) {
     const refs = svc.secrets;
     if (refs === undefined) continue;
-    // Only short-syntax names are supported: a long-form object (or any
-    // non-list) has no resolvable file, and silently skipping it would deploy
-    // without files the compose file intended. The gate above already
-    // enforces the list shape for parsed documents; this plain `Array.isArray`
-    // keeps the same loud branch for direct (unparsed) callers.
-    if (!Array.isArray(refs)) {
-      throw new ValidationError(
-        `Invalid compose file: service "${svcName}" has a non-list "secrets" section (only short-syntax secret names are supported)`
-      );
-    }
     for (const ref of refs) {
-      if (typeof ref !== "string") {
-        throw new ValidationError(
-          `Invalid compose file: service "${svcName}" uses long-form secret syntax (only short-syntax secret names are supported)`
-        );
-      }
       const acc = serviceMap.get(ref) ?? [];
       acc.push(svcName);
       serviceMap.set(ref, acc);
@@ -374,32 +360,22 @@ export function extractSecrets(
 }
 
 /**
- * The one compose readability gate: envelope parse plus secret-ref
- * validation. Save, detail, and deploy all pass through it, so a file save
- * accepts exactly means deploy/detail accept — never a weaker save gate
- * that stores a file deploy later 400s on.
- */
-export function assertComposeReadable(
-  content: string,
-  composePathHint: string
-): ComposeDocument {
-  const doc = parseComposeDocument(content);
-  extractSecrets(doc, composePathHint);
-  return doc;
-}
-
-/**
  * Read + fully validate the on-disk compose file: one disk read, envelope
  * parse, and secret-ref validation. Detail and deploy share it so both see
  * the same "valid compose" contract (missing file is the caller's branch —
  * this throws the raw read error for a missing file).
+ *
+ * The two compose entry points are `parseComposeDocument` (content) and
+ * this `loadComposeDocument` (path) — both run the full gate, so save (via
+ * parse) accepts exactly what deploy/detail (via load) accept.
  */
 export function loadComposeDocument(composePath: string): {
   raw: string;
   doc: ComposeDocument;
   secrets: SecretDefinition[];
 } {
-  const { raw, doc } = readComposeFile(composePath);
+  const raw = readFileSync(composePath, "utf-8");
+  const doc = parseComposeDocument(raw, composePath);
   const secrets = extractSecrets(doc, composePath);
   return { raw, doc, secrets };
 }
