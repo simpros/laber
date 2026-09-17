@@ -1,0 +1,19 @@
+# AGENTS.md
+
+laber is a Bun + Turborepo monorepo (`apps/*`, `packages/*`) in TypeScript.
+
+The app is migrating from SvelteKit to an Elysia backend + React SPA + SQLite (tracked in issues #4–#7).
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked as GitHub issues on `simpros/laber`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
