@@ -381,7 +381,7 @@ describe("repositories", () => {
     rmSync(fixtureDir, { recursive: true, force: true });
   });
 
-  it("refuses to sync away a still-deployed stack", async () => {
+  it("syncs away a deployed-status stack when no containers run (status is history, Docker decides)", async () => {
     const fixtureDir = initFixtureRepo(["guarded"]);
     const addRes = await app.handle(
       jsonReq(
@@ -415,7 +415,8 @@ describe("repositories", () => {
       .set({ status: "deployed" })
       .where(eq(stacks.id, repoStacks[0].id));
 
-    // The stack disappears from the git tree while still deployed.
+    // The stack disappears from the git tree while the status column still
+    // says deployed — but the daemon runs nothing for the project.
     rmSync(join(fixtureDir, "stacks", "guarded"), {
       recursive: true,
       force: true,
@@ -434,11 +435,75 @@ describe("repositories", () => {
       ],
       { cwd: fixtureDir }
     );
+    dockerStub.listContainers = async () => [];
 
     const syncRes = await app.handle(
       jsonReq(`/api/repositories/${repo.id}/sync`, "POST", {}, cookie)
     );
-    expect(syncRes.status).toBe(409);
+    expect(syncRes.status).toBe(200);
+
+    // Reconciled away: a stale status alone never blocks removal.
+    const remaining = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    expect(remaining).toHaveLength(0);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("refuses to sync away a stack when the daemon is unreadable (fail-closed)", async () => {
+    const fixtureDir = initFixtureRepo(["opaque"]);
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "opaque-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find(
+      (r) => r.name === "opaque-fixture"
+    )!;
+
+    // The stack disappears from the git tree; the default stub throws on
+    // `listContainers`, so the gate must refuse instead of reporting
+    // "no containers".
+    rmSync(join(fixtureDir, "stacks", "opaque"), {
+      recursive: true,
+      force: true,
+    });
+    execFileSync("git", ["add", "-A"], { cwd: fixtureDir });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=Test",
+        "commit",
+        "-m",
+        "remove opaque",
+      ],
+      { cwd: fixtureDir }
+    );
+
+    const syncRes = await app.handle(
+      jsonReq(`/api/repositories/${repo.id}/sync`, "POST", {}, cookie)
+    );
+    expect(syncRes.status).toBe(500);
 
     // Nothing reconciled away: the row survives the refused sync.
     const remaining = await db

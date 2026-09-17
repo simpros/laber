@@ -86,14 +86,12 @@ export function reconcileStacksTx(
 
   // Removal trusts the caller's async pre-check (`assertStackRemovable`,
   // under the per-repo lock — see `repositories.ts`): this transaction
-  // cannot await Docker, so there is deliberately no status-only twin of
-  // the rule here. A second `status === "deployed"` check would be a
-  // split-brain twin, not extra safety: every in-process writer of
-  // `stacks.status` (deploy, stack stop) holds the same lock across the
-  // probe→commit window, and out-of-band daemon changes are best-effort
-  // either way. Stale rows are deleted (env/secrets cascade, logs detach)
-  // in the same transaction as the adds/updates so sync never leaves
-  // zombies behind.
+  // cannot await Docker, so there is deliberately no twin of the rule here.
+  // The gate is the fail-closed container probe only — `stacks.status` is
+  // UI/history and never consulted, so no status writer needs to hold the
+  // lock. Out-of-band daemon changes are best-effort either way. Stale rows
+  // are deleted (env/secrets cascade, logs detach) in the same transaction
+  // as the adds/updates so sync never leaves zombies behind.
 
   // NOTE: drizzle only executes queries that are awaited (async tx) or
   // finished with `.run()` (sync tx). Bare `tx.delete(...)` chains are

@@ -10,7 +10,6 @@ import {
   assertStackName,
 } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
-import { withRepoLock } from "./repo-lock";
 
 type LifecycleOp = "stop" | "restart" | "pull";
 
@@ -94,9 +93,13 @@ function runLifecycleOp(
  * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
  * near-identical wrappers. Restart and pull carry the stack identity but no
  * `statusOnSuccess`, so they never touch `stacks.status` (they do not
- * change desired runtime). Holds the per-repo lock (see `repo-lock.ts`):
- * stop commits `stacks.status`, which the sync removable probe reads, so a
- * sync probe→commit window must not interleave it.
+ * change desired runtime).
+ *
+ * No per-repo lock: lifecycle ops never change the removable inputs the
+ * sync/delete lock owns — the removable gate is the fail-closed Docker
+ * probe, and `stacks.status` is UI/history. Stop's `"stopped"` commit and
+ * pull/restart's log-only outcome cannot orphan a sync reconcile, so they
+ * must not serialize on a mutex they do not write.
  */
 export async function runStackOp(
   name: string,
@@ -104,16 +107,14 @@ export async function runStackOp(
 ): Promise<{ output: string }> {
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
-  return withRepoLock(stack.repositoryId, () =>
-    runLifecycleOp(
-      op,
-      {
-        kind: "stack",
-        stackId: stack.id,
-        statusOnSuccess: OPS[op].statusOnSuccess,
-      },
-      { projectName: stack.name, composePath, label: stack.name }
-    )
+  return runLifecycleOp(
+    op,
+    {
+      kind: "stack",
+      stackId: stack.id,
+      statusOnSuccess: OPS[op].statusOnSuccess,
+    },
+    { projectName: stack.name, composePath, label: stack.name }
   );
 }
 

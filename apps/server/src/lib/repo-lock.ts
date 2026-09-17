@@ -1,16 +1,16 @@
 /**
- * Minimal per-key async mutex over repo ids. Every in-process writer of
- * repo-scoped stack rows or the presence inputs the removable rule reads
- * holds this lock across its whole probe→commit section:
+ * Minimal per-key async mutex over repo ids. The only holders are the two
+ * mutations of the removable rule's inputs:
  *
  * - sync/register materialize (Docker-aware removable probe → reconcile tx)
  * - repo delete (sequential `down`s → row-delete tx)
- * - stack deploy (`compose up` → `stacks.status` commit)
- * - stack stop/restart/pull (compose run → optional `stacks.status` commit)
  *
- * That closes the probe→commit window in-process with a single mechanism
- * instead of a second status-only gate inside the sync transaction (which
- * cannot await Docker and would be a split-brain twin of the same rule).
+ * That closes the probe→commit / teardown→delete window in-process with a
+ * single mechanism instead of a second status-only gate inside the sync
+ * transaction (which cannot await Docker and would be a split-brain twin of
+ * the same rule). Stack deploy/stop/restart/pull do NOT take this lock: the
+ * removable gate is the fail-closed Docker probe and `stacks.status` is
+ * UI/history, so their status commits cannot orphan a sync reconcile.
  * Process-local by design — a single Bun process owns the SQLite file and
  * the in-memory activity store. Out-of-band Docker changes (another host
  * mutating the daemon) remain best-effort; the fail-closed probe still

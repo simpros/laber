@@ -3,17 +3,19 @@ import { listContainers } from "./docker-engine";
 
 /**
  * The one removable-stack authority: `assertStackRemovable` refuses a
- * disappearance when the stored status is `"deployed"` or live containers
- * still run for the project — fail-closed on an unreadable daemon.
+ * disappearance only when live containers still run for the project —
+ * fail-closed on an unreadable daemon.
  *
- * One async function, one answer. The sync transaction cannot await Docker,
- * so there is deliberately no status-only twin inside `reconcileStacksTx`:
- * instead every in-process writer of the rows this rule reads (sync
- * materialize, repo delete, stack deploy, stack stop) holds
- * `withRepoLock(repoId)` across probe→commit, closing the window
- * in-process. `stacks.status` stays a UI/history column; only this module
- * decides what "removable" means. Out-of-band daemon changes (another host
- * touching Docker) remain best-effort.
+ * `stacks.status` is UI/history and deliberately NOT part of this gate: a
+ * stale `"deployed"` with nothing running must not force a stop-before-sync
+ * round-trip, and mixing the column in is what forced every status writer
+ * (deploy, stop) to serialize on the per-repo lock. The daemon is the ground
+ * truth for "will this orphan containers". The sync transaction cannot await
+ * Docker, so there is deliberately no twin of the rule inside
+ * `reconcileStacksTx`: the async pre-check in `repositories.ts` runs under
+ * the same per-repo lock as repo delete, closing the probe→commit window
+ * in-process. Out-of-band daemon changes (another host touching Docker)
+ * remain best-effort.
  */
 
 /** Running containers for a compose project. Throws when Docker is unreadable. */
@@ -30,13 +32,7 @@ export async function countProjectContainers(
  */
 export async function assertStackRemovable(stack: {
   name: string;
-  status: string;
 }): Promise<void> {
-  if (stack.status === "deployed") {
-    throw new ConflictError(
-      `Cannot sync: stack(s) no longer in repo but still deployed: ${stack.name}. Stop them before syncing.`
-    );
-  }
   let running: number;
   try {
     running = await countProjectContainers(stack.name);

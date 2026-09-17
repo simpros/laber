@@ -18,12 +18,7 @@ import {
   extractAllEnvVarNames,
   extractNetworkName,
 } from "./compose-document";
-import {
-  getStackAndRepo,
-  getRepoDir,
-  assertStackName,
-} from "./config";
-import { withRepoLock } from "./repo-lock";
+import { getStackAndRepo, getRepoDir, assertStackName } from "./config";
 import { ValidationError } from "./errors";
 
 export async function listStacks() {
@@ -142,8 +137,7 @@ export async function getStackDetail(name: string) {
 
 export async function deployStackByName(name: string) {
   assertStackName(name);
-  const lookup = await getStackAndRepo(name);
-  const { stack, repo, composePath } = lookup;
+  const { stack, composePath } = await getStackAndRepo(name);
 
   const envVars = await db
     .select()
@@ -191,27 +185,24 @@ export async function deployStackByName(name: string) {
     }));
   }
 
-  // Deploy's `deployed`/`error` status commit participates in the per-repo
-  // lock (see `repo-lock.ts`): it is the one transition that can flip a
-  // stack live mid-sync, so it must not interleave a sync probe→commit
-  // window for the same repo.
-  return withRepoLock(repo.id, () =>
-    runLoggedAction({
-      title: `Deploying ${name}`,
-      action: "deploy",
-      identity: { kind: "stack", stackId: stack.id, statusOnSuccess: "deployed" },
-      failureMessage: `Deploying ${name} failed`,
-      run: async (onOutput) => {
-        const result = await deployStack({
-          composePath,
-          envVars: envMap,
-          secretFiles,
-          networkName,
-          projectName: stack.name,
-          onOutput,
-        });
-        return { output: result.output };
-      },
-    })
-  );
+  // Deploy's `deployed`/`error` status commit is UI/history, not a removable
+  // input: the sync/delete lock owns only the Docker-aware probe→reconcile
+  // and teardown→delete windows, so deploy runs unlocked.
+  return runLoggedAction({
+    title: `Deploying ${name}`,
+    action: "deploy",
+    identity: { kind: "stack", stackId: stack.id, statusOnSuccess: "deployed" },
+    failureMessage: `Deploying ${name} failed`,
+    run: async (onOutput) => {
+      const result = await deployStack({
+        composePath,
+        envVars: envMap,
+        secretFiles,
+        networkName,
+        projectName: stack.name,
+        onOutput,
+      });
+      return { output: result.output };
+    },
+  });
 }

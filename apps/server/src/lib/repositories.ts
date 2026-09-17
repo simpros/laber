@@ -141,10 +141,9 @@ async function materializeRepository(options: {
         options.stacksPath
       );
       // Serialized per repo: the Docker-aware removable probe and the
-      // reconcile transaction commit under one lock, so no other holder of
-      // the same repo lock (delete, stack deploy/stop — see `repo-lock.ts`)
-      // can interleave a status flip, a teardown, or a row delete between
-      // the probe and the commit. (Out-of-band daemon changes remain
+      // reconcile transaction commit under one lock, so a concurrent repo
+      // delete cannot interleave a teardown or a row delete between the
+      // probe and the commit. (Out-of-band daemon changes remain
       // best-effort — fail-closed probe still applies there.)
       const applied = await withRepoLock(options.repoId, async () => {
         await options.preReconcile?.(discoveredStacks);
@@ -235,15 +234,26 @@ export async function syncRepository(id: string) {
     progressDone: "Pull complete. Discovering stacks...\n",
     stacksPath: repo.stacksPath,
     remote: repo,
-    // Sync-only: refuse to reconcile away a stack that is still deployed
-    // *or* still has running containers (covers a stale status column).
-    // Runs before the tx because the sync transaction cannot await a Docker
-    // probe. This pre-check is the only removal gate by design (there is no
-    // status-only twin inside `reconcileStacksTx`): it runs under the same
-    // per-repo lock every other presence writer holds, so the probe→commit
-    // window is closed in-process. Independent probes run in parallel under
-    // the same fail-closed rule.
+    // Sync-only: refuse to reconcile away a stack that still has running
+    // containers (the fail-closed Docker probe — `stacks.status` is
+    // UI/history and not consulted). Runs before the tx because the sync
+    // transaction cannot await a Docker probe. This pre-check is the only
+    // removal gate by design (there is no status-only twin inside
+    // `reconcileStacksTx`): it runs under the same per-repo lock as repo
+    // delete, so the probe→commit window is closed in-process. Independent
+    // probes run in parallel under the same fail-closed rule.
     preReconcile: async (discoveredStacks) => {
+      // Inside the lock: a concurrent delete may have committed between the
+      // early lookup above and this section. Confirm the repo still exists
+      // before probing and reconciling against its id — otherwise the tx
+      // below would `update` a gone row and `insert` stacks against a
+      // deleted `repository_id` (raw FK failure, not a clean 404).
+      const [live] = await db
+        .select({ id: repositories.id })
+        .from(repositories)
+        .where(eq(repositories.id, repo.id))
+        .limit(1);
+      if (!live) throw new NotFoundError("Repository not found");
       const names = new Set(discoveredStacks.map((s) => s.name));
       const existing = await db
         .select()
@@ -278,11 +288,6 @@ export async function deleteRepository(id: string) {
     .limit(1);
   if (!repo) throw new NotFoundError("Repository not found");
 
-  const repoStacks = await db
-    .select()
-    .from(stacks)
-    .where(eq(stacks.repositoryId, id));
-
   // One logged action ("Deleting repo X"), sequential downs, then rows.
   // `down` is the gate — no status pre-check, no soft container probe: every
   // stack comes down before any row is deleted, and a `down` failure aborts
@@ -303,6 +308,21 @@ export async function deleteRepository(id: string) {
       identity: { kind: "none" },
       failureMessage: `Failed to delete repository ${repo.name}`,
       run: async (onOutput) => {
+        // Re-read inside the lock: a sync may have added/removed stack rows
+        // (or the repo row may be gone — same race as sync's pre-check)
+        // between the early 404 above and this section. The teardown list
+        // and the row delete below must match what the lock actually owns.
+        const [live] = await db
+          .select()
+          .from(repositories)
+          .where(eq(repositories.id, id))
+          .limit(1);
+        if (!live) throw new NotFoundError("Repository not found");
+        const repoStacks = await db
+          .select()
+          .from(stacks)
+          .where(eq(stacks.repositoryId, id));
+
         for (const stack of repoStacks) {
           onOutput(`Bringing down ${stack.name}...\n`);
           try {
@@ -337,7 +357,7 @@ export async function deleteRepository(id: string) {
         }
 
         const output =
-          `Deleted repository ${repo.name} (${repoStacks.length} stack(s) down)\n` +
+          `Deleted repository ${live.name} (${repoStacks.length} stack(s) down)\n` +
           warnings.map((w) => `${w}\n`).join("");
         return { output, value: { warnings } };
       },

@@ -79,9 +79,34 @@ export function parseComposeDocument(content: string): ComposeDocument {
   }
   const result = v.safeParse(composeDocumentSchema, parsed);
   if (!result.success) {
-    throw new ValidationError(
-      "Invalid compose file: missing 'services' section"
-    );
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("services" in parsed)
+    ) {
+      throw new ValidationError(
+        "Invalid compose file: missing 'services' section"
+      );
+    }
+    // The envelope parsed but a consumed slice has the wrong shape: name
+    // the offending paths instead of blaming a missing `services` section
+    // (which is present — the gate now rejects more than that).
+    const detail = result.issues
+      .map((issue) => {
+        const path = (issue.path ?? [])
+          .map((segment) => {
+            const key = (segment as { key?: unknown }).key;
+            return typeof key === "string" || typeof key === "number"
+              ? String(key)
+              : "";
+          })
+          .filter((part) => part !== "")
+          .join(".");
+        const message = issue.message ?? "invalid value";
+        return path ? `${path}: ${message}` : message;
+      })
+      .join("; ");
+    throw new ValidationError(`Invalid compose file: ${detail}`);
   }
   return result.output;
 }

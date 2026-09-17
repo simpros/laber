@@ -231,7 +231,19 @@ describe("parseComposeDocument", () => {
       parseComposeDocument(
         "services:\n  web:\n    image: nginx:latest\nsecrets: not-a-map\n"
       )
-    ).toThrow(ValidationError);
+    ).toThrow(/secrets/);
+  });
+
+  it("names the offending path for shape failures (not a generic services line)", () => {
+    expect(() =>
+      parseComposeDocument(
+        "services:\n  web:\n    image: nginx:latest\nsecrets: not-a-map\n"
+      )
+    ).toThrow("Invalid compose file: secrets:");
+    // The missing-services case keeps its dedicated message.
+    expect(() => parseComposeDocument("version: '3'\n")).toThrow(
+      "missing 'services' section"
+    );
   });
 
   it("tolerates exotic but valid shapes (numeric ports, extension fields)", () => {
