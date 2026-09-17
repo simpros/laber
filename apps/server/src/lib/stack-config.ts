@@ -3,14 +3,12 @@ import { mkdirSync, writeFileSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { parseComposeDocument } from "./compose-parse";
-import { getStackAndRepo, assertStackName } from "./stack-context";
+import { getStackAndRepo, assertStackName, withLockedStack } from "./stack-context";
 import type { ConfigValue } from "./config";
 import { ValidationError } from "./errors";
 import type { StackTx } from "./db-tx";
-import { withRepoLock } from "./repo-lock";
 
 export async function saveComposeContent(name: string, content: string) {
-  assertStackName(name);
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
@@ -18,12 +16,11 @@ export async function saveComposeContent(name: string, content: string) {
   // while it validates + applies the file: otherwise a concurrent save could
   // swap the file between deploy's gate check and `docker compose -f <path>
   // up -d`, and Docker would apply bytes this attempt never validated.
-  // Lock key sampled cheaply outside, then re-resolved under the lock.
-  const { stack: pre } = await getStackAndRepo(name);
-  return withRepoLock(pre.repositoryId, async () => {
+  // One door (`withLockedStack`): sample + re-resolve + write share the
+  // helper deploy/stop use — no copy-pasted lock block.
+  return withLockedStack(name, async ({ composePath }) => {
     // The one compose gate (envelope + secret refs): save accepts exactly
     // what deploy/detail accept, so a saved file can never 400 on read/deploy.
-    const { composePath } = await getStackAndRepo(name);
     parseComposeDocument(content, composePath);
 
     mkdirSync(dirname(composePath), { recursive: true });

@@ -2,6 +2,7 @@ import { db, stacks, repositories } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { getComposePath } from "./config";
 import { NotFoundError, ValidationError } from "./errors";
+import { withRepoLock } from "./repo-lock";
 
 /**
  * Stack domain context: the primary stack loader plus the stack-name guard.
@@ -39,4 +40,23 @@ export async function getStackAndRepo(stackName: string) {
 export function assertStackName(name: string): string {
   if (!name) throw new ValidationError("Stack name must not be empty");
   return name;
+}
+
+/**
+ * The one lock choreography for stack-scoped mutations: sample the lock key
+ * cheaply outside, then re-resolve identity + compose path *under* the lock
+ * so a sync that deletes the row between the two reads 404s instead of
+ * mutating an orphan project. Deploy, stop, and compose save are call sites,
+ * not policy owners — sample + mutate share one mutex, one helper.
+ */
+export async function withLockedStack<T>(
+  name: string,
+  fn: (ctx: { stack: Awaited<ReturnType<typeof getStackAndRepo>>["stack"]; composePath: string }) => Promise<T>
+): Promise<T> {
+  assertStackName(name);
+  const { stack: pre } = await getStackAndRepo(name);
+  return withRepoLock(pre.repositoryId, async () => {
+    const { stack, composePath } = await getStackAndRepo(name);
+    return fn({ stack, composePath });
+  });
 }

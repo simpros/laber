@@ -1,25 +1,33 @@
 /**
  * Minimal per-key async mutex over repo ids. The holders are every mutation
- * of the removable rule's inputs (live containers for a compose project):
+ * of the removable rule's inputs (live containers for a compose project) plus
+ * the one disk writer deploy snapshots around:
  *
  * - sync/register materialize (Docker-aware removable probe → reconcile tx)
  * - repo delete (sequential `down`s → row-delete tx)
- * - stack deploy (`up -d` creates the containers the probe reads)
+ * - stack deploy (`up -d` creates the containers the probe reads; the compose
+ *   bytes it validates are frozen to a snapshot, so live-tree writers cannot
+ *   skew validated vs applied)
  * - stack stop (`down` removes the containers the probe reads)
+ * - compose save (rewrites the live file deploy would otherwise validate;
+ *   deploy's snapshot makes the two independent, the shared mutex keeps the
+ *   ordering explicit)
  *
  * That closes the probe→commit / teardown→delete window in-process with a
  * single mechanism instead of a second status-only gate inside the sync
  * transaction (which cannot await Docker and would be a split-brain twin of
  * the same rule). `stacks.status` is UI/history: restart/pull and the status
- * commits themselves never take this lock — the mutex is about containers,
- * not the column. Process-local by design — a single Bun process owns the
- * SQLite file and the in-memory activity store. Out-of-band Docker changes
- * (another host mutating the daemon) remain best-effort; the fail-closed
- * probe still applies there.
+ * commits themselves never take this lock — the mutex is about containers
+ * (and the compose bytes that produce them), not the column. Process-local
+ * by design — a single Bun process owns the SQLite file and the in-memory
+ * activity store. Out-of-band Docker changes (another host mutating the
+ * daemon) remain best-effort; the fail-closed probe still applies there.
+ * Sync pull (long network I/O) still rewrites the live tree outside the
+ * lock — deploy's snapshot is what makes that safe, not a wider lock.
  *
  * Never nest: holders must not call another holder for the same repo id
- * (repo delete tears down via the shared `downStackProject` primitive
- * directly, never via the locked `runStackOp`, for exactly this reason).
+ * (repo delete tears down via the shared `downProject` primitive directly,
+ * never via the locked `runStackOp`, for exactly this reason).
  */
 const tails = new Map<string, Promise<void>>();
 

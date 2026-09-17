@@ -14,7 +14,7 @@ import {
 } from "./stack-reconcile";
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
-import { downStackProject } from "./compose-actions";
+import { downProject } from "./compose-cli";
 import { RemovableClearance } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
 import { runActivity } from "./logged-action";
@@ -325,9 +325,11 @@ export async function deleteRepository(id: string) {
         for (const stack of repoStacks) {
           onOutput(`Bringing down ${stack.name}...\n`);
           try {
-            // Same `downStackProject` primitive stop uses (not `runStackOp`:
-            // delete already holds `withRepoLock` and would self-deadlock).
-            await downStackProject(
+            // The one teardown primitive (`downProject` by name, compose
+            // optional): delete already holds `withRepoLock`, so it must not
+            // call the locked `runStackOp` (self-deadlock) — same primitive
+            // `OPS.stop` uses, called directly from both doors, no wrapper.
+            await downProject(
               {
                 projectName: stack.name,
                 composePath: getComposePath(
@@ -335,8 +337,8 @@ export async function deleteRepository(id: string) {
                   stack.relativePath,
                   stack.composeFile
                 ),
-              },
-              onOutput
+                onOutput,
+              }
             );
           } catch (e) {
             throw new ActionFailedError(

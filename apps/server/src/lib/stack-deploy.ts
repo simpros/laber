@@ -1,26 +1,39 @@
+import { rmSync, writeFileSync } from "fs";
+import { nanoid } from "nanoid";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { loadCompose } from "./compose-parse";
 import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
-import { runLoggedDeploy, withLockedStack } from "./compose-actions";
-import { getStackAndRepo, assertStackName } from "./stack-context";
+import { runLoggedDeploy } from "./compose-actions";
+import {
+  getStackAndRepo,
+  assertStackName,
+  withLockedStack,
+} from "./stack-context";
 import { ValidationError } from "./errors";
+
+type StackRow = Awaited<ReturnType<typeof getStackAndRepo>>["stack"];
 
 /**
  * Deploy input resolution, out of the read-model façade (`stacks.ts` is
  * list + detail only): env map from the DB, compose document through the
  * one gate detail and save share, secret-file mapping with a missing-value
  * gate. Returns everything `deployStack` needs plus the stack row identity.
+ *
+ * Takes the already-resolved stack row + compose path so locked callers
+ * (`deployStackByName` via `withLockedStack`) resolve once under the lock —
+ * no second `getStackAndRepo` inside the critical section.
  */
-export async function resolveStackDeployInputs(name: string): Promise<{
+export async function resolveStackDeployInputsFor(
+  stack: StackRow,
+  composePath: string
+): Promise<{
   stackId: string;
   repositoryId: string;
+  composeRaw: string;
   deploy: Omit<DeployOptions, "onOutput">;
 }> {
-  assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
-
   const envVars = await db
     .select()
     .from(stackEnvVars)
@@ -36,7 +49,7 @@ export async function resolveStackDeployInputs(name: string): Promise<{
   // both live in `loadCompose` (`missing: "error"` types `doc` non-null, and
   // `errorPrefix` phrases every gate failure) — deploy is a call site, not a
   // policy owner.
-  const { doc, secrets: defs } = loadCompose(composePath, {
+  const { raw, doc, secrets: defs } = loadCompose(composePath, {
     missing: "error",
     errorPrefix: "Cannot deploy",
   });
@@ -65,6 +78,7 @@ export async function resolveStackDeployInputs(name: string): Promise<{
   return {
     stackId: stack.id,
     repositoryId: stack.repositoryId,
+    composeRaw: raw,
     deploy: {
       composePath,
       envVars: envMap,
@@ -75,6 +89,17 @@ export async function resolveStackDeployInputs(name: string): Promise<{
   };
 }
 
+export async function resolveStackDeployInputs(name: string): Promise<{
+  stackId: string;
+  repositoryId: string;
+  composeRaw: string;
+  deploy: Omit<DeployOptions, "onOutput">;
+}> {
+  assertStackName(name);
+  const { stack, composePath } = await getStackAndRepo(name);
+  return resolveStackDeployInputsFor(stack, composePath);
+}
+
 export async function deployStackByName(name: string) {
   // Deploy holds the per-repo lock: `up -d` creates the very containers the
   // sync removable probe reads, so an unlocked deploy racing a sync
@@ -83,14 +108,32 @@ export async function deployStackByName(name: string) {
   // containers, not the column. Same `withLockedStack` choreography as stop:
   // lock key sampled cheaply outside, every removable input (DB row, compose,
   // env/secrets) re-resolved *under* the lock.
-  return withLockedStack(name, async () => {
-    const { stackId, deploy } = await resolveStackDeployInputs(name);
-    return runLoggedDeploy({
-      title: `Deploying ${name}`,
-      action: "deploy",
-      identity: { kind: "stack", stackId, onSuccess: "deployed" },
-      failureMessage: `Deploying ${name} failed`,
-      deploy,
-    });
+  //
+  // Validated bytes === applied bytes: the compose document is frozen to a
+  // snapshot file in the same directory (same `cwd` + relative-path
+  // resolution as the live file) and Docker runs `-f <snapshot>`. Live-tree
+  // writers (compose save, sync pull) cannot swap the file between this
+  // attempt's gate check and `up -d` — the lock no longer needs to chase
+  // every future disk writer.
+  return withLockedStack(name, async ({ stack, composePath }) => {
+    const { stackId, deploy, composeRaw } =
+      await resolveStackDeployInputsFor(stack, composePath);
+    const snapshotPath = `${composePath}.deploy-${nanoid(8)}.tmp`;
+    writeFileSync(snapshotPath, composeRaw, "utf-8");
+    try {
+      return await runLoggedDeploy({
+        title: `Deploying ${name}`,
+        action: "deploy",
+        identity: { kind: "stack", stackId, onSuccess: "deployed" },
+        failureMessage: `Deploying ${name} failed`,
+        deploy: { ...deploy, composePath: snapshotPath },
+      });
+    } finally {
+      try {
+        rmSync(snapshotPath, { force: true });
+      } catch {
+        // best-effort snapshot cleanup; the deploy outcome is what matters.
+      }
+    }
   });
 }
