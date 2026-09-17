@@ -1,7 +1,6 @@
-import { existsSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { loadComposeDocument } from "./compose-parse";
+import { loadCompose } from "./compose-parse";
 import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
 import { runLoggedDeploy } from "./compose-actions";
@@ -35,18 +34,24 @@ export async function resolveStackDeployInputs(name: string): Promise<{
   // broken compose or a missing secret fails instead of falling back
   // to cached DB values, so a bad file must not produce a secret-less deploy
   // with a stale network name. Only the error phrasing is deploy-specific.
-  // A missing file is its own product message; anything else that is not a
-  // `ValidationError` (permissions, EISDIR, unexpected runtime failures)
-  // propagates with its own kind instead of being relabeled "missing".
-  if (!existsSync(composePath)) {
-    throw new ValidationError("Cannot deploy: compose file is missing");
-  }
-  let doc: ReturnType<typeof loadComposeDocument>["doc"];
-  let defs: ReturnType<typeof loadComposeDocument>["secrets"];
+  // The missing-vs-invalid branch lives in `loadCompose` — deploy is a call
+  // site, not a policy owner. A missing file is its own product message;
+  // anything else that is not a `ValidationError` (permissions, EISDIR,
+  // unexpected runtime failures) propagates with its own kind instead of
+  // being relabeled "missing".
+  let doc: NonNullable<ReturnType<typeof loadCompose>["doc"]>;
+  let defs: ReturnType<typeof loadCompose>["secrets"];
   try {
-    ({ doc, secrets: defs } = loadComposeDocument(composePath));
+    const loaded = loadCompose(composePath, { missing: "error" });
+    // `missing: "error"` never returns a null doc — the guard above narrows
+    // the shared return for TS.
+    if (!loaded.doc) throw new Error("unreachable: error-mode load returned empty");
+    ({ doc, secrets: defs } = loaded);
   } catch (e) {
     if (e instanceof ValidationError) {
+      if (e.message.startsWith("Compose file is missing")) {
+        throw new ValidationError("Cannot deploy: compose file is missing");
+      }
       throw new ValidationError(
         `Cannot deploy: failed to parse compose file (${e.message})`
       );
@@ -89,21 +94,26 @@ export async function resolveStackDeployInputs(name: string): Promise<{
 }
 
 export async function deployStackByName(name: string) {
-  const { stackId, repositoryId, deploy } =
-    await resolveStackDeployInputs(name);
+  assertStackName(name);
+  // Lock key sampled cheaply outside; every removable input (DB row, compose,
+  // env/secrets) is re-resolved *under* the lock below. A sync that deletes
+  // this row between the two reads makes the inner resolve 404 instead of
+  // `up -d`ing an orphan project — sample + mutate share one mutex.
+  const { stack: pre } = await getStackAndRepo(name);
 
   // Deploy holds the per-repo lock: `up -d` creates the very containers the
   // sync removable probe reads, so an unlocked deploy racing a sync
   // probe→commit would orphan a live project under a deleted row. The
   // `deployed`/`error` status commit stays UI/history — the lock is about
   // containers, not the column.
-  return withRepoLock(repositoryId, () =>
-    runLoggedDeploy({
+  return withRepoLock(pre.repositoryId, async () => {
+    const { stackId, deploy } = await resolveStackDeployInputs(name);
+    return runLoggedDeploy({
       title: `Deploying ${name}`,
       action: "deploy",
       identity: { kind: "stack", stackId, onSuccess: "deployed" },
       failureMessage: `Deploying ${name} failed`,
       deploy,
-    })
-  );
+    });
+  });
 }

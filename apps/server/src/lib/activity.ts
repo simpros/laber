@@ -44,7 +44,20 @@ export function createActivity(title: string): Activity {
     startedAt: Date.now(),
   };
   activities.unshift(activity);
-  if (activities.length > MAX_ACTIVITIES) activities.pop();
+  // Retention never evicts running work: find the newest finished entry from
+  // the tail and drop that. If every entry is still running, keep them all
+  // (grow past the cap) rather than losing a finish event and leaving SSE
+  // clients stuck on a forever-`running` activity.
+  if (activities.length > MAX_ACTIVITIES) {
+    let evict = -1;
+    for (let i = activities.length - 1; i >= 0; i--) {
+      if (activities[i].status !== "running") {
+        evict = i;
+        break;
+      }
+    }
+    if (evict !== -1) activities.splice(evict, 1);
+  }
   broadcast({ type: "start", activity: { ...activity } });
   return activity;
 }

@@ -1,4 +1,3 @@
-import { existsSync } from "fs";
 import { relative } from "path";
 import {
   db,
@@ -10,7 +9,7 @@ import {
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
 import { listContainersSoft } from "./docker-engine";
-import { loadComposeDocument } from "./compose-parse";
+import { loadCompose } from "./compose-parse";
 import {
   extractServices,
   extractAllEnvVarNames,
@@ -52,21 +51,23 @@ export async function listStacks() {
 /**
  * Compose read for detail: missing file → empty defaults (nothing to show);
  * present-but-invalid → loud `ValidationError`, the same gate deploy
- * enforces, so the UI looks broken instead of empty.
+ * enforces, so the UI looks broken instead of empty. The missing-vs-invalid
+ * branch lives in `loadCompose` — detail is a call site, not a policy owner.
  */
 function loadComposeForDetail(composePath: string, repoId: string) {
-  if (!existsSync(composePath)) {
+  // Single disk read through the one compose gate (envelope + secret
+  // refs): a present-but-invalid file throws `ValidationError`, the same
+  // gate deploy and save enforce, so the UI looks broken instead of empty.
+  const loaded = loadCompose(composePath, { missing: "empty" });
+  if (!loaded.doc) {
     return {
       raw: "",
       services: [] as ReturnType<typeof extractServices>,
       detectedEnvVars: [] as string[],
-      detectedSecrets: [] as ReturnType<typeof loadComposeDocument>["secrets"],
+      detectedSecrets: [] as typeof loaded.secrets,
     };
   }
-  // Single disk read through the one compose gate (envelope + secret
-  // refs): a present-but-invalid file throws `ValidationError`, the same
-  // gate deploy and save enforce, so the UI looks broken instead of empty.
-  const { raw, doc, secrets: detectedSecrets } = loadComposeDocument(composePath);
+  const { raw, doc, secrets: detectedSecrets } = loaded;
   return {
     raw,
     services: extractServices(doc),

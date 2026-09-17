@@ -1,4 +1,4 @@
-import { writeFileSync } from "fs";
+import { writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
@@ -162,6 +162,14 @@ export async function saveCoreConfig(
 export async function deployCore() {
   const config = await loadCoreConfig();
   const composePath = getCoreComposePath();
+  // One success contract for disk + runtime: the generated compose is part
+  // of the deploy attempt. Snapshot the previous file (or its absence) so a
+  // failed `up`/Traefik attach restores it in the same catch that owns
+  // secret/`down` compensation — never leave a new template with rolled-back
+  // runtime.
+  const prev = existsSync(composePath)
+    ? readFileSync(composePath, "utf-8")
+    : null;
   writeFileSync(composePath, getCoreComposeContent(config), "utf-8");
 
   const envVars: Record<string, string> = {
@@ -171,15 +179,25 @@ export async function deployCore() {
     envVars.TUNNEL_TOKEN = config.tunnelToken;
   }
 
-  return runLoggedDeploy({
-    title: "Deploying core services",
-    action: "deploy",
-    identity: { kind: "core" },
-    failureMessage: "Deploying core services failed",
-    deploy: {
-      composePath,
-      envVars,
-      projectName: CORE_PROJECT,
-    },
-  });
+  try {
+    return await runLoggedDeploy({
+      title: "Deploying core services",
+      action: "deploy",
+      identity: { kind: "core" },
+      failureMessage: "Deploying core services failed",
+      deploy: {
+        composePath,
+        envVars,
+        projectName: CORE_PROJECT,
+      },
+    });
+  } catch (e) {
+    try {
+      if (prev === null) rmSync(composePath, { force: true });
+      else writeFileSync(composePath, prev, "utf-8");
+    } catch {
+      // best-effort restore: the deploy error is what matters
+    }
+    throw e;
+  }
 }

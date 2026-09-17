@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { isAbsolute, resolve, dirname } from "path";
 import * as v from "valibot";
 import { parse } from "yaml";
@@ -213,5 +213,25 @@ export function loadComposeDocument(composePath: string): {
 } {
   const raw = readFileSync(composePath, "utf-8");
   const { doc, secrets } = parseComposeDocument(raw, composePath);
+  return { raw, doc, secrets };
+}
+
+/**
+ * The one on-disk compose load policy: a single `existsSync` + read + parse
+ * gate. Detail passes `{ missing: "empty" }` (nothing on disk is valid empty
+ * UI state); deploy passes `{ missing: "error" }` (nothing on disk is a
+ * loud `ValidationError`). Present-but-invalid throws `ValidationError`
+ * either way. Callers are call sites, not policy owners — every new gate
+ * rule lands here.
+ */
+export function loadCompose(
+  composePath: string,
+  opts: { missing: "empty" | "error" }
+): { raw: string; doc: ComposeDocument | null; secrets: SecretDefinition[] } {
+  if (!existsSync(composePath)) {
+    if (opts.missing === "empty") return { raw: "", doc: null, secrets: [] };
+    throw new ValidationError(`Compose file is missing: ${composePath}`);
+  }
+  const { raw, doc, secrets } = loadComposeDocument(composePath);
   return { raw, doc, secrets };
 }

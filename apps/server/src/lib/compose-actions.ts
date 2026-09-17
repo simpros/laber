@@ -148,16 +148,28 @@ export async function runStackOp(
   op: LifecycleOp
 ): Promise<{ output: string }> {
   assertStackName(name);
-  const { stack, composePath } = await getStackAndRepo(name);
   const def = OPS[op];
-  const run = () =>
-    runLifecycleOp(
+  if (!def.holdsRepoLock) {
+    const { stack, composePath } = await getStackAndRepo(name);
+    return runLifecycleOp(
       op,
       def.stackIdentity(stack.id),
       { projectName: stack.name, composePath, label: stack.name }
     );
-  if (!def.holdsRepoLock) return run();
-  return withRepoLock(stack.repositoryId, run);
+  }
+  // Lock key sampled cheaply outside; identity + compose path are re-resolved
+  // *under* the lock so a sync that deletes this row between the two reads
+  // 404s instead of `down`ing an orphan project — sample + mutate share one
+  // mutex, same rule as deploy.
+  const { stack: pre } = await getStackAndRepo(name);
+  return withRepoLock(pre.repositoryId, async () => {
+    const { stack, composePath } = await getStackAndRepo(name);
+    return runLifecycleOp(
+      op,
+      def.stackIdentity(stack.id),
+      { projectName: stack.name, composePath, label: stack.name }
+    );
+  });
 }
 
 type CoreOp = "stop" | "restart";

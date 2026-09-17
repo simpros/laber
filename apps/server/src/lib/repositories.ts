@@ -15,7 +15,7 @@ import {
 import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
 import { downProject } from "./compose-cli";
-import { clearStacksForRemoval } from "./stack-presence";
+import { clearStacksForRemoval, emptyClearance } from "./stack-presence";
 import type { RemovableClearance } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
 import { runActivity } from "./logged-action";
@@ -186,7 +186,7 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
               discovered,
               // Fresh id: no rows exist yet, so nothing disappears — the
               // empty clearance names the whole removal set (none).
-              { repoId, names: [] },
+              emptyClearance(repoId),
               onOutput
             );
             return {

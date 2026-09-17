@@ -21,17 +21,24 @@ import { listContainers } from "./docker-engine";
 
 /**
  * Capability proving the fail-closed Docker probe ran for an exact removal
- * set. Only `clearStacksForRemoval` can mint it; `reconcileStacksTx`
- * requires it, so no sync path (or direct test caller) can delete rows
- * without a probe the type system saw. The probe and the commit still run
- * under `withRepoLock` — the clearance is the typed proof, the lock is the
- * timing.
+ * set. Branded so only `clearStacksForRemoval` (and `emptyClearance` for the
+ * fresh-register case) can mint it: a plain `{ repoId, names }` literal does
+ * not typecheck, so `reconcileStacksTx` cannot be called with a forged
+ * clearance that skipped Docker. The probe and the commit still run under
+ * `withRepoLock` — the clearance is the typed proof, the lock is the timing.
  */
+declare const clearanceBrand: unique symbol;
 export type RemovableClearance = {
+  readonly [clearanceBrand]: true;
   repoId: string;
   /** Stack names the probe cleared for removal. */
   names: string[];
 };
+
+/** Mint an empty clearance: fresh register removes nothing, so no probe runs. */
+export function emptyClearance(repoId: string): RemovableClearance {
+  return { repoId, names: [] } as unknown as RemovableClearance;
+}
 /** Running containers for a compose project. Throws when Docker is unreadable. */
 export async function countProjectContainers(
   projectName: string
@@ -73,5 +80,5 @@ export async function clearStacksForRemoval(
   disappearing: { name: string }[]
 ): Promise<RemovableClearance> {
   await Promise.all(disappearing.map((stack) => assertStackRemovable(stack)));
-  return { repoId, names: disappearing.map((s) => s.name) };
+  return { repoId, names: disappearing.map((s) => s.name) } as unknown as RemovableClearance;
 }
