@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { nanoid } from "nanoid";
 import { existsSync, rmSync } from "fs";
 import { db, repositories, stacks } from "@laber/db";
 import { eq } from "drizzle-orm";
@@ -94,10 +94,98 @@ export async function listRepositories() {
   return { repositories: repos, stacks: allStacks };
 }
 
+/**
+ * The one register/sync pipeline: ensure the local git tree → discover
+ * stacks → reconcile inside a transaction. Register and sync differ only in
+ * flags (fresh clone, repo-row write) and the Docker pre-check, so those
+ * arrive as arguments — the ensure/discover/tx/summarize choreography lives
+ * once. Returns the reconcile counts plus the discovered total (register
+ * reports the total; sync reports the counts).
+ */
+async function materializeRepository(options: {
+  mode: "register" | "sync";
+  repoId: string;
+  title: string;
+  action: string;
+  failureMessage: string;
+  fresh: boolean;
+  stacksPath: string;
+  remote: RemoteTree;
+  applyRepoRow: (tx: StackTx) => void;
+}): Promise<{ reconciled: ReconcileCounts; total: number }> {
+  const repoDir = getRepoDir(options.repoId);
+  const { value } = await runLoggedAction<{
+    reconciled: ReconcileCounts;
+    total: number;
+  }>({
+    title: options.title,
+    action: options.action,
+    failureMessage: options.failureMessage,
+    run: async (onOutput) => {
+      if (options.mode === "register") {
+        onOutput(
+          `Cloning ${options.remote.url} (branch: ${options.remote.branch})...\n`
+        );
+      } else {
+        onOutput(`Pulling latest changes from ${options.remote.url}...\n`);
+      }
+      await ensureRemoteTree(
+        repoDir,
+        options.remote,
+        onOutput,
+        options.fresh
+      );
+      onOutput(
+        options.mode === "register"
+          ? "Clone complete. Discovering stacks...\n"
+          : "Pull complete. Discovering stacks...\n"
+      );
+
+      const discoveredStacks = await discoverStacks(
+        repoDir,
+        options.stacksPath
+      );
+      if (options.mode === "sync") {
+        // The one removable-stack rule, shared with delete's intent: refuse
+        // to reconcile away a stack that is still deployed *or* still has
+        // running containers (covers a stale status column). Runs before the
+        // tx because the sync transaction cannot await a Docker probe; the
+        // `status === "deployed"` guard inside `reconcileStacksTx` stays as
+        // the transactional last resort against a status flip mid-sync.
+        const names = new Set(discoveredStacks.map((s) => s.name));
+        const existing = await db
+          .select()
+          .from(stacks)
+          .where(eq(stacks.repositoryId, options.repoId));
+        for (const stack of existing) {
+          if (!names.has(stack.name)) await assertStackRemovable(stack);
+        }
+      }
+      // Reconcile and the repo-row write commit together: stacks can never
+      // change while the row (insert on register, `lastSyncedAt` on sync)
+      // stays stale — and a failed register leaves no ghost repo.
+      const applied = db.transaction((tx) => {
+        options.applyRepoRow(tx);
+        const { reconciled, summary } = reconcileAndSummarizeTx(
+          tx,
+          options.repoId,
+          discoveredStacks,
+          onOutput
+        );
+        return { summary, result: { reconciled, total: discoveredStacks.length } };
+      });
+      return { output: applied.summary, value: applied.result };
+    },
+  });
+  return value;
+}
+
 export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
-  // Clone first with a pre-generated id; the DB row is only inserted
-  // after the clone succeeds, so a failed clone leaves no ghost repo.
-  const repoId = randomUUID();
+  // Clone first with a pre-generated id (the same `nanoid` generator the
+  // schema `$defaultFn` uses — one ID dialect for the table); the DB row is
+  // only inserted after the clone succeeds, so a failed clone leaves no
+  // ghost repo.
+  const repoId = nanoid();
   const repoDir = getRepoDir(repoId);
   const remote: RemoteTree = {
     url: input.url,
@@ -106,47 +194,31 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
   };
 
   try {
-    const { value: discovered } = await runLoggedAction<number>({
+    const { total } = await materializeRepository({
+      mode: "register",
+      repoId,
       title: `Cloning ${input.name}`,
       action: "clone",
       failureMessage: `Failed to clone repository ${input.name}`,
-      run: async (onOutput) => {
-        onOutput(`Cloning ${remote.url} (branch: ${remote.branch})...\n`);
-        await ensureRemoteTree(repoDir, remote, onOutput, true);
-        onOutput("Clone complete. Discovering stacks...\n");
-
-        const discoveredStacks = await discoverStacks(
-          repoDir,
-          input.stacksPath
-        );
-        // One transaction for the repo insert *and* the stack reconcile:
-        // any throw rolls the row back, so no committed repo survives
-        // without stacks (and vice versa).
-        const applied = db.transaction((tx) => {
-          tx.insert(repositories)
-            .values({
-              id: repoId,
-              name: input.name,
-              url: input.url,
-              branch: input.branch,
-              stacksPath: input.stacksPath,
-              sshPrivateKey: input.sshPrivateKey,
-              lastSyncedAt: new Date(),
-            })
-            .run();
-          const { summary } = reconcileAndSummarizeTx(
-            tx,
-            repoId,
-            discoveredStacks,
-            onOutput
-          );
-          return { summary, result: discoveredStacks.length };
-        });
-        return { output: applied.summary, value: applied.result };
+      fresh: true,
+      stacksPath: input.stacksPath,
+      remote,
+      applyRepoRow: (tx) => {
+        tx.insert(repositories)
+          .values({
+            id: repoId,
+            name: input.name,
+            url: input.url,
+            branch: input.branch,
+            stacksPath: input.stacksPath,
+            sshPrivateKey: input.sshPrivateKey,
+            lastSyncedAt: new Date(),
+          })
+          .run();
       },
     });
 
-    return { discovered };
+    return { discovered: total };
   } catch (e) {
     rmSync(repoDir, { recursive: true, force: true });
     throw e;
@@ -161,49 +233,20 @@ export async function syncRepository(id: string) {
     .limit(1);
   if (!repo) throw new NotFoundError("Repository not found");
 
-  const { value: counts } = await runLoggedAction<ReconcileCounts>({
+  const { reconciled: counts } = await materializeRepository({
+    mode: "sync",
+    repoId: repo.id,
     title: `Syncing ${repo.name}`,
     action: "sync",
     failureMessage: `Failed to sync repository ${repo.name}`,
-    run: async (onOutput) => {
-      onOutput(`Pulling latest changes from ${repo.url}...\n`);
-      await ensureRemoteTree(getRepoDir(repo.id), repo, onOutput, false);
-      onOutput("Pull complete. Discovering stacks...\n");
-
-      const discoveredStacks = await discoverStacks(
-        getRepoDir(repo.id),
-        repo.stacksPath
-      );
-      // The one removable-stack rule, shared with delete's intent: refuse to
-      // reconcile away a stack that is still deployed *or* still has running
-      // containers (covers a stale status column). Runs before the tx because
-      // the sync transaction cannot await a Docker probe; the
-      // `status === "deployed"` guard inside `reconcileStacksTx` stays as the
-      // transactional last resort against a status flip mid-sync.
-      const names = new Set(discoveredStacks.map((s) => s.name));
-      const existing = await db
-        .select()
-        .from(stacks)
-        .where(eq(stacks.repositoryId, repo.id));
-      for (const stack of existing) {
-        if (!names.has(stack.name)) await assertStackRemovable(stack);
-      }
-      // Reconcile and `lastSyncedAt` commit together: stacks can never
-      // change while the timestamp stays stale.
-      const applied = db.transaction((tx) => {
-        const { reconciled, summary } = reconcileAndSummarizeTx(
-          tx,
-          repo.id,
-          discoveredStacks,
-          onOutput
-        );
-        tx.update(repositories)
-          .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-          .where(eq(repositories.id, repo.id))
-          .run();
-        return { summary, result: reconciled };
-      });
-      return { output: applied.summary, value: applied.result };
+    fresh: false,
+    stacksPath: repo.stacksPath,
+    remote: repo,
+    applyRepoRow: (tx) => {
+      tx.update(repositories)
+        .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+        .where(eq(repositories.id, repo.id))
+        .run();
     },
   });
 

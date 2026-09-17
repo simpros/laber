@@ -3,6 +3,7 @@ import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
   runComposeCommand,
+  downProject,
 } from "./compose-cli";
 import {
   ensureNetwork,
@@ -20,7 +21,9 @@ type DeployOptions = {
   envVars: Record<string, string>;
   secretFiles?: SecretFile[];
   networkName?: string;
-  projectName?: string;
+  // Required (not optional): a failed attempt compensates via `downProject`
+  // by name, so deploy must always know the teardown identity.
+  projectName: string;
   onOutput?: (chunk: string) => void;
 };
 
@@ -70,6 +73,14 @@ function removeSecretFiles(files: SecretFile[]): void {
  * paths). `runLoggedAction` maps the throw to the contextual failure message,
  * so the message here stays short — the transcript is already in the
  * activity stream and deployment log.
+ *
+ * One atomic success contract: success means "`up -d` + Traefik attached".
+ * Any failure after this attempt wrote secrets or started containers is
+ * compensated before the throw — secrets wiped, containers brought back
+ * down via the same `downProject` teardown stop uses — so an `"error"`
+ * status never hides running containers or secret files on disk. The
+ * compensating `down` streams into the same transcript; if it also fails,
+ * the original error is what throws.
  */
 export async function deployStack(
   options: DeployOptions
@@ -79,11 +90,15 @@ export async function deployStack(
   }
 
   let envFilePath: string | undefined;
+  let secretsWritten = false;
+  let composeUp = false;
+  const secretFiles = options.secretFiles ?? [];
   try {
-    if (options.secretFiles?.length) {
+    if (secretFiles.length > 0) {
       // Secret paths are already absolute (resolved by extractSecrets
       // against the compose file); write them in exactly one place here.
-      writeSecretFiles(options.secretFiles);
+      writeSecretFiles(secretFiles);
+      secretsWritten = true;
     }
 
     const envArgs: string[] = [];
@@ -95,7 +110,7 @@ export async function deployStack(
     // Single env channel: everything the stack needs travels via --env-file.
     // (execCompose still inherits process.env, but stack vars are no longer
     // overlaid a second time, so there is only one fact to fix.)
-    // A failed deploy must not leave freshly-written secret files behind.
+    // A failed compose run must not leave freshly-written secret files behind.
     const { output: base } = await runComposeCommand(
       options.composePath,
       [...envArgs, "up", "-d"],
@@ -103,12 +118,13 @@ export async function deployStack(
       options.onOutput,
       {
         onFailure: () => {
-          if (options.secretFiles?.length) {
-            removeSecretFiles(options.secretFiles);
+          if (secretFiles.length > 0) {
+            removeSecretFiles(secretFiles);
           }
         },
       }
     );
+    composeUp = true;
 
     let output = base;
 
@@ -132,7 +148,30 @@ export async function deployStack(
       }
     }
 
+    // Success: running containers mount the secret files, so they stay.
+    secretsWritten = false;
     return { output };
+  } catch (e) {
+    // Compensate this attempt only: wipe secrets it wrote, bring down
+    // containers it started. (`onFailure` above may already have wiped the
+    // secrets on the compose-failure path; removal is idempotent.)
+    if (secretsWritten && secretFiles.length > 0) {
+      removeSecretFiles(secretFiles);
+    }
+    if (composeUp) {
+      try {
+        await downProject({
+          projectName: options.projectName,
+          composePath: options.composePath,
+          onOutput: options.onOutput,
+        });
+      } catch (downError) {
+        options.onOutput?.(
+          `Deploy cleanup (down) also failed: ${downError instanceof Error ? downError.message : "unknown error"}\n`
+        );
+      }
+    }
+    throw e;
   } finally {
     if (envFilePath) {
       try {

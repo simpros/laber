@@ -36,7 +36,11 @@ export const stacks = sqliteTable("stacks", {
   repositoryId: text("repository_id")
     .notNull()
     .references(() => repositories.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
+  // Globally unique: every route, lookup (`getStackAndRepo`), and Docker
+  // `--project-name` keys stacks by bare name, so the table enforces the
+  // invariant the API already assumes instead of silently `.limit(1)`-ing
+  // over duplicates.
+  name: text("name").notNull().unique(),
   relativePath: text("relative_path").notNull(),
   composeFile: text("compose_file")
     .notNull()

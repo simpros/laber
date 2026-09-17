@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e8fca0c6-e2eb-44c2-9a66-d792ba91c4a4",
+  "id": "4b58fa9d-f79c-4a4b-a330-b06710417577",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -1046,6 +1046,15 @@
       "name": "core_config_key_unique",
       "entityType": "uniques",
       "table": "core_config"
+    },
+    {
+      "columns": [
+        "name"
+      ],
+      "nameExplicit": false,
+      "name": "stacks_name_unique",
+      "entityType": "uniques",
+      "table": "stacks"
     },
     {
       "columns": [

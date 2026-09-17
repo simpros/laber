@@ -101,6 +101,49 @@ describe("extractSecrets", () => {
     expect(result).toHaveLength(0);
   });
 
+  it("rejects long-form service secret references", () => {
+    const compose = {
+      services: {
+        web: { secrets: [{ source: "db_password" }] },
+      },
+      secrets: {
+        db_password: { file: "./secrets/db_password.txt" },
+      },
+    };
+    // Skipping these would deploy without files the compose file intended.
+    expect(() => extractSecrets(compose, COMPOSE_PATH)).toThrow(
+      ValidationError
+    );
+  });
+
+  it("rejects non-list service secrets sections", () => {
+    const compose = {
+      services: {
+        web: { secrets: "db_password" },
+      },
+      secrets: {
+        db_password: { file: "./secrets/db_password.txt" },
+      },
+    };
+    expect(() => extractSecrets(compose, COMPOSE_PATH)).toThrow(
+      ValidationError
+    );
+  });
+
+  it("rejects references to undefined top-level secrets", () => {
+    const compose = {
+      services: {
+        web: { secrets: ["ghost"] },
+      },
+      secrets: {
+        db_password: { file: "./secrets/db_password.txt" },
+      },
+    };
+    expect(() => extractSecrets(compose, COMPOSE_PATH)).toThrow(
+      ValidationError
+    );
+  });
+
   it("handles secrets not used by any service", () => {
     const compose = {
       services: { web: {} },

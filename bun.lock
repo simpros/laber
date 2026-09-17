@@ -33,6 +33,7 @@
         "dockerode": "^4.0.9",
         "drizzle-orm": "1.0.0-beta.16-ea816b6",
         "elysia": "^1.4.0",
+        "nanoid": "^5.1.6",
         "simple-git": "^3.32.3",
         "valibot": "^1.2.0",
         "yaml": "^2.8.2",

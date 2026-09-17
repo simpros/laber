@@ -53,7 +53,7 @@ CREATE TABLE `stack_secrets` (
 CREATE TABLE `stacks` (
 	`id` text PRIMARY KEY,
 	`repository_id` text NOT NULL,
-	`name` text NOT NULL,
+	`name` text NOT NULL UNIQUE,
 	`relative_path` text NOT NULL,
 	`compose_file` text DEFAULT 'docker-compose.yaml' NOT NULL,
 	`status` text DEFAULT 'discovered' NOT NULL,

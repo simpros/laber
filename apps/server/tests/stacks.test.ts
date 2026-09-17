@@ -367,6 +367,11 @@ describe("POST /api/stacks/:name/deploy", () => {
     dockerStub.connectTraefikToNetwork = async () => {
       throw new Error("network traefik-net not found");
     };
+    const downCalls: string[] = [];
+    dockerStub.downProject = async (options) => {
+      downCalls.push(options.projectName);
+      return { output: "down\n" };
+    };
 
     const res = await app.handle(
       jsonReq("/api/stacks/traefik-deploy/deploy", "POST", {}, cookie)
@@ -374,6 +379,10 @@ describe("POST /api/stacks/:name/deploy", () => {
     // Attach is part of the success contract: `up` succeeding while ingress
     // is broken must not report success or mark the stack deployed.
     expect(res.status).toBe(500);
+    // Compensation: containers started by this attempt come back down via
+    // the same `downProject` teardown stop uses — no running containers
+    // behind an `"error"` status.
+    expect(downCalls).toEqual(["traefik-deploy"]);
 
     const [updated] = await db
       .select()
@@ -433,6 +442,81 @@ describe("POST /api/stacks/:name/deploy", () => {
 
     const secretPath = join(composePath, "..", "mysecret.txt");
     expect(existsSync(secretPath)).toBe(false);
+  });
+
+  it("wipes secrets and brings the project down when Traefik attach fails", async () => {
+    const NETWORK_SECRET_COMPOSE = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - mysecret",
+      "    networks:",
+      "      - frontend",
+      "secrets:",
+      "  mysecret:",
+      "    file: ./mysecret.txt",
+      "networks:",
+      "  frontend:",
+      "    name: traefik-net",
+      "    external: true",
+      "",
+    ].join("\n");
+    const { composePath } = await seedStack(
+      "traefik-secret-deploy",
+      NETWORK_SECRET_COMPOSE
+    );
+    const [row] = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.name, "traefik-secret-deploy"));
+    await db.insert(stackSecrets).values({
+      stackId: row.id,
+      name: "mysecret",
+      value: "s3cr3t",
+    });
+
+    dockerStub.runComposeCommand = async () => ({ output: "up\n" });
+    dockerStub.connectTraefikToNetwork = async () => {
+      throw new Error("network traefik-net not found");
+    };
+    const downCalls: string[] = [];
+    dockerStub.downProject = async (options) => {
+      downCalls.push(options.projectName);
+      return { output: "down\n" };
+    };
+
+    const res = await app.handle(
+      jsonReq(
+        "/api/stacks/traefik-secret-deploy/deploy",
+        "POST",
+        {},
+        cookie
+      )
+    );
+    expect(res.status).toBe(500);
+    // Post-`up` failure: `onFailure` never ran, so the catch compensation
+    // must wipe the secrets *and* tear the project down.
+    expect(existsSync(join(composePath, "..", "mysecret.txt"))).toBe(false);
+    expect(downCalls).toEqual(["traefik-secret-deploy"]);
+  });
+
+  it("rejects a duplicate stack name", async () => {
+    const { repo } = await seedStack("dupe-name", BASIC_COMPOSE);
+    // Stack identity is the global name (routes, lookups, Docker project
+    // keys), so the table enforces uniqueness instead of `.limit(1)`-ing
+    // over duplicates.
+    expect(() =>
+      db
+        .insert(stacks)
+        .values({
+          repositoryId: repo.id,
+          name: "dupe-name",
+          relativePath: join("stacks", "other"),
+          composeFile: "docker-compose.yaml",
+        })
+        .run()
+    ).toThrow();
   });
 });
 

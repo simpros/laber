@@ -250,15 +250,40 @@ export function extractSecrets(
   const serviceMap = new Map<string, string[]>();
   for (const [svcName, svc] of Object.entries(doc.services ?? {})) {
     const refs = svc.secrets;
-    // Service `secrets:` entries are names here; long-form objects have no
-    // file to resolve, so they are skipped instead of crashing the deploy.
-    if (!Array.isArray(refs)) continue;
+    if (refs === undefined) continue;
+    // Only short-syntax names are supported: a long-form object (or any
+    // non-list) has no resolvable file, and silently skipping it would deploy
+    // without files the compose file intended. Fail loud instead.
+    if (!Array.isArray(refs)) {
+      throw new ValidationError(
+        `Invalid compose file: service "${svcName}" has a non-list "secrets" section (only short-syntax secret names are supported)`
+      );
+    }
     for (const ref of refs) {
-      if (typeof ref !== "string") continue;
+      if (typeof ref !== "string") {
+        throw new ValidationError(
+          `Invalid compose file: service "${svcName}" uses long-form secret syntax (only short-syntax secret names are supported)`
+        );
+      }
       const list = serviceMap.get(ref) ?? [];
       list.push(svcName);
       serviceMap.set(ref, list);
     }
+  }
+
+  if (doc.secrets) {
+    for (const [ref, svcNames] of serviceMap) {
+      if (!(ref in doc.secrets)) {
+        throw new ValidationError(
+          `Invalid compose file: service "${svcNames.join(", ")}" refers to undefined secret "${ref}"`
+        );
+      }
+    }
+  } else if (serviceMap.size > 0) {
+    const [ref, svcNames] = [...serviceMap.entries()][0];
+    throw new ValidationError(
+      `Invalid compose file: service "${svcNames.join(", ")}" refers to undefined secret "${ref}"`
+    );
   }
 
   const out: SecretDefinition[] = [];

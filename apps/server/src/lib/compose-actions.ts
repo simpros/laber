@@ -103,17 +103,22 @@ const STACK_OPS: Record<StackOp, StackOpDef> = {
  * against an already-resolved identity + compose path. `runStackOp` (after
  * `getStackAndRepo`) and `stopStackRow` (after `getComposePath`) share it,
  * so the status machine, activity title, and failure phrasing live once.
+ * Whether the run may touch `stacks.status` is an explicit argument — never
+ * a spread-override of the table row — so readers can see at the call site
+ * if status is part of the op or deliberately skipped.
  */
 function executeStackOp(
   def: StackOpDef,
   target: { id: string; name: string },
-  composePath: string
+  composePath: string,
+  opts?: { skipStatusCommit?: boolean }
 ): Promise<{ output: string }> {
   return runLoggedAction({
     title: def.title(target.name),
     action: def.action,
     stackId: target.id,
-    statusOnSuccess: def.statusOnSuccess,
+    statusOnSuccess:
+      opts?.skipStatusCommit === true ? undefined : def.statusOnSuccess,
     failureMessage: def.failureMessage(target.name),
     run: async (onOutput) =>
       def.run({ stackName: target.name, composePath }, onOutput),
@@ -161,11 +166,9 @@ export function stopStackRow(stack: StackRowLike): Promise<{
     stack.relativePath,
     stack.composeFile
   );
-  return executeStackOp(
-    { ...STACK_OPS.stop, statusOnSuccess: undefined },
-    stack,
-    composePath
-  );
+  return executeStackOp(STACK_OPS.stop, stack, composePath, {
+    skipStatusCommit: true,
+  });
 }
 
 type CoreOp = "stop" | "restart";
