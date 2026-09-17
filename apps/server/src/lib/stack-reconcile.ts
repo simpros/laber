@@ -1,4 +1,7 @@
-import { deployedRemovalConflict } from "./stack-presence";
+import {
+  deployedRemovalConflict,
+  deployedRemovedNames,
+} from "./stack-presence";
 import { ConflictError } from "./errors";
 import { stacks } from "@laber/db";
 import type { StackTx } from "./db-tx";
@@ -88,12 +91,11 @@ export function reconcileStacksTx(
   // Removal policy: refuse to silently orphan a deployed stack; otherwise
   // delete the stale rows (env/secrets cascade, logs detach) in the same
   // transaction as the adds/updates so sync never leaves zombies behind.
-  // This status guard is the transactional last resort for the shared
-  // deployed-removal rule (see `deployedRemovalConflict`); the async
-  // pre-check covers the Docker-aware half before the tx.
-  const deployedRemoved = removed
-    .filter((s) => s.status === "deployed")
-    .map((s) => s.name);
+  // The status predicate lives in `stack-presence` (`deployedRemovedNames`):
+  // this is the transactional last resort for the shared deployed-removal
+  // rule; the async pre-check covers the Docker-aware half before the tx,
+  // and `withRepoLock` serializes probe→commit per repo.
+  const deployedRemoved = deployedRemovedNames(removed);
   if (deployedRemoved.length > 0) {
     throw deployedRemovalConflict(deployedRemoved);
   }

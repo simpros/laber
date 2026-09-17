@@ -8,61 +8,91 @@ import { ActionFailedError } from "./errors";
  * only the success transition for actions that own runtime intent
  * (deploy/stop). A tracked failure of those same actions moves the stack to
  * `"error"` automatically. Actions that do not change desired runtime
- * (pull/restart) pass `stackId` (log attribution) but no `statusOnSuccess`
- * and never touch `stacks.status` — last-action outcome already lives in
- * `deployment_logs` / activity.
+ * (pull/restart) carry the stack identity (log attribution) but no
+ * `statusOnSuccess` and never touch `stacks.status` — last-action outcome
+ * already lives in `deployment_logs` / activity.
  */
 export type StackStatusOnSuccess = "deployed" | "stopped";
 
+/**
+ * Discriminated lifecycle identity: exactly one variant is legal, so
+ * attribution (`deployment_logs.stackId` / `isCore`) and the status
+ * transition cannot drift into double/empty combinations by construction.
+ * Stack ops always carry `stackId`; `statusOnSuccess` is present only for
+ * actions that own runtime intent (deploy/stop). Core ops carry no stack
+ * row. Repo-level ops (clone/sync) carry neither.
+ */
+export type ActionIdentity =
+  | { kind: "stack"; stackId: string; statusOnSuccess?: StackStatusOnSuccess }
+  | { kind: "core" }
+  | { kind: "none" };
+
 async function recordActionOutcome(options: {
   activityId: string;
-  stackId?: string;
-  isCore?: boolean;
+  identity: ActionIdentity;
   action: string;
-  statusOnSuccess?: StackStatusOnSuccess;
   result: { success: boolean; output: string };
 }): Promise<void> {
   const outcome = options.result.success ? "success" : "error";
 
-  // One atomic boundary for durable state: the deployment log and the
-  // status transition commit together, so sync/delete gates never read a
-  // log without its status (or vice versa). The in-memory activity finishes
-  // only after the tx commits — in `finally`, so even a DB failure cannot
-  // leave it stuck on "running".
+  // One durable boundary for the DB half: deployment log + status commit
+  // together. The in-memory activity finishes only after the tx commits —
+  // as `outcome` on success, as `"error"` when the tx itself throws (a
+  // persist failure after a successful run must never read as success).
+  // No `finally` here: the caller decides whether a throw is an
+  // operational failure (record once) or a persist failure (already
+  // finished — do not re-enter the failure path).
   try {
     db.transaction((tx) => {
+      const stackId =
+        options.identity.kind === "stack"
+          ? options.identity.stackId
+          : undefined;
       tx.insert(deploymentLogs)
         .values({
-          stackId: options.stackId,
-          isCore: options.isCore ?? false,
+          stackId,
+          isCore: options.identity.kind === "core",
           action: options.action,
           status: outcome,
           output: options.result.output,
         })
         .run();
 
-      // The one status state machine: only actions that own runtime intent
-      // (deploy/stop, the ones passing `statusOnSuccess`) move the column.
-      // Success applies the caller's transition; operational failure of those
-      // same actions moves a tracked stack to "error" so sync/delete gates stop
-      // trusting a stale "deployed" after a failed redeploy. Pull/restart pass
-      // no transition and leave the column alone on success *and* failure — a
-      // failed pull must not clear the "deployed" marker while containers keep
-      // running, or sync would reconcile the still-live stack away.
-      if (options.stackId && options.statusOnSuccess !== undefined) {
+      // The one status state machine: only stack actions that own runtime
+      // intent (deploy/stop, the ones carrying `statusOnSuccess`) move the
+      // column. Success applies the caller's transition; operational failure
+      // of those same actions moves a tracked stack to "error" so sync/delete
+      // gates stop trusting a stale "deployed" after a failed redeploy.
+      // Pull/restart carry no transition and leave the column alone on
+      // success *and* failure — a failed pull must not clear the "deployed"
+      // marker while containers keep running, or sync would reconcile the
+      // still-live stack away.
+      if (
+        options.identity.kind === "stack" &&
+        options.identity.statusOnSuccess !== undefined
+      ) {
         const next = options.result.success
-          ? options.statusOnSuccess
+          ? options.identity.statusOnSuccess
           : "error";
-        const stackId = options.stackId;
+        const stackId = options.identity.stackId;
         tx.update(stacks)
           .set({ status: next, updatedAt: new Date() })
           .where(eq(stacks.id, stackId))
           .run();
       }
     });
-  } finally {
-    finishActivity(options.activityId, outcome);
+  } catch (persistError) {
+    // Durable write failed: finish as error so nothing sticks on "running",
+    // then rethrow for the caller to propagate WITHOUT recording a second
+    // operational outcome.
+    try {
+      finishActivity(options.activityId, "error");
+    } catch {
+      // best-effort: the persist error is what matters
+    }
+    throw persistError;
   }
+  finishActivity(options.activityId, outcome);
 }
 
 export type LoggedActionRun<T> = (
@@ -76,9 +106,7 @@ export type LoggedActionRunVoid = (
 type LoggedActionBase = {
   title: string;
   action: string;
-  stackId?: string;
-  isCore?: boolean;
-  statusOnSuccess?: StackStatusOnSuccess;
+  identity: ActionIdentity;
   failureMessage?: string;
 };
 
@@ -95,17 +123,23 @@ type LoggedActionBase = {
  * A throwing `run` never leaves the activity stuck on "running": the
  * streamed transcript plus the error line is persisted to the deployment
  * log, the stack (when the action owns runtime intent — see
- * `statusOnSuccess`) moves to `"error"`, then operational failures
- * (`ActionFailedError`) are mapped to the contextual `failureMessage`
- * while domain errors keep their kind at the edge. The full transcript
- * stays in the deployment log and activity stream; the wire message stays
- * short. Log insert and status update commit in one transaction; the
- * in-memory activity finishes only after that tx (so a crash between them
- * cannot produce "finished activity / missing log / stale status").
+ * `statusOnSuccess` on the stack identity) moves to `"error"`, then
+ * operational failures (`ActionFailedError`) are mapped to the contextual
+ * `failureMessage` while domain errors keep their kind at the edge. The full
+ * transcript stays in the deployment log and activity stream; the wire
+ * message stays short.
+ *
+ * Run failure and persist failure are separate paths: a persist throw after
+ * a successful `run` propagates directly (activity already finished as
+ * error) instead of re-entering the operational-failure recording below —
+ * so clients never see success→error finish flips or a second log attempt
+ * for one action.
  */
-export async function runLoggedAction(options: LoggedActionBase & {
-  run: LoggedActionRunVoid;
-}): Promise<{ output: string }>;
+export async function runLoggedAction(
+  options: LoggedActionBase & {
+    run: LoggedActionRunVoid;
+  }
+): Promise<{ output: string }>;
 export async function runLoggedAction<T>(
   options: LoggedActionBase & { run: LoggedActionRun<T> }
 ): Promise<{ output: string; value: T }>;
@@ -129,35 +163,46 @@ export async function runLoggedAction<T>(
     appendOutput(activity.id, chunk);
   };
 
+  let runOutput: string;
+  let runValue: T | undefined;
   try {
-    const { output, value } = await options.run(onOutput);
-    await recordActionOutcome({
-      activityId: activity.id,
-      stackId: options.stackId,
-      isCore: options.isCore,
-      action: options.action,
-      statusOnSuccess: options.statusOnSuccess,
-      result: { success: true, output },
-    });
-    return { output, value };
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : "Unknown error";
+    const result = await options.run(onOutput);
+    runOutput = result.output;
+    runValue = result.value;
+  } catch (runError) {
+    const detail =
+      runError instanceof Error ? runError.message : "Unknown error";
     transcript += `\n${detail}\n`;
     appendOutput(activity.id, `\n${detail}\n`);
-    await recordActionOutcome({
-      activityId: activity.id,
-      stackId: options.stackId,
-      isCore: options.isCore,
-      action: options.action,
-      // Forwarded so deploy/stop failures still move the stack to "error";
-      // pull/restart pass `stackId` but no transition and leave the column
-      // alone (see above).
-      statusOnSuccess: options.statusOnSuccess,
-      result: { success: false, output: transcript },
-    });
-    if (e instanceof ActionFailedError) {
+    try {
+      await recordActionOutcome({
+        activityId: activity.id,
+        identity: options.identity,
+        action: options.action,
+        result: { success: false, output: transcript },
+      });
+    } catch (persistError) {
+      // Run AND persist failed: the activity is already finished as error
+      // inside `recordActionOutcome`. Surface the operational cause (the
+      // persist failure only means the durable row is missing) unless the
+      // persist throw is itself a domain signal worth keeping — prefer the
+      // original error so operators see why the action failed.
+      console.error("Failed to persist action outcome:", persistError);
+    }
+    if (runError instanceof ActionFailedError) {
       throw new ActionFailedError(failureMessage);
     }
-    throw e;
+    throw runError;
   }
+
+  // `run` succeeded: persist the success outcome. A throw here is a persist
+  // failure, not an operational failure — the activity is already finished
+  // as error, so propagate without recording a second (failure) outcome.
+  await recordActionOutcome({
+    activityId: activity.id,
+    identity: options.identity,
+    action: options.action,
+    result: { success: true, output: runOutput! },
+  });
+  return { output: runOutput!, value: runValue };
 }

@@ -16,6 +16,7 @@ import type { StackTx } from "./db-tx";
 import { getRepoDir } from "./config";
 import { stopStackRow } from "./compose-actions";
 import { assertStackRemovable } from "./stack-presence";
+import { withRepoLock } from "./repo-lock";
 import { runLoggedAction } from "./logged-action";
 import { NotFoundError, ActionFailedError } from "./errors";
 
@@ -123,6 +124,7 @@ async function materializeRepository(options: {
   }>({
     title: options.title,
     action: options.action,
+    identity: { kind: "none" },
     failureMessage: options.failureMessage,
     run: async (onOutput) => {
       onOutput(options.progressStart);
@@ -138,19 +140,29 @@ async function materializeRepository(options: {
         repoDir,
         options.stacksPath
       );
-      await options.preReconcile?.(discoveredStacks);
-      // Reconcile and the repo-row write commit together: stacks can never
-      // change while the row (insert on register, `lastSyncedAt` on sync)
-      // stays stale — and a failed register leaves no ghost repo.
-      const applied = db.transaction((tx) => {
-        options.applyRepoRow(tx);
-        const { reconciled, summary } = reconcileAndSummarizeTx(
-          tx,
-          options.repoId,
-          discoveredStacks,
-          onOutput
-        );
-        return { summary, result: { reconciled, total: discoveredStacks.length } };
+      // Serialized per repo: the Docker-aware removable probe and the
+      // reconcile transaction commit under one lock, so concurrent syncs of
+      // the same repo cannot interleave probe and row deletes. (Out-of-band
+      // daemon changes remain best-effort — fail-closed probe + tx status
+      // guard still apply there.)
+      const applied = await withRepoLock(options.repoId, async () => {
+        await options.preReconcile?.(discoveredStacks);
+        // Reconcile and the repo-row write commit together: stacks can never
+        // change while the row (insert on register, `lastSyncedAt` on sync)
+        // stays stale — and a failed register leaves no ghost repo.
+        return db.transaction((tx) => {
+          options.applyRepoRow(tx);
+          const { reconciled, summary } = reconcileAndSummarizeTx(
+            tx,
+            options.repoId,
+            discoveredStacks,
+            onOutput
+          );
+          return {
+            summary,
+            result: { reconciled, total: discoveredStacks.length },
+          };
+        });
       });
       return { output: applied.summary, value: applied.result };
     },

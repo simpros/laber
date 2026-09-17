@@ -2,10 +2,16 @@ import { ActionFailedError, ConflictError } from "./errors";
 import { listContainers } from "./docker-engine";
 
 /**
- * Stack presence: the one removable-stack rule, defined once. Sync pre-checks
- * it Docker-aware before the transaction; the status half doubles as the
- * transactional last resort inside `reconcileStacksTx` (the probe cannot run
- * inside a sync tx). Delete needs no pre-gate — hard `down` is its gate.
+ * Stack presence: the one removable-stack authority. Removal has two halves
+ * that cannot share code directly — an async Docker-aware pre-check (runs
+ * before the sync transaction, fail-closed) and a synchronous status
+ * last-resort (runs inside `reconcileStacksTx`, where Docker cannot be
+ * awaited). Both halves read the same predicate and the same conflict
+ * constructor here, so a policy change edits one module. `stacks.status`
+ * stays a UI/history column; only this module decides what "removable"
+ * means, and sync serializes probe→commit per repo (`withRepoLock`) so the
+ * window between the halves stays closed for concurrent syncs. Delete needs
+ * no pre-gate — hard `down` is its gate.
  */
 
 /** Running containers for a compose project. Throws when Docker is unreadable. */
@@ -26,6 +32,13 @@ export function deployedRemovalConflict(names: string[]): ConflictError {
   );
 }
 
+/** Pure status half: names among `removed` whose stored status is deployed. */
+export function deployedRemovedNames(
+  removed: Array<{ name: string; status: string }>
+): string[] {
+  return removed.filter((s) => s.status === "deployed").map((s) => s.name);
+}
+
 /**
  * Hard and fail-closed: an unreadable daemon refuses the removal instead of
  * reporting "no containers". This is a commit gate, never a soft probe.
@@ -34,8 +47,9 @@ export async function assertStackRemovable(stack: {
   name: string;
   status: string;
 }): Promise<void> {
-  if (stack.status === "deployed") {
-    throw deployedRemovalConflict([stack.name]);
+  const deployed = deployedRemovedNames([stack]);
+  if (deployed.length > 0) {
+    throw deployedRemovalConflict(deployed);
   }
   let running: number;
   try {

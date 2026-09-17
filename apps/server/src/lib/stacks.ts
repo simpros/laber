@@ -10,7 +10,8 @@ import {
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
 import { listContainersSoft } from "./docker-engine";
-import { loggedDeployAction } from "./compose-actions";
+import { runLoggedAction } from "./logged-action";
+import { deployStack } from "./deploy";
 import {
   loadComposeDocument,
   extractServices,
@@ -189,18 +190,21 @@ export async function deployStackByName(name: string) {
     }));
   }
 
-  return loggedDeployAction({
+  return runLoggedAction({
     title: `Deploying ${name}`,
     action: "deploy",
-    stackId: stack.id,
-    statusOnSuccess: "deployed",
+    identity: { kind: "stack", stackId: stack.id, statusOnSuccess: "deployed" },
     failureMessage: `Deploying ${name} failed`,
-    deploy: {
-      composePath,
-      envVars: envMap,
-      secretFiles,
-      networkName,
-      projectName: stack.name,
+    run: async (onOutput) => {
+      const result = await deployStack({
+        composePath,
+        envVars: envMap,
+        secretFiles,
+        networkName,
+        projectName: stack.name,
+        onOutput,
+      });
+      return { output: result.output };
     },
   });
 }

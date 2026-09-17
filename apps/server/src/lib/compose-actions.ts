@@ -1,8 +1,8 @@
-import { deployStack, type DeployOptions } from "./deploy";
 import { runComposeCommand } from "./compose-cli";
 import { downProject } from "./compose-cli";
 import {
   runLoggedAction,
+  type ActionIdentity,
   type StackStatusOnSuccess,
 } from "./logged-action";
 import {
@@ -11,42 +11,6 @@ import {
   assertStackName,
 } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
-
-type LifecycleMeta = {
-  title: string;
-  action: string;
-  stackId?: string;
-  isCore?: boolean;
-  statusOnSuccess?: StackStatusOnSuccess;
-  failureMessage: string;
-};
-
-/**
- * The one logged-deploy lifecycle: stack and core deploy differ only in how
- * they build `DeployOptions` (env/secret/network wiring), not in how the
- * run is logged. Callers build the options, this owns the logging.
- */
-export function loggedDeployAction(
-  options: LifecycleMeta & {
-    deploy: Omit<DeployOptions, "onOutput">;
-  }
-): Promise<{ output: string }> {
-  return runLoggedAction({
-    title: options.title,
-    action: options.action,
-    stackId: options.stackId,
-    isCore: options.isCore,
-    statusOnSuccess: options.statusOnSuccess,
-    failureMessage: options.failureMessage,
-    run: async (onOutput) => {
-      const result = await deployStack({
-        ...options.deploy,
-        onOutput,
-      });
-      return { output: result.output };
-    },
-  });
-}
 
 type LifecycleOp = "stop" | "restart" | "pull";
 
@@ -100,26 +64,44 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
 };
 
-type LifecycleTarget = {
-  projectName: string;
-  composePath: string;
-  /** Human label for activity titles / failure messages. */
-  label: string;
-  /** Stack identity: set for stack ops (log attribution + optional status). */
-  stackId?: string;
-  /** Core identity: set for core ops instead of `stackId`. */
-  isCore?: boolean;
-  /** Delete-path teardown records activity/logs but never touches the status
-   * column (rows are deleted right after, or the down failed). */
-  skipStatusCommit?: boolean;
-};
+/**
+ * Discriminated lifecycle target: a stack op carries its row identity plus
+ * an explicit status decision; a core op carries no stack row by
+ * construction. Delete-path teardown passes `statusOnSuccess: undefined`
+ * explicitly (rows disappear right after) instead of a boolean that negates
+ * the table row.
+ */
+export type LifecycleTarget =
+  | {
+      kind: "stack";
+      stackId: string;
+      projectName: string;
+      composePath: string;
+      label: string;
+      statusOnSuccess?: StackStatusOnSuccess;
+    }
+  | {
+      kind: "core";
+      projectName: string;
+      composePath: string;
+      label: string;
+    };
+
+function identityForTarget(target: LifecycleTarget): ActionIdentity {
+  return target.kind === "stack"
+    ? {
+        kind: "stack",
+        stackId: target.stackId,
+        statusOnSuccess: target.statusOnSuccess,
+      }
+    : { kind: "core" };
+}
 
 /**
  * The one logged-lifecycle shell for every stoppable project: stack ops
  * (`runStackOp`, `stopStackRow`) and core ops (`runCoreOp`) only resolve
  * identity + compose path, then run the table def through here — so the
- * status machine, activity title, and failure phrasing live once. No
- * aliases, no second executor.
+ * status machine, activity title, and failure phrasing live once.
  */
 function runLifecycleOp(
   op: LifecycleOp,
@@ -129,10 +111,7 @@ function runLifecycleOp(
   return runLoggedAction({
     title: def.title(target.label),
     action: def.action,
-    stackId: target.stackId,
-    isCore: target.isCore,
-    statusOnSuccess:
-      target.skipStatusCommit === true ? undefined : def.statusOnSuccess,
+    identity: identityForTarget(target),
     failureMessage: def.failureMessage(target.label),
     run: async (onOutput) =>
       def.run(
@@ -144,7 +123,7 @@ function runLifecycleOp(
 
 /**
  * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
- * near-identical wrappers. Restart and pull carry `stackId` but no
+ * near-identical wrappers. Restart and pull carry the stack identity but no
  * `statusOnSuccess`, so they never touch `stacks.status` (they do not
  * change desired runtime).
  */
@@ -155,10 +134,12 @@ export async function runStackOp(
   assertStackName(name);
   const { stack, composePath } = await getStackAndRepo(name);
   return runLifecycleOp(op, {
+    kind: "stack",
+    stackId: stack.id,
     projectName: stack.name,
     composePath,
     label: stack.name,
-    stackId: stack.id,
+    statusOnSuccess: OPS[op].statusOnSuccess,
   });
 }
 
@@ -173,11 +154,12 @@ export type StackRowLike = {
 /**
  * Stop for an already-loaded stack row: the same logged `downProject` stop
  * as `runStackOp(name, "stop")` via the shared `runLifecycleOp` shell, so no
- * second lookup per stack — but without `statusOnSuccess`. Repo delete
- * removes the rows in one transaction after every down succeeds, so
- * per-stack status commits would be writes to rows about to disappear (and
- * lies on partial failure). Activity + deployment-log history is still
- * recorded per stack; only the `stacks.status` column stays untouched.
+ * second lookup per stack — but with `statusOnSuccess: undefined` passed
+ * explicitly. Repo delete removes the rows in one transaction after every
+ * down succeeds, so per-stop status flips would be writes to rows about to
+ * disappear (and lies on partial failure). Activity + deployment-log history
+ * is still recorded per stack; only the `stacks.status` column stays
+ * untouched.
  */
 export function stopStackRow(stack: StackRowLike): Promise<{
   output: string;
@@ -188,11 +170,12 @@ export function stopStackRow(stack: StackRowLike): Promise<{
     stack.composeFile
   );
   return runLifecycleOp("stop", {
+    kind: "stack",
+    stackId: stack.id,
     projectName: stack.name,
     composePath,
     label: stack.name,
-    stackId: stack.id,
-    skipStatusCommit: true,
+    statusOnSuccess: undefined,
   });
 }
 
@@ -200,14 +183,14 @@ type CoreOp = "stop" | "restart";
 
 /** Table-driven core lifecycle: `runCoreOp("stop")`. Core shares the one
  * `OPS` table with stacks (same `downProject` stop, same argv restart) —
- * only the identity (project, label, `isCore`) differs, resolved here so
- * routes never own the compose path. Core has no stack row, so no status
- * commit by construction (`stackId` unset). */
+ * only the identity (project, label) differs, resolved here so routes never
+ * own the compose path. Core has no stack row, so no status commit by
+ * construction. */
 export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
   return runLifecycleOp(op, {
+    kind: "core",
     projectName: CORE_PROJECT,
     composePath: getCoreComposePath(),
     label: "core services",
-    isCore: true,
   });
 }
