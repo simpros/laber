@@ -126,6 +126,59 @@ function reconcileAndSummarizeTx(
   return { reconciled, summary };
 }
 
+/**
+ * One lock → discover → clearance → tx + summary door for register and sync.
+ * Both paths reconciled the same way but kept twin `withRepoLock` bodies;
+ * the next race fix would land in one and miss the other. Callers do remote
+ * I/O (clone/pull) outside the lock, then hand over: this helper re-checks
+ * repo liveness (sync), re-samples discovery under the lock, mints clearance
+ * for the disappearing set (sync), and commits the repo-row write +
+ * reconcile in one transaction.
+ */
+async function applyDiscoveredRepo(opts: {
+  repoId: string;
+  repoDir: string;
+  stacksPath: string;
+  onOutput: (chunk: string) => void;
+  expectRepo: boolean;
+  clearanceFor?: (
+    disappearing: (typeof stacks.$inferSelect)[]
+  ) => Promise<RemovableClearance | undefined>;
+  commitRepoRow: (tx: StackTx) => void;
+}): Promise<{
+  summary: string;
+  reconciled: ReconcileCounts;
+  total: number;
+}> {
+  return withRepoLock(opts.repoId, async () => {
+    // Inside the lock: confirm the repo survived a concurrent delete
+    // (see `requireLiveRepo`) before probing and reconciling.
+    if (opts.expectRepo) await requireLiveRepo(opts.repoId);
+    // Fresh discovery under the lock: the reconcile input, the probe
+    // set, and the tx commit all read the same tree.
+    const discovered = await discoverStacks(opts.repoDir, opts.stacksPath);
+    const names = new Set(discovered.map((s) => s.name));
+    const existing = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, opts.repoId));
+    const clearance = await opts.clearanceFor?.(
+      existing.filter((stack) => !names.has(stack.name))
+    );
+    return db.transaction((tx) => {
+      opts.commitRepoRow(tx);
+      const { reconciled, summary } = reconcileAndSummarizeTx(
+        tx,
+        opts.repoId,
+        discovered,
+        clearance,
+        opts.onOutput
+      );
+      return { summary, reconciled, total: discovered.length };
+    });
+  });
+}
+
 export async function listRepositories() {
   const [repos, allStacks] = await Promise.all([
     db.select().from(repositories),
@@ -165,9 +218,14 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
 
         // Fresh id: no contention possible, but the insert + reconcile
         // still commit together so a failed register leaves no ghost repo.
-        const applied = await withRepoLock(repoId, async () => {
-          const discovered = await discoverStacks(repoDir, input.stacksPath);
-          return db.transaction((tx) => {
+        // No clearance: a fresh id owns no rows, so nothing disappears.
+        const applied = await applyDiscoveredRepo({
+          repoId,
+          repoDir,
+          stacksPath: input.stacksPath,
+          onOutput,
+          expectRepo: false,
+          commitRepoRow: (tx) => {
             tx.insert(repositories)
               .values({
                 id: repoId,
@@ -179,22 +237,12 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
                 lastSyncedAt: new Date(),
               })
               .run();
-            const { reconciled, summary } = reconcileAndSummarizeTx(
-              tx,
-              repoId,
-              discovered,
-              // Fresh id: no rows exist yet, so nothing disappears — no
-              // clearance needed (reconcile only requires one for removals).
-              undefined,
-              onOutput
-            );
-            return {
-              summary,
-              result: { reconciled, total: discovered.length },
-            };
-          });
+          },
         });
-        return { output: applied.summary, value: applied.result };
+        return {
+          output: applied.summary,
+          value: { reconciled: applied.reconciled, total: applied.total },
+        };
       },
     });
 
@@ -232,48 +280,32 @@ export async function syncRepository(id: string) {
       // delete cannot interleave a teardown or a row delete between the
       // probe and the commit. (Out-of-band daemon changes remain
       // best-effort — fail-closed probe still applies there.)
-      const applied = await withRepoLock(repo.id, async () => {
-        // Inside the lock: confirm the repo survived a concurrent delete
-        // (see `requireLiveRepo`) before probing and reconciling.
-        await requireLiveRepo(repo.id);
-        // Fresh discovery under the lock: the reconcile input, the probe
-        // set, and the tx commit all read the same tree.
-        const discovered = await discoverStacks(repoDir, repo.stacksPath);
-        // Refuse to reconcile away a stack that still has running
-        // containers (the fail-closed Docker probe — `stacks.status` is
-        // UI/history and not consulted). Runs before the tx because the
-        // sync transaction cannot await a Docker probe. The probe mints a
-        // clearance for exactly the disappearing set, and reconcile
-        // requires it — no path can delete rows without a probe the type
-        // system saw. Independent probes run in parallel under the same
-        // fail-closed rule.
-        const names = new Set(discovered.map((s) => s.name));
-        const existing = await db
-          .select()
-          .from(stacks)
-          .where(eq(stacks.repositoryId, repo.id));
-        const clearance = await RemovableClearance.clear(
-          repo.id,
-          existing.filter((stack) => !names.has(stack.name))
-        );
-        // Reconcile and the `lastSyncedAt` write commit together: stacks
-        // can never change while the row stays stale.
-        return db.transaction((tx) => {
+      // Reconcile and the `lastSyncedAt` write commit together: stacks
+      // can never change while the row stays stale.
+      const applied = await applyDiscoveredRepo({
+        repoId: repo.id,
+        repoDir,
+        stacksPath: repo.stacksPath,
+        onOutput,
+        expectRepo: true,
+        clearanceFor: (disappearing) =>
+          // Refuse to reconcile away a stack that still has running
+          // containers (the fail-closed Docker probe — `stacks.status` is
+          // UI/history and not consulted). Runs before the tx because the
+          // sync transaction cannot await a Docker probe. The probe mints a
+          // clearance for exactly the disappearing set, and reconcile
+          // requires it — no path can delete rows without a probe the type
+          // system saw. Independent probes run in parallel under the same
+          // fail-closed rule.
+          RemovableClearance.clear(repo.id, disappearing),
+        commitRepoRow: (tx) => {
           tx.update(repositories)
             .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
             .where(eq(repositories.id, repo.id))
             .run();
-          const { reconciled, summary } = reconcileAndSummarizeTx(
-            tx,
-            repo.id,
-            discovered,
-            clearance,
-            onOutput
-          );
-          return { summary, result: { reconciled } };
-        });
+        },
       });
-      return { output: applied.summary, value: applied.result };
+      return { output: applied.summary, value: { reconciled: applied.reconciled } };
     },
   });
 

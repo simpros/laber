@@ -1,6 +1,5 @@
 import { runComposeCommand } from "./compose-cli";
 import { downProject } from "./compose-cli";
-import { deployStack, type DeployOptions } from "./deploy";
 import {
   runLoggedAction,
   type ActionIdentity,
@@ -159,31 +158,5 @@ export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
     projectName: CORE_PROJECT,
     composePath: getCoreComposePath(),
     label: "core services",
-  });
-}
-
-/**
- * The one logged-deploy shell, next to the other lifecycle verbs: stack
- * `deployStackByName` and `deployCore` only resolve inputs + identity, then
- * run through here — so deploy is a table peer, not a hand-rolled twin that
- * open-codes `runLoggedAction` + `deployStack` twice. `deploy.ts` stays the
- * Docker/compensation policy.
- */
-export function runLoggedDeploy(options: {
-  title: string;
-  action: string;
-  identity: ActionIdentity;
-  failureMessage?: string;
-  deploy: Omit<DeployOptions, "onOutput">;
-}): Promise<{ output: string }> {
-  return runLoggedAction({
-    title: options.title,
-    action: options.action,
-    identity: options.identity,
-    failureMessage: options.failureMessage,
-    run: async (onOutput) => {
-      const result = await deployStack({ ...options.deploy, onOutput });
-      return { output: result.output };
-    },
   });
 }

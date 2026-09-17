@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { loadCompose } from "./compose-parse";
 import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
-import { runLoggedDeploy } from "./compose-actions";
+import { runLoggedDeploy } from "./deploy";
 import { getStackAndRepo, withLockedStack } from "./stack-context";
 import { ValidationError } from "./errors";
 
@@ -26,7 +26,7 @@ export async function resolveStackDeployInputsFor(
   stackId: string;
   repositoryId: string;
   composeRaw: string;
-  deploy: Omit<DeployOptions, "onOutput">;
+  deploy: Omit<DeployOptions, "onOutput" | "composeBytes">;
 }> {
   const envVars = await db
     .select()

@@ -1,9 +1,8 @@
-import { writeFileSync } from "fs";
 import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainersSoft } from "./docker-engine";
-import { runLoggedDeploy } from "./compose-actions";
+import { runLoggedDeploy } from "./deploy";
 import { type ConfigValue } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
 import { getCoreComposeContent } from "./core-compose";
@@ -164,11 +163,10 @@ export async function deployCore() {
   const composePath = getCoreComposePath();
   // One success contract for disk + runtime: the generated compose travels as
   // `deploy.composeBytes`, and `deployStack` owns the sibling-temp snapshot
-  // lifecycle (write → `up -d` from the temp → delete). The live template
-  // advances only after a successful attempt returns, so a failed `up` /
-  // Traefik attach leaves the previous file untouched with no restore catch
-  // and no second compensation layer — `deployStack` already owns secret wipe
-  // + compensating `down` for the attempt.
+  // lifecycle (write → `up -d` from the temp → promote → delete). The live
+  // template advances inside the same attempt via `commitLive`, so a failed
+  // promote compensates (down + secret wipe) instead of leaving "containers
+  // up + stale live file + success log".
   const content = getCoreComposeContent(config);
 
   const envVars: Record<string, string> = {
@@ -178,7 +176,7 @@ export async function deployCore() {
     envVars.TUNNEL_TOKEN = config.tunnelToken;
   }
 
-  const result = await runLoggedDeploy({
+  return runLoggedDeploy({
     title: "Deploying core services",
     action: "deploy",
     identity: { kind: "core" },
@@ -186,10 +184,9 @@ export async function deployCore() {
     deploy: {
       composePath,
       composeBytes: content,
+      commitLive: true,
       envVars,
       projectName: CORE_PROJECT,
     },
   });
-  writeFileSync(composePath, content, "utf-8");
-  return result;
 }

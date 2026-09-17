@@ -1,10 +1,12 @@
 import "./setup";
 import { describe, it, expect, beforeAll, afterEach } from "bun:test";
+import { readFileSync, existsSync } from "fs";
 import { db, coreConfig, deploymentLogs } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
 import { ActionFailedError } from "../src/lib/errors";
+import { getCoreComposePath } from "../src/lib/core-identity";
 import { dockerStub, resetDockerStub } from "./docker-stub";
 
 let cookie = "";
@@ -148,6 +150,13 @@ describe("POST /api/core/deploy|stop|restart", () => {
       output: string;
     };
     expect(deployBody.output).toContain("core up");
+
+    // Disk + runtime share one success contract: the generated template is
+    // promoted inside the same attempt, so a 200 means the live file
+    // advanced too — not "containers up + stale live file + success log".
+    const livePath = getCoreComposePath();
+    expect(existsSync(livePath)).toBe(true);
+    expect(readFileSync(livePath, "utf-8")).toContain("example.com");
 
     for (const action of ["stop", "restart"] as const) {
       const res = await app.handle(
