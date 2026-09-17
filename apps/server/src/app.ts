@@ -3,6 +3,7 @@ import { auth } from "@laber/auth";
 import { DomainError, type DomainErrorKind } from "./lib/errors";
 import { getSessionUser } from "./lib/auth";
 import { dashboardRoutes } from "./routes/dashboard";
+import { setupRoutes } from "./routes/setup";
 import { stackRoutes } from "./routes/stacks";
 import { coreRoutes } from "./routes/core";
 import { repositoryRoutes } from "./routes/repositories";
@@ -48,6 +49,9 @@ export function createApp() {
       }
     })
     .all("/api/auth/*", ({ request }) => auth.handler(request))
+    // Public SPA probes live outside the session guard. Everything else
+    // under /api/* requires a session.
+    .use(setupRoutes)
     // Auth lives outside the guard; everything under it requires a session.
     // No pathname allowlist: adding a public path means mounting it out here,
     // not growing another string branch. Note Elysia validates route schemas
