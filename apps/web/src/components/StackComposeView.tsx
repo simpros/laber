@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@laber/ui";
 import { api, unwrap } from "@/lib/api";
@@ -18,6 +18,12 @@ export function StackComposeView({
   const [draft, setDraft] = useState(content);
   const [error, setError] = useState("");
   const queryClient = useQueryClient();
+
+  // The parent remounts per stack (`key={name}`); this only covers a
+  // background refetch while viewing. Never clobber an in-progress edit.
+  useEffect(() => {
+    if (!editing) setDraft(content);
+  }, [content, editing]);
 
   const saveMutation = useMutation({
     mutationFn: async (next: string) => {

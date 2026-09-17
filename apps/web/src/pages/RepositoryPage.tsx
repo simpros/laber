@@ -20,7 +20,6 @@ export default function RepositoryPage() {
   const { data, isLoading, isError, error } = useRepositories();
   const queryClient = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [syncLoading, setSyncLoading] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -32,14 +31,13 @@ export default function RepositoryPage() {
       stacksPath: string;
       sshPrivateKey: string | null;
     }) => {
-      const res = await api.api.repositories.post(input as never);
+      const res = await api.api.repositories.post(input);
       return unwrap(res);
     },
     onSuccess: (result) => {
       setShowAddForm(false);
-      const r = result as { discovered?: number };
       setSuccessMsg(
-        `Repository added. Discovered ${r.discovered ?? 0} stack(s).`
+        `Repository added. Discovered ${result.discovered} stack(s).`
       );
       queryClient.invalidateQueries({ queryKey: ["repositories"] });
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
@@ -58,15 +56,13 @@ export default function RepositoryPage() {
       return unwrap(res);
     },
     onSuccess: (result) => {
-      const r = result as {
-        newStacks: number;
-        updatedStacks: number;
-        removedStacks: string[];
-      };
-      const parts = [`${r.newStacks} new`, `${r.updatedStacks} updated`];
-      if (r.removedStacks.length > 0) {
+      const parts = [
+        `${result.newStacks} new`,
+        `${result.updatedStacks} updated`,
+      ];
+      if (result.removedStacks.length > 0) {
         parts.push(
-          `${r.removedStacks.length} removed (${r.removedStacks.join(", ")})`
+          `${result.removedStacks.length} removed (${result.removedStacks.join(", ")})`
         );
       }
       setSuccessMsg(`Synced. Found ${parts.join(", ")} stack(s).`);
@@ -78,7 +74,6 @@ export default function RepositoryPage() {
         e instanceof Error ? e.message : "Failed to sync repository"
       );
     },
-    onSettled: () => setSyncLoading(null),
   });
 
   const removeMutation = useMutation({
@@ -118,6 +113,10 @@ export default function RepositoryPage() {
     },
   });
 
+  const syncingRepoId = syncMutation.isPending
+    ? syncMutation.variables
+    : undefined;
+
   if (isLoading)
     return <p className="text-text-muted text-sm">Loading…</p>;
   if (isError || !data)
@@ -130,7 +129,6 @@ export default function RepositoryPage() {
     );
 
   function handleSync(repoId: string) {
-    setSyncLoading(repoId);
     setErrorMsg("");
     setSuccessMsg("");
     syncMutation.mutate(repoId);
@@ -326,10 +324,10 @@ export default function RepositoryPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={syncLoading === repo.id}
+                disabled={syncMutation.isPending}
                 onClick={() => handleSync(repo.id)}
               >
-                {syncLoading === repo.id ? "Syncing..." : "Sync"}
+                {syncingRepoId === repo.id ? "Syncing..." : "Sync"}
               </Button>
               <button
                 type="button"

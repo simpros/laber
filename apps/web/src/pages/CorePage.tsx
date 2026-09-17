@@ -1,18 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useForm } from "@tanstack/react-form";
 import { Card, CardHeader, Button, Alert } from "@laber/ui";
 import { api, unwrap } from "@/lib/api";
 import { statusColor } from "@/lib/utils";
 import {
   CORE_KEYS,
   CORE_KEY_GROUPS,
+  type CoreKey,
   type CoreKeyGroup,
 } from "@/lib/core-keys";
+import {
+  secretStatus,
+  valueForSave,
+  type MaskedSecretState,
+} from "@/lib/masked-secret";
+import SecretBadge from "@/components/SecretBadge";
 
 export function useCore() {
   return useQuery({
@@ -21,25 +27,29 @@ export function useCore() {
   });
 }
 
-type FieldState = {
-  key: string;
+type FieldState = MaskedSecretState & {
+  key: CoreKey;
   secret: boolean;
-  hadValue: boolean;
-  value: string;
-  dirty: boolean;
 };
+
+type CoreAction = "deploy" | "stop" | "restart";
+
+const CORE_ACTIONS = {
+  deploy: () => api.api.core.deploy.post(),
+  stop: () => api.api.core.stop.post(),
+  restart: () => api.api.core.restart.post(),
+} as const;
 
 export default function CorePage() {
   const { data, isLoading, isError, error } = useCore();
   const queryClient = useQueryClient();
-  const [actionLoading, setActionLoading] = useState("");
   const [result, setResult] = useState<{
     success?: boolean;
     output?: string;
     message?: string;
   } | null>(null);
   const [fields, setFields] = useState<FieldState[]>([]);
-  const [fieldsInitFor, setFieldsInitFor] = useState("");
+  const initializedRef = useRef(false);
 
   const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
     id: id as CoreKeyGroup,
@@ -47,11 +57,12 @@ export default function CorePage() {
     keys: CORE_KEYS.filter((k) => k.group === id),
   }));
 
+  // Init once from the first server snapshot; after that the save handler
+  // owns the local snapshot (hadValue/dirty) so a background refetch can
+  // never clobber in-progress edits.
   useEffect(() => {
-    if (!data) return;
-    const fingerprint = JSON.stringify(data.config);
-    if (fingerprint === fieldsInitFor) return;
-    setFieldsInitFor(fingerprint);
+    if (!data || initializedRef.current) return;
+    initializedRef.current = true;
     setFields(
       CORE_KEYS.map((keyDef) => {
         const stored = data.config[keyDef.key];
@@ -64,15 +75,29 @@ export default function CorePage() {
         };
       })
     );
-  }, [data, fieldsInitFor]);
+  }, [data]);
 
   const saveMutation = useMutation({
-    mutationFn: async (values: Record<string, string | null>) => {
-      const res = await api.api.core.config.put(values as never);
+    mutationFn: async (values: Partial<Record<CoreKey, string | null>>) => {
+      const res = await api.api.core.config.put(values);
       return unwrap(res);
     },
     onSuccess: (res) => {
-      setResult(res as { success?: boolean; message?: string });
+      setResult(res);
+      // The server now holds what we sent: fold it into the local
+      // snapshot instead of waiting for the refetch.
+      setFields((prev) =>
+        prev.map((f) => {
+          if (!f.dirty) return f;
+          if (!f.secret) return { ...f, dirty: false };
+          return {
+            ...f,
+            hadValue: f.value !== "",
+            value: "",
+            dirty: false,
+          };
+        })
+      );
       queryClient.invalidateQueries({ queryKey: ["core"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -85,14 +110,11 @@ export default function CorePage() {
   });
 
   const actionMutation = useMutation({
-    mutationFn: async (action: "deploy" | "stop" | "restart") => {
-      if (action === "deploy")
-        return unwrap(await api.api.core.deploy.post());
-      if (action === "stop") return unwrap(await api.api.core.stop.post());
-      return unwrap(await api.api.core.restart.post());
+    mutationFn: async (action: CoreAction) => {
+      return unwrap(await CORE_ACTIONS[action]());
     },
     onSuccess: (res) => {
-      setResult(res as { success?: boolean; output?: string });
+      setResult(res);
       queryClient.invalidateQueries({ queryKey: ["core"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -102,20 +124,11 @@ export default function CorePage() {
         output: e instanceof Error ? e.message : "Unknown error",
       });
     },
-    onSettled: () => setActionLoading(""),
   });
 
-  const form = useForm({
-    defaultValues: {} as Record<string, never>,
-    onSubmit: async () => {
-      const values: Record<string, string | null> = {};
-      for (const f of fields) {
-        values[f.key] = f.secret && !f.dirty ? null : f.value;
-      }
-      setResult(null);
-      await saveMutation.mutateAsync(values);
-    },
-  });
+  const pendingAction = actionMutation.isPending
+    ? actionMutation.variables
+    : undefined;
 
   function fieldFor(key: string): FieldState | undefined {
     return fields.find((f) => f.key === key);
@@ -127,10 +140,19 @@ export default function CorePage() {
     );
   }
 
-  function handleAction(action: "deploy" | "stop" | "restart") {
-    setActionLoading(action);
+  function handleAction(action: CoreAction) {
     setResult(null);
     actionMutation.mutate(action);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    const values: Partial<Record<CoreKey, string | null>> = {};
+    for (const f of fields) {
+      values[f.key] = f.secret ? valueForSave(f) : f.value;
+    }
+    setResult(null);
+    await saveMutation.mutateAsync(values);
   }
 
   if (isLoading)
@@ -177,18 +199,18 @@ export default function CorePage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={actionLoading !== ""}
+                  disabled={actionMutation.isPending}
                   onClick={() => handleAction("restart")}
                 >
-                  {actionLoading === "restart" ? "..." : "Restart"}
+                  {pendingAction === "restart" ? "..." : "Restart"}
                 </Button>
                 <Button
                   variant="danger"
                   size="sm"
-                  disabled={actionLoading !== ""}
+                  disabled={actionMutation.isPending}
                   onClick={() => handleAction("stop")}
                 >
-                  {actionLoading === "stop" ? "..." : "Stop"}
+                  {pendingAction === "stop" ? "..." : "Stop"}
                 </Button>
               </>
             }
@@ -216,12 +238,7 @@ export default function CorePage() {
         </Card>
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          form.handleSubmit();
-        }}
-      >
+      <form onSubmit={handleSave}>
         <div className="space-y-6">
           {groups.map((group) => (
             <Card key={group.id}>
@@ -248,26 +265,8 @@ export default function CorePage() {
                         className="text-text-secondary text-sm font-medium"
                       >
                         {keyDef.label}
-                        {keyDef.secret &&
-                        field?.hadValue &&
-                        !field.dirty ? (
-                          <span className="bg-success/15 text-success ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium">
-                            set
-                          </span>
-                        ) : keyDef.secret &&
-                          field?.dirty &&
-                          field.value === "" ? (
-                          <span className="bg-warning/15 text-warning ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium">
-                            will clear
-                          </span>
-                        ) : keyDef.secret && field?.dirty ? (
-                          <span className="bg-success/15 text-success ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium">
-                            modified
-                          </span>
-                        ) : keyDef.secret && !field?.hadValue ? (
-                          <span className="bg-warning/15 text-warning ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium">
-                            unset
-                          </span>
+                        {keyDef.secret && field ? (
+                          <SecretBadge entry={field} />
                         ) : null}
                       </label>
                       <div className="col-span-2">
@@ -286,8 +285,8 @@ export default function CorePage() {
                             }
                             placeholder={
                               keyDef.secret &&
-                              field?.hadValue &&
-                              !field.dirty
+                              field &&
+                              secretStatus(field) === "set"
                                 ? "Leave empty to keep the current value…"
                                 : keyDef.placeholder
                             }
@@ -349,10 +348,10 @@ export default function CorePage() {
       <div className="-mt-4 flex justify-end">
         <Button
           variant="primary"
-          disabled={actionLoading !== "" || !data.isConfigured}
+          disabled={actionMutation.isPending || !data.isConfigured}
           onClick={() => handleAction("deploy")}
         >
-          {actionLoading === "deploy"
+          {pendingAction === "deploy"
             ? "Deploying..."
             : "Deploy Core Stack"}
         </Button>

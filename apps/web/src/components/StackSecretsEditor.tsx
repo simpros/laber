@@ -1,14 +1,26 @@
 import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Icon } from "@laber/ui";
 import { api, unwrap } from "@/lib/api";
+import {
+  isUnset,
+  valueForSave,
+  markSaved,
+  type MaskedSecretState,
+} from "@/lib/masked-secret";
+import SecretBadge from "@/components/SecretBadge";
 
 type SecretEntry = {
   name: string;
   filePath: string;
   services: string[];
   hasValue: boolean;
+};
+
+type Row = MaskedSecretState & {
+  name: string;
+  filePath: string;
+  services: string[];
 };
 
 export default function StackSecretsEditor({
@@ -19,7 +31,9 @@ export default function StackSecretsEditor({
   stackName: string;
 }) {
   const queryClient = useQueryClient();
-  const [entries, setEntries] = useState(() =>
+  // Owned by stack identity: the parent remounts per stack (`key={name}`),
+  // so initializing from props once is correct — no fingerprint dance.
+  const [entries, setEntries] = useState<Row[]>(() =>
     secrets.map((s) => ({
       name: s.name,
       filePath: s.filePath,
@@ -30,9 +44,7 @@ export default function StackSecretsEditor({
     }))
   );
 
-  const unsetCount = entries.filter((e) =>
-    e.dirty ? e.value === "" : !e.hadValue
-  ).length;
+  const unsetCount = entries.filter(isUnset).length;
 
   const saveMutation = useMutation({
     mutationFn: async (
@@ -45,28 +57,19 @@ export default function StackSecretsEditor({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stack", stackName] });
-      setEntries((prev) =>
-        prev.map((e) => ({
-          ...e,
-          hadValue: e.dirty ? e.value !== "" : e.hadValue,
-          value: "",
-          dirty: false,
-        }))
-      );
+      setEntries((prev) => prev.map((e) => ({ ...e, ...markSaved(e) })));
     },
   });
 
-  const form = useForm({
-    defaultValues: {} as Record<string, never>,
-    onSubmit: async () => {
-      await saveMutation.mutateAsync(
-        entries.map((e) => ({
-          name: e.name,
-          value: e.dirty ? e.value : null,
-        }))
-      );
-    },
-  });
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    await saveMutation.mutateAsync(
+      entries.map((e) => ({
+        name: e.name,
+        value: valueForSave(e),
+      }))
+    );
+  }
 
   if (entries.length === 0) {
     return (
@@ -77,12 +80,7 @@ export default function StackSecretsEditor({
   }
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        form.handleSubmit();
-      }}
-    >
+    <form onSubmit={handleSave}>
       <div className="space-y-3">
         {unsetCount > 0 && (
           <div className="border-warning/30 bg-warning/5 flex items-center gap-2 rounded-lg border px-3 py-2">
@@ -109,23 +107,7 @@ export default function StackSecretsEditor({
               <span className="font-mono text-sm font-medium">
                 {entry.name}
               </span>
-              {entry.dirty && entry.value !== "" ? (
-                <span className="bg-success/15 text-success rounded px-1.5 py-0.5 text-[10px] font-medium">
-                  modified
-                </span>
-              ) : entry.dirty && entry.hadValue ? (
-                <span className="bg-warning/15 text-warning rounded px-1.5 py-0.5 text-[10px] font-medium">
-                  will clear
-                </span>
-              ) : entry.hadValue ? (
-                <span className="bg-success/15 text-success rounded px-1.5 py-0.5 text-[10px] font-medium">
-                  set
-                </span>
-              ) : (
-                <span className="bg-warning/15 text-warning rounded px-1.5 py-0.5 text-[10px] font-medium">
-                  unset
-                </span>
-              )}
+              <SecretBadge entry={entry} />
             </div>
 
             <div className="flex items-center gap-2">

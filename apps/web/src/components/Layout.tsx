@@ -95,9 +95,7 @@ export default function Layout({
   const { hasRunning, setOpen } = useActivity();
   const { data: session } = useSession();
   const navigate = useNavigate();
-  const user = session?.user as
-    | { name?: string; email?: string }
-    | undefined;
+  const user = session?.user;
 
   async function handleSignOut() {
     await signOut({

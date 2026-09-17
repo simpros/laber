@@ -4,14 +4,10 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import {
-  Link,
-  useParams,
-  useSearch,
-  useNavigate,
-} from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { Alert, Button } from "@laber/ui";
 import { api, unwrap } from "@/lib/api";
+import { stackDetailRoute } from "@/router";
 import StackServices from "@/components/StackServices";
 import StackEnvEditor from "@/components/StackEnvEditor";
 import StackSecretsEditor from "@/components/StackSecretsEditor";
@@ -35,32 +31,37 @@ export function useStackDetail(name: string) {
   });
 }
 
+type StackAction = "deploy" | "stop" | "restart" | "pull";
+
 export default function StackDetailPage() {
-  const { name } = useParams({ strict: false }) as { name: string };
-  const search = useSearch({ strict: false }) as { tab?: StackTab };
-  const navigate = useNavigate();
-  const tab: StackTab = search.tab ?? "services";
+  const { name } = stackDetailRoute.useParams();
+  const { tab } = stackDetailRoute.useSearch();
+  const navigate = stackDetailRoute.useNavigate();
+  const activeTab: StackTab = tab ?? "services";
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useStackDetail(name);
 
-  const [actionLoading, setActionLoading] = useState("");
   const [result, setResult] = useState<{
     success?: boolean;
     output?: string;
   } | null>(null);
 
   const actionMutation = useMutation({
-    mutationFn: async (action: "deploy" | "stop" | "restart" | "pull") => {
-      if (action === "deploy")
-        return unwrap(await api.api.stacks({ name }).deploy.post());
-      if (action === "stop")
-        return unwrap(await api.api.stacks({ name }).stop.post());
-      if (action === "restart")
-        return unwrap(await api.api.stacks({ name }).restart.post());
-      return unwrap(await api.api.stacks({ name }).pull.post());
+    mutationFn: async (action: StackAction) => {
+      const stack = api.api.stacks({ name });
+      switch (action) {
+        case "deploy":
+          return unwrap(await stack.deploy.post());
+        case "stop":
+          return unwrap(await stack.stop.post());
+        case "restart":
+          return unwrap(await stack.restart.post());
+        case "pull":
+          return unwrap(await stack.pull.post());
+      }
     },
     onSuccess: (res) => {
-      setResult(res as { success?: boolean; output?: string });
+      setResult(res);
       queryClient.invalidateQueries({ queryKey: ["stack", name] });
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -71,11 +72,13 @@ export default function StackDetailPage() {
         output: e instanceof Error ? e.message : "Unknown error",
       });
     },
-    onSettled: () => setActionLoading(""),
   });
 
-  function handleAction(action: "deploy" | "stop" | "restart" | "pull") {
-    setActionLoading(action);
+  const pendingAction = actionMutation.isPending
+    ? actionMutation.variables
+    : undefined;
+
+  function handleAction(action: StackAction) {
     setResult(null);
     actionMutation.mutate(action);
   }
@@ -95,7 +98,7 @@ export default function StackDetailPage() {
       : data.stack.status === "deployed";
 
   function setTab(next: StackTab) {
-    navigate({ search: { tab: next } as never });
+    navigate({ search: { tab: next } });
   }
 
   return (
@@ -123,10 +126,10 @@ export default function StackDetailPage() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={actionLoading !== ""}
+            disabled={actionMutation.isPending}
             onClick={() => handleAction("pull")}
           >
-            {actionLoading === "pull" ? "Pulling..." : "Pull"}
+            {pendingAction === "pull" ? "Pulling..." : "Pull"}
           </Button>
 
           {isRunning ? (
@@ -134,28 +137,28 @@ export default function StackDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={actionLoading !== ""}
+                disabled={actionMutation.isPending}
                 onClick={() => handleAction("restart")}
               >
-                {actionLoading === "restart" ? "Restarting..." : "Restart"}
+                {pendingAction === "restart" ? "Restarting..." : "Restart"}
               </Button>
               <Button
                 variant="danger"
                 size="sm"
-                disabled={actionLoading !== ""}
+                disabled={actionMutation.isPending}
                 onClick={() => handleAction("stop")}
               >
-                {actionLoading === "stop" ? "Stopping..." : "Stop"}
+                {pendingAction === "stop" ? "Stopping..." : "Stop"}
               </Button>
             </>
           ) : (
             <Button
               variant="primary"
               size="sm"
-              disabled={actionLoading !== ""}
+              disabled={actionMutation.isPending}
               onClick={() => handleAction("deploy")}
             >
-              {actionLoading === "deploy" ? "Deploying..." : "Deploy"}
+              {pendingAction === "deploy" ? "Deploying..." : "Deploy"}
             </Button>
           )}
         </div>
@@ -173,7 +176,7 @@ export default function StackDetailPage() {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              tab === t.id
+              activeTab === t.id
                 ? "border-accent text-text-primary"
                 : "text-text-muted hover:text-text-secondary border-transparent"
             }`}
@@ -183,30 +186,36 @@ export default function StackDetailPage() {
         ))}
       </div>
 
-      {tab === "services" && (
+      {activeTab === "services" && (
         <StackServices
           containers={data.containers}
           services={data.services}
         />
       )}
-      {tab === "env" && (
+      {activeTab === "env" && (
         <StackEnvEditor
+          key={name}
           envVars={data.envVars}
           stackName={name}
           detectedEnvVars={data.detectedEnvVars}
         />
       )}
-      {tab === "secrets" && (
-        <StackSecretsEditor secrets={data.secrets} stackName={name} />
+      {activeTab === "secrets" && (
+        <StackSecretsEditor
+          key={name}
+          secrets={data.secrets}
+          stackName={name}
+        />
       )}
-      {tab === "compose" && (
+      {activeTab === "compose" && (
         <StackComposeView
+          key={name}
           content={data.composeRaw}
           fileName={data.stack.composeFile}
           stackName={name}
         />
       )}
-      {tab === "logs" && <StackDeploymentLogs logs={data.logs} />}
+      {activeTab === "logs" && <StackDeploymentLogs logs={data.logs} />}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Icon } from "@laber/ui";
 import { api, unwrap } from "@/lib/api";
+import { valueForSave, markSaved } from "@/lib/masked-secret";
 
 type EnvEntry = {
   key: string;
@@ -10,6 +10,28 @@ type EnvEntry = {
   isSecret: boolean;
   hasValue: boolean;
 };
+
+type Row = {
+  key: string;
+  value: string;
+  isSecret: boolean;
+  hadValue: boolean;
+  dirty: boolean;
+};
+
+function rowFor(entry: EnvEntry): Row {
+  return {
+    key: entry.key,
+    value: entry.isSecret ? "" : entry.value,
+    isSecret: entry.isSecret,
+    hadValue: entry.isSecret && entry.hasValue,
+    dirty: false,
+  };
+}
+
+function blankRow(key = ""): Row {
+  return { key, value: "", isSecret: false, hadValue: false, dirty: true };
+}
 
 export default function StackEnvEditor({
   envVars,
@@ -21,15 +43,9 @@ export default function StackEnvEditor({
   detectedEnvVars?: string[];
 }) {
   const queryClient = useQueryClient();
-  const [entries, setEntries] = useState(() =>
-    envVars.map((v) => ({
-      key: v.key,
-      value: v.isSecret ? "" : v.value,
-      isSecret: v.isSecret,
-      hadSecretValue: v.isSecret && v.hasValue,
-      valueTouched: false,
-    }))
-  );
+  // Owned by stack identity: the parent remounts per stack (`key={name}`),
+  // so initializing from props once is correct — no fingerprint dance.
+  const [entries, setEntries] = useState<Row[]>(() => envVars.map(rowFor));
 
   const missingVars = detectedEnvVars.filter(
     (name) => !entries.some((e) => e.key === name)
@@ -49,82 +65,50 @@ export default function StackEnvEditor({
       return unwrap(res);
     },
     onSuccess: () => {
+      // Fold the save into the local snapshot (secret inputs clear back
+      // to untouched) instead of waiting for the refetch.
+      setEntries((prev) =>
+        prev.map((e) => (e.isSecret ? { ...e, ...markSaved(e) } : e))
+      );
       queryClient.invalidateQueries({ queryKey: ["stack", stackName] });
     },
   });
 
-  const form = useForm({
-    defaultValues: {} as Record<string, never>,
-    onSubmit: async () => {
-      await saveMutation.mutateAsync(
-        entries.map((e) => ({
-          key: e.key,
-          value: !e.valueTouched && e.hadSecretValue ? null : e.value,
-          isSecret: e.isSecret,
-        }))
-      );
-    },
-  });
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    await saveMutation.mutateAsync(
+      entries.map((e) => ({
+        key: e.key,
+        value: e.isSecret ? valueForSave(e) : e.value,
+        isSecret: e.isSecret,
+      }))
+    );
+  }
 
   function addEnvVar() {
-    setEntries((prev) => [
-      ...prev,
-      {
-        key: "",
-        value: "",
-        isSecret: false,
-        hadSecretValue: false,
-        valueTouched: true,
-      },
-    ]);
+    setEntries((prev) => [...prev, blankRow()]);
   }
 
   function addDetectedVar(name: string) {
-    setEntries((prev) => [
-      ...prev,
-      {
-        key: name,
-        value: "",
-        isSecret: false,
-        hadSecretValue: false,
-        valueTouched: true,
-      },
-    ]);
+    setEntries((prev) => [...prev, blankRow(name)]);
   }
 
   function addAllMissing() {
-    setEntries((prev) => [
-      ...prev,
-      ...missingVars.map((name) => ({
-        key: name,
-        value: "",
-        isSecret: false,
-        hadSecretValue: false,
-        valueTouched: true,
-      })),
-    ]);
+    setEntries((prev) => [...prev, ...missingVars.map((name) => blankRow(name))]);
   }
 
   function removeEnvVar(index: number) {
     setEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function updateEntry(
-    index: number,
-    patch: Partial<(typeof entries)[number]>
-  ) {
+  function updateEntry(index: number, patch: Partial<Row>) {
     setEntries((prev) =>
       prev.map((e, i) => (i === index ? { ...e, ...patch } : e))
     );
   }
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        form.handleSubmit();
-      }}
-    >
+    <form onSubmit={handleSave} className="pb-2">
       <div className="space-y-2">
         {entries.map((entry, i) => {
           const isDetected = detectedEnvVars.includes(entry.key);
@@ -141,11 +125,11 @@ export default function StackEnvEditor({
                 onChange={(e) =>
                   updateEntry(i, {
                     value: e.target.value,
-                    valueTouched: true,
+                    dirty: true,
                   })
                 }
                 placeholder={
-                  entry.hadSecretValue && !entry.valueTouched
+                  entry.hadValue && !entry.dirty
                     ? "Hidden — leave empty to keep"
                     : "value"
                 }
@@ -214,47 +198,52 @@ export default function StackEnvEditor({
       </div>
 
       {detectedEnvVars.length > 0 && (
-        <div className="bg-surface-1 border-border fixed inset-x-0 bottom-0 z-10 border-t px-4 py-3 sm:px-6 md:px-8">
-          <div className="flex items-center gap-3">
-            <span className="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase">
-              Detected
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {detectedEnvVars.map((name) => {
-                const isMissing = missingVars.includes(name);
-                return isMissing ? (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => addDetectedVar(name)}
-                    className="border-warning/40 text-warning hover:bg-warning/10 rounded border px-2 py-0.5 font-mono text-xs transition-colors"
-                  >
-                    + {name}
-                  </button>
-                ) : (
-                  <span
-                    key={name}
-                    className="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs"
-                  >
-                    {name}
-                  </span>
-                );
-              })}
-            </div>
-            {missingVars.length > 0 && (
-              <div className="ml-auto shrink-0">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  onClick={addAllMissing}
-                >
-                  Add All Missing
-                </Button>
+        <>
+          {/* Spacer: the bar below is fixed, so reserve its height in flow
+              to keep Save / bottom rows clickable. */}
+          <div className="h-16" aria-hidden />
+          <div className="bg-surface-1 border-border fixed inset-x-0 bottom-0 z-10 border-t px-4 py-3 sm:px-6 md:px-8">
+            <div className="flex items-center gap-3">
+              <span className="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase">
+                Detected
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {detectedEnvVars.map((name) => {
+                  const isMissing = missingVars.includes(name);
+                  return isMissing ? (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => addDetectedVar(name)}
+                      className="border-warning/40 text-warning hover:bg-warning/10 rounded border px-2 py-0.5 font-mono text-xs transition-colors"
+                    >
+                      + {name}
+                    </button>
+                  ) : (
+                    <span
+                      key={name}
+                      className="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs"
+                    >
+                      {name}
+                    </span>
+                  );
+                })}
               </div>
-            )}
+              {missingVars.length > 0 && (
+                <div className="ml-auto shrink-0">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    onClick={addAllMissing}
+                  >
+                    Add All Missing
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </form>
   );

@@ -36,12 +36,26 @@ export class ApiError extends Error {
 
 /** Unwrap an Eden `{ data, error }` union; throw ApiError on failure. */
 export function unwrap<T>(res: { data: T | null; error: unknown }): T {
-  if (res.error) {
-    const err = res.error as { status?: number; value?: unknown };
-    const value = err.value as { error?: string } | undefined;
-    const message =
-      typeof value?.error === "string" ? value.error : "Request failed";
-    throw new ApiError(message, err.status);
+  if (res.error !== null && res.error !== undefined) {
+    throw toApiError(res.error);
   }
-  return res.data as T;
+  if (res.data === null || res.data === undefined) {
+    throw new ApiError("Request failed");
+  }
+  return res.data;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toApiError(error: unknown): ApiError {
+  if (!isRecord(error)) return new ApiError("Request failed");
+  let status: number | undefined;
+  if (typeof error.status === "number") status = error.status;
+  const value = error.value;
+  if (isRecord(value) && typeof value.error === "string") {
+    return new ApiError(value.error, status);
+  }
+  return new ApiError("Request failed", status);
 }

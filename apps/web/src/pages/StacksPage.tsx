@@ -70,11 +70,6 @@ export default function StacksPage() {
               </div>
 
               <div className="text-text-muted mt-4 flex items-center gap-3 text-xs">
-                {"networkName" in stack && stack.networkName ? (
-                  <span className="font-mono">
-                    net:{String(stack.networkName)}
-                  </span>
-                ) : null}
                 <span>{stack.envVarCount} env vars</span>
                 {stack.repoName && (
                   <span className="ml-auto truncate">
