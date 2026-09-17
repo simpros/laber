@@ -10,11 +10,11 @@ import {
 } from "@laber/db";
 import { eq, desc, count } from "drizzle-orm";
 import { listContainersSoft } from "./docker-engine";
+import { loadComposeDocument } from "./compose-parse";
 import {
-  loadComposeDocument,
   extractServices,
   extractAllEnvVarNames,
-} from "./compose-document";
+} from "./compose-services";
 import { getStackAndRepo, getRepoDir } from "./config";
 
 export async function listStacks() {

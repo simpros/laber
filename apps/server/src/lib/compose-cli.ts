@@ -9,9 +9,7 @@ import {
 
 /**
  * Raw compose spawn. Module-private: callers never touch exit codes
- * directly — `runComposeCommand` below is the single failure contract, with
- * `onFailure` for best-effort cleanup (e.g. wiping freshly-written secret
- * files) before the throw.
+ * directly — `runComposeCommand` below is the single failure contract.
  */
 async function execCompose(options: {
   composePath: string;
@@ -78,17 +76,17 @@ async function execCompose(options: {
 
 /**
  * Single failure contract: returns the command output on success, throws
- * `ActionFailedError` on a nonzero exit. `onFailure` runs best-effort
- * cleanup before the throw, so resource owners never read exit codes
- * themselves. `runLoggedAction` maps the throw to the contextual failure
- * message; direct callers surface the message in their own warnings.
+ * `ActionFailedError` on a nonzero exit. Resource cleanup (secret files,
+ * compensating `down`) belongs to the caller — deploy owns wipe + down in
+ * its own catch — so this stays exit→throw only with no cleanup hook.
+ * `runLoggedAction` maps the throw to the contextual failure message;
+ * direct callers surface the message in their own warnings.
  */
 export async function runComposeCommand(
   composePath: string,
   command: string[],
   projectName?: string,
-  onOutput?: (chunk: string) => void,
-  options?: { onFailure?: () => void }
+  onOutput?: (chunk: string) => void
 ): Promise<{ output: string }> {
   const result = await execCompose({
     composePath,
@@ -99,11 +97,6 @@ export async function runComposeCommand(
 
   const output = result.stdout + result.stderr;
   if (result.exitCode !== 0) {
-    try {
-      options?.onFailure?.();
-    } catch {
-      // Cleanup is best-effort; the compose failure below is what matters.
-    }
     throw new ActionFailedError(
       `Compose ${command.join(" ")} failed${projectName ? ` for ${projectName}` : ""}`
     );

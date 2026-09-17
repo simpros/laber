@@ -56,15 +56,13 @@ mock.module("../src/lib/compose-cli.ts", () => ({
     composePath: string,
     command: string[],
     projectName?: string,
-    onOutput?: (chunk: string) => void,
-    options?: { onFailure?: () => void }
+    onOutput?: (chunk: string) => void
   ) =>
     dockerStub.runComposeCommand(
       composePath,
       command,
       projectName,
-      onOutput,
-      options
+      onOutput
     ),
   downProject: (options: {
     projectName: string;

@@ -420,13 +420,10 @@ describe("POST /api/stacks/:name/deploy", () => {
       _composePath,
       _command,
       _projectName,
-      _onOutput,
-      options
+      _onOutput
     ) => {
-      // Mirror the real `runComposeCommand` contract: cleanup runs before
-      // the throw. This proves deploy passes secret wipe as `onFailure` —
-      // without that wiring the file below would survive.
-      options?.onFailure?.();
+      // The shared CLI is exit→throw only: deploy's catch owns secret wipe,
+      // so a throw here must still leave no secret file behind.
       throw new ActionFailedError("Compose up -d failed");
     };
 
@@ -495,8 +492,8 @@ describe("POST /api/stacks/:name/deploy", () => {
       )
     );
     expect(res.status).toBe(500);
-    // Post-`up` failure: `onFailure` never ran, so the catch compensation
-    // must wipe the secrets *and* tear the project down.
+    // Post-`up` failure: the deploy catch (the one compensation site) must
+    // wipe the secrets *and* tear the project down.
     expect(existsSync(join(composePath, "..", "mysecret.txt"))).toBe(false);
     expect(downCalls).toEqual(["traefik-secret-deploy"]);
   });

@@ -4,11 +4,10 @@ import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
-  extractNetworkName,
-  extractSecrets,
   parseComposeDocument,
   loadComposeDocument,
-} from "../../src/lib/compose-document";
+} from "../../src/lib/compose-parse";
+import { extractNetworkName } from "../../src/lib/compose-services";
 import { ValidationError } from "../../src/lib/errors";
 
 describe("extractNetworkName", () => {
@@ -48,24 +47,27 @@ describe("extractNetworkName", () => {
   });
 });
 
-describe("extractSecrets", () => {
+describe("parseComposeDocument secret refs (via the one gate)", () => {
   const COMPOSE_PATH = "/data/repos/abc/stacks/myapp/docker-compose.yaml";
 
   it("returns empty array when no secrets defined", () => {
-    const compose = { services: {} };
-    expect(extractSecrets(compose, COMPOSE_PATH)).toEqual([]);
+    const { secrets } = parseComposeDocument("services: {}\n", COMPOSE_PATH);
+    expect(secrets).toEqual([]);
   });
 
   it("extracts file-based secrets", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["db_password"] },
-      },
-      secrets: {
-        db_password: { file: "./secrets/db_password.txt" },
-      },
-    };
-    const result = extractSecrets(compose, COMPOSE_PATH);
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - db_password",
+      "secrets:",
+      "  db_password:",
+      "    file: ./secrets/db_password.txt",
+      "",
+    ].join("\n");
+    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("db_password");
     expect(result[0].filePath).toBe(
@@ -75,29 +77,38 @@ describe("extractSecrets", () => {
   });
 
   it("maps secrets to multiple services", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["shared_key"] },
-        worker: { secrets: ["shared_key"] },
-      },
-      secrets: {
-        shared_key: { file: "./secrets/key.txt" },
-      },
-    };
-    const result = extractSecrets(compose, COMPOSE_PATH);
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - shared_key",
+      "  worker:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - shared_key",
+      "secrets:",
+      "  shared_key:",
+      "    file: ./secrets/key.txt",
+      "",
+    ].join("\n");
+    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
     expect(result[0].services).toEqual(["web", "worker"]);
   });
 
   it("skips external secrets (no file)", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["ext_secret"] },
-      },
-      secrets: {
-        ext_secret: { external: true },
-      },
-    };
-    const result = extractSecrets(compose, COMPOSE_PATH);
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - ext_secret",
+      "secrets:",
+      "  ext_secret:",
+      "    external: true",
+      "",
+    ].join("\n");
+    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
     expect(result).toHaveLength(0);
   });
 
@@ -140,42 +151,51 @@ describe("extractSecrets", () => {
   });
 
   it("rejects references to undefined top-level secrets", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["ghost"] },
-      },
-      secrets: {
-        db_password: { file: "./secrets/db_password.txt" },
-      },
-    };
-    expect(() => extractSecrets(compose, COMPOSE_PATH)).toThrow(
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - ghost",
+      "secrets:",
+      "  db_password:",
+      "    file: ./secrets/db_password.txt",
+      "",
+    ].join("\n");
+    expect(() => parseComposeDocument(content, COMPOSE_PATH)).toThrow(
       ValidationError
     );
   });
 
   it("handles secrets not used by any service", () => {
-    const compose = {
-      services: { web: {} },
-      secrets: {
-        unused: { file: "./secrets/unused.txt" },
-      },
-    };
-    const result = extractSecrets(compose, COMPOSE_PATH);
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "secrets:",
+      "  unused:",
+      "    file: ./secrets/unused.txt",
+      "",
+    ].join("\n");
+    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
     expect(result).toHaveLength(1);
     expect(result[0].services).toEqual([]);
   });
 
   it("resolves relative secret paths against the compose directory", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["db_password"] },
-      },
-      secrets: {
-        db_password: { file: "./secrets/db_password.txt" },
-      },
-    };
-    const result = extractSecrets(
-      compose,
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - db_password",
+      "secrets:",
+      "  db_password:",
+      "    file: ./secrets/db_password.txt",
+      "",
+    ].join("\n");
+    const { secrets: result } = parseComposeDocument(
+      content,
       "/data/repos/abc/stacks/myapp/docker-compose.yaml"
     );
     expect(result[0].filePath).toBe(
@@ -184,16 +204,19 @@ describe("extractSecrets", () => {
   });
 
   it("keeps absolute secret paths as-is when resolving", () => {
-    const compose = {
-      services: {
-        web: { secrets: ["db_password"] },
-      },
-      secrets: {
-        db_password: { file: "/run/secrets/db_password" },
-      },
-    };
-    const result = extractSecrets(
-      compose,
+    const content = [
+      "services:",
+      "  web:",
+      "    image: nginx:latest",
+      "    secrets:",
+      "      - db_password",
+      "secrets:",
+      "  db_password:",
+      "    file: /run/secrets/db_password",
+      "",
+    ].join("\n");
+    const { secrets: result } = parseComposeDocument(
+      content,
       "/data/repos/abc/stacks/myapp/docker-compose.yaml"
     );
     expect(result[0].filePath).toBe("/run/secrets/db_password");

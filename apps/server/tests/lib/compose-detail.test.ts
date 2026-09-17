@@ -4,12 +4,14 @@ import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
+  parseComposeDocument,
+  loadComposeDocument,
+} from "../../src/lib/compose-parse";
+import {
   extractEnvVarNames,
   extractServices,
   extractAllEnvVarNames,
-  parseComposeDocument,
-  loadComposeDocument,
-} from "../../src/lib/compose-document";
+} from "../../src/lib/compose-services";
 import { ValidationError } from "../../src/lib/errors";
 
 describe("extractEnvVarNames", () => {

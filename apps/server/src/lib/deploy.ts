@@ -68,8 +68,8 @@ function removeSecretFiles(files: SecretFile[]): void {
 /**
  * Single failure contract: returns the deploy output on success, throws
  * `ActionFailedError` (via `runComposeCommand`) on a nonzero exit — deploy
- * never reads exit codes itself. Freshly-written secret files are wiped via
- * `onFailure` cleanup; on success they stay (running containers mount these
+ * never reads exit codes itself. Freshly-written secret files are wiped in
+ * the catch below; on success they stay (running containers mount these
  * paths). `runLoggedAction` maps the throw to the contextual failure message,
  * so the message here stays short — the transcript is already in the
  * activity stream and deployment log.
@@ -95,7 +95,7 @@ export async function deployStack(
   const secretFiles = options.secretFiles ?? [];
   try {
     if (secretFiles.length > 0) {
-      // Secret paths are already absolute (resolved by extractSecrets
+      // Secret paths are already absolute (resolved by the parse gate
       // against the compose file); write them in exactly one place here.
       writeSecretFiles(secretFiles);
       secretsWritten = true;
@@ -110,19 +110,14 @@ export async function deployStack(
     // Single env channel: everything the stack needs travels via --env-file.
     // (execCompose still inherits process.env, but stack vars are no longer
     // overlaid a second time, so there is only one fact to fix.)
-    // A failed compose run must not leave freshly-written secret files behind.
+    // A failed compose run must not leave freshly-written secret files behind:
+    // the catch below wipes them (removal is idempotent), so no cleanup
+    // hook is needed on the shared CLI — one wipe site only.
     const { output: base } = await runComposeCommand(
       options.composePath,
       [...envArgs, "up", "-d"],
       options.projectName,
-      options.onOutput,
-      {
-        onFailure: () => {
-          if (secretFiles.length > 0) {
-            removeSecretFiles(secretFiles);
-          }
-        },
-      }
+      options.onOutput
     );
     composeUp = true;
 
@@ -153,8 +148,8 @@ export async function deployStack(
     return { output };
   } catch (e) {
     // Compensate this attempt only: wipe secrets it wrote, bring down
-    // containers it started. (`onFailure` above may already have wiped the
-    // secrets on the compose-failure path; removal is idempotent.)
+    // containers it started. Removal is idempotent, and this catch is the
+    // one wipe site (the shared CLI carries no cleanup hook by design).
     if (secretsWritten && secretFiles.length > 0) {
       removeSecretFiles(secretFiles);
     }

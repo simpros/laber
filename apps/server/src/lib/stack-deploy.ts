@@ -1,7 +1,8 @@
 import { existsSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { loadComposeDocument, extractNetworkName } from "./compose-document";
+import { loadComposeDocument } from "./compose-parse";
+import { extractNetworkName } from "./compose-services";
 import type { DeployOptions } from "./deploy";
 import { runLoggedDeploy } from "./compose-actions";
 import { getStackAndRepo, assertStackName } from "./config";

@@ -91,6 +91,23 @@ async function pullOrCloneRemoteTree(
 }
 
 /**
+ * Live-repo check under `withRepoLock`: a concurrent delete may have
+ * committed between the early lookup and the locked section. Confirm the
+ * repo still exists before probing/reconciling (sync) or tearing down
+ * (delete) — otherwise sync would `update` a gone row and `insert` stacks
+ * against a deleted `repository_id` (raw FK failure, not a clean 404).
+ */
+async function requireLiveRepo(id: string) {
+  const [live] = await db
+    .select()
+    .from(repositories)
+    .where(eq(repositories.id, id))
+    .limit(1);
+  if (!live) throw new NotFoundError("Repository not found");
+  return live;
+}
+
+/**
  * Shared reconcile → summarize step inside the caller's transaction.
  * Reconcile failures propagate (a deliberate `ConflictError` must not be
  * flattened into a 500); `runActivity` finishes the activity on throw.
@@ -217,18 +234,9 @@ export async function syncRepository(id: string) {
       // probe and the commit. (Out-of-band daemon changes remain
       // best-effort — fail-closed probe still applies there.)
       const applied = await withRepoLock(repo.id, async () => {
-        // Inside the lock: a concurrent delete may have committed between
-        // the early lookup above and this section. Confirm the repo still
-        // exists before probing and reconciling against its id — otherwise
-        // the tx below would `update` a gone row and `insert` stacks
-        // against a deleted `repository_id` (raw FK failure, not a clean
-        // 404).
-        const [live] = await db
-          .select({ id: repositories.id })
-          .from(repositories)
-          .where(eq(repositories.id, repo.id))
-          .limit(1);
-        if (!live) throw new NotFoundError("Repository not found");
+        // Inside the lock: confirm the repo survived a concurrent delete
+        // (see `requireLiveRepo`) before probing and reconciling.
+        await requireLiveRepo(repo.id);
         // Fresh discovery under the lock: the reconcile input, the probe
         // set, and the tx commit all read the same tree.
         const discovered = await discoverStacks(repoDir, repo.stacksPath);
@@ -306,12 +314,7 @@ export async function deleteRepository(id: string) {
         // (or the repo row may be gone — same race as sync's pre-check)
         // between the early 404 above and this section. The teardown list
         // and the row delete below must match what the lock actually owns.
-        const [live] = await db
-          .select()
-          .from(repositories)
-          .where(eq(repositories.id, id))
-          .limit(1);
-        if (!live) throw new NotFoundError("Repository not found");
+        const live = await requireLiveRepo(id);
         const repoStacks = await db
           .select()
           .from(stacks)

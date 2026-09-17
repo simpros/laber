@@ -2,7 +2,7 @@ import { dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { parseComposeDocument } from "./compose-document";
+import { parseComposeDocument } from "./compose-parse";
 import { getStackAndRepo, assertStackName, type ConfigValue } from "./config";
 import { ValidationError } from "./errors";
 import type { StackTx } from "./db-tx";

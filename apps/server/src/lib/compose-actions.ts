@@ -13,6 +13,27 @@ import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
 
 type LifecycleOp = "stop" | "restart" | "pull";
 
+/**
+ * Lifecycle-scoped identities, derived from the one `ActionIdentity`
+ * vocabulary: stack lifecycle rows may only produce "stopped" intent or
+ * log-only attribution — never `core`, never a `deployed` success. The
+ * `stack` half is stated with its narrowed literal (the shared union is
+ * wider because deploy needs `deployed`); the `stack-log` and `core` halves
+ * below are `Extract`ed so they cannot drift from the source union.
+ */
+type StackLifecycleIdentity =
+  | { kind: "stack"; stackId: string; onSuccess: "stopped" }
+  | Extract<ActionIdentity, { kind: "stack-log" }>;
+
+/**
+ * Every identity a lifecycle op may carry: stack lifecycle rows plus core
+ * (deploy-shaped `stack` is excluded — deploy goes through
+ * `runLoggedDeploy`, not this shell).
+ */
+type LifecycleIdentity =
+  | StackLifecycleIdentity
+  | Extract<ActionIdentity, { kind: "core" }>;
+
 type OpCtx = {
   projectName: string;
   composePath: string;
@@ -21,10 +42,11 @@ type OpCtx = {
 type OpDef = {
   action: string;
   /** Full identity factory per row: stop owns runtime intent (`stack` with
-   * `onSuccess`); restart/pull are log-only (`stack-log`). Each row carries
-   * the complete variant — callers never branch on an optional, and
-   * `"deployed"` never appears here (deploy is not in this table). */
-  stackIdentity: (stackId: string) => ActionIdentity;
+   * `onSuccess: "stopped"`); restart/pull are log-only (`stack-log`). Each
+   * row carries the complete lifecycle-scoped variant — callers never branch
+   * on an optional, and `"deployed"` never appears here (deploy is not in
+   * this table). */
+  stackIdentity: (stackId: string) => StackLifecycleIdentity;
   title: (label: string) => string;
   failureMessage: (label: string) => string;
   run: (ctx: OpCtx, onOutput: (chunk: string) => void) => Promise<{
@@ -82,7 +104,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
  */
 function runLifecycleOp(
   op: LifecycleOp,
-  identity: ActionIdentity,
+  identity: LifecycleIdentity,
   ctx: OpCtx & { label: string }
 ): Promise<{ output: string }> {
   const def = OPS[op];
@@ -141,14 +163,16 @@ export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
 }
 
 /**
- * Deploy-scoped identity: only the variants that can mean deploy. A
- * log-only (`stack-log`) or stop-shaped (`onSuccess: "stopped"`) identity
- * is rejected at compile time instead of silently recording the wrong
- * outcome.
+ * Deploy-scoped identity, derived from the one `ActionIdentity` vocabulary:
+ * only the variants that can mean deploy. The `stack` half states its
+ * narrowed literal (the shared union is wider because lifecycle stop needs
+ * `"stopped"`); `core` is `Extract`ed so the two definitions cannot drift.
+ * A log-only (`stack-log`) or stop-shaped identity is rejected at compile
+ * time instead of silently recording the wrong outcome.
  */
 export type DeployIdentity =
   | { kind: "stack"; stackId: string; onSuccess: "deployed" }
-  | { kind: "core" };
+  | Extract<ActionIdentity, { kind: "core" }>;
 
 /**
  * The one logged-deploy shell, next to the other lifecycle verbs: stack
