@@ -30,13 +30,22 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
     );
   }
 
-  const config: Record<string, string | undefined> = {};
+  // Required props are assigned directly after the missing check, so the
+  // result is a `CoreConfig` with no assertion; optionals land only when
+  // present (empty string counts as unset).
+  const config: CoreConfig = {
+    rootDomain: configMap.get("ROOT_DOMAIN")!,
+    cfDnsApiToken: configMap.get("CF_DNS_API_TOKEN")!,
+  };
   for (const field of CORE_KEYS) {
+    if (field.required) continue;
     const value = configMap.get(field.key);
-    if (value !== undefined && value !== "") config[field.prop] = value;
+    if (value !== undefined && value !== "") {
+      config[field.prop] = value;
+    }
   }
 
-  return config as CoreConfig;
+  return config;
 }
 
 function getComposeDir(): string {

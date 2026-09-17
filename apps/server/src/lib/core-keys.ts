@@ -113,11 +113,3 @@ type OptionalProps = Exclude<CoreConfigProp, RequiredProps>;
 
 export type CoreConfigShape = Record<RequiredProps, string> &
   Partial<Record<OptionalProps, string>>;
-
-export const REQUIRED_CORE_KEYS = CORE_KEYS.filter((k) => k.required).map(
-  (k) => k.key
-) as string[];
-
-export function corePropForKey(key: string): CoreConfigProp | undefined {
-  return CORE_KEYS.find((k) => k.key === key)?.prop;
-}

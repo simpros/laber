@@ -1,12 +1,6 @@
 import { Elysia } from "elysia";
 import { auth } from "@laber/auth";
-import {
-  HttpError,
-  NotFoundError,
-  ConflictError,
-  ValidationError,
-  ActionFailedError,
-} from "./lib/errors";
+import { DomainError } from "./lib/errors";
 import { getSessionUser } from "./lib/auth";
 import { dashboardRoutes } from "./routes/dashboard";
 import { stackRoutes } from "./routes/stacks";
@@ -34,24 +28,8 @@ async function requireSession({
 export function createApp() {
   const app = new Elysia()
     .onError(({ code, error, set }) => {
-      if (error instanceof HttpError) {
+      if (error instanceof DomainError) {
         set.status = error.status;
-        return { error: error.message };
-      }
-      if (error instanceof NotFoundError) {
-        set.status = 404;
-        return { error: error.message };
-      }
-      if (error instanceof ConflictError) {
-        set.status = 409;
-        return { error: error.message };
-      }
-      if (error instanceof ValidationError) {
-        set.status = 400;
-        return { error: error.message };
-      }
-      if (error instanceof ActionFailedError) {
-        set.status = 500;
         return { error: error.message };
       }
       if (code === "VALIDATION") {

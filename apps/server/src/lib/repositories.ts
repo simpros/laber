@@ -21,6 +21,63 @@ export type AddRepositoryInput = {
   sshPrivateKey: string | null;
 };
 
+type RemoteTree = Pick<
+  typeof repositories.$inferSelect,
+  "url" | "branch" | "sshPrivateKey"
+>;
+
+/**
+ * Ensure the local git tree exists (fresh clone, or clone-if-missing /
+ * pull). Returns a failure message for *operational* git errors, or null
+ * when the tree is ready.
+ */
+async function ensureRemoteTree(
+  repoDir: string,
+  remote: RemoteTree,
+  onOutput: (chunk: string) => void,
+  fresh: boolean
+): Promise<string | null> {
+  try {
+    if (fresh || !existsSync(repoDir)) {
+      await cloneRepo(
+        remote.url,
+        repoDir,
+        remote.branch,
+        remote.sshPrivateKey ?? undefined
+      );
+    } else {
+      await pullRepo(repoDir, remote.sshPrivateKey ?? undefined);
+    }
+    return null;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    onOutput(`Sync failed: ${message}\n`);
+    return message;
+  }
+}
+
+/**
+ * Shared reconcile → summarize step. Reconcile failures propagate (a
+ * deliberate `ConflictError` must not be flattened into a 500);
+ * `runLoggedAction` finishes the activity on throw.
+ */
+async function reconcileAndSummarize(
+  repoId: string,
+  discovered: Awaited<ReturnType<typeof discoverStacks>>,
+  onOutput: (chunk: string) => void
+) {
+  const reconciled = await reconcileDiscoveredStacks(repoId, discovered);
+  const summary =
+    `Discovered ${discovered.length} stack(s)` +
+    ` (${reconciled.added} new, ${reconciled.updated} updated` +
+    (reconciled.removed.length > 0
+      ? `, ${reconciled.removed.length} no longer in repo: ${reconciled.removed.join(", ")}`
+      : "") +
+    ")\n";
+  onOutput(summary);
+  return { reconciled, summary };
+}
+
 export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
   // Clone first with a pre-generated id; the DB row is only inserted
   // after the clone succeeds, so a failed clone leaves no ghost repo.
@@ -33,20 +90,21 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
     action: "clone",
     run: async (onOutput) => {
       onOutput(`Cloning ${input.url} (branch: ${input.branch})...\n`);
-      try {
-        await cloneRepo(
-          input.url,
-          repoDir,
-          input.branch,
-          input.sshPrivateKey ?? undefined
-        );
-        onOutput("Clone complete. Discovering stacks...\n");
-      } catch (e) {
+      const failure = await ensureRemoteTree(
+        repoDir,
+        {
+          url: input.url,
+          branch: input.branch,
+          sshPrivateKey: input.sshPrivateKey,
+        },
+        onOutput,
+        true
+      );
+      if (failure !== null) {
         rmSync(repoDir, { recursive: true, force: true });
-        const message = `Failed to clone repository: ${e instanceof Error ? e.message : "Unknown error"}`;
-        onOutput(`${message}\n`);
-        return { success: false, output: message };
+        return { success: false, output: failure };
       }
+      onOutput("Clone complete. Discovering stacks...\n");
 
       const discovered = await discoverStacks(repoDir, input.stacksPath);
       const [repo] = await db
@@ -61,19 +119,12 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
           lastSyncedAt: new Date(),
         })
         .returning();
-      const { added, updated, removed } = await reconcileDiscoveredStacks(
+      const { summary } = await reconcileAndSummarize(
         repo.id,
-        discovered
+        discovered,
+        onOutput
       );
       discoveredCount = discovered.length;
-      const summary =
-        `Discovered ${discovered.length} stack(s)` +
-        ` (${added} new, ${updated} updated` +
-        (removed.length > 0
-          ? `, ${removed.length} no longer in repo: ${removed.join(", ")}`
-          : "") +
-        ")\n";
-      onOutput(summary);
       return { success: true, output: summary };
     },
   });
@@ -99,48 +150,31 @@ export async function syncRepository(id: string) {
     run: async (onOutput) => {
       onOutput(`Pulling latest changes from ${repo.url}...\n`);
 
-      const repoDir = getRepoDir(repo.id);
-
-      try {
-        if (!existsSync(repoDir)) {
-          await cloneRepo(
-            repo.url,
-            repoDir,
-            repo.branch,
-            repo.sshPrivateKey ?? undefined
-          );
-        } else {
-          await pullRepo(repoDir, repo.sshPrivateKey ?? undefined);
-        }
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Unknown error";
-        onOutput(`Sync failed: ${message}\n`);
-        return { success: false, output: message };
+      const failure = await ensureRemoteTree(
+        getRepoDir(repo.id),
+        repo,
+        onOutput,
+        false
+      );
+      if (failure !== null) {
+        return { success: false, output: failure };
       }
-
       onOutput("Pull complete. Discovering stacks...\n");
 
-      const discovered = await discoverStacks(repoDir, repo.stacksPath);
-      let reconciled;
-      try {
-        reconciled = await reconcileDiscoveredStacks(repo.id, discovered);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Unknown error";
-        onOutput(`Sync failed: ${message}\n`);
-        return { success: false, output: message };
-      }
+      const discovered = await discoverStacks(
+        getRepoDir(repo.id),
+        repo.stacksPath
+      );
+      const { reconciled, summary } = await reconcileAndSummarize(
+        repo.id,
+        discovered,
+        onOutput
+      );
       await db
         .update(repositories)
         .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
         .where(eq(repositories.id, repo.id));
       counts = reconciled;
-      const summary =
-        `Found ${reconciled.added} new, ${reconciled.updated} updated stack(s)` +
-        (reconciled.removed.length > 0
-          ? ` (${reconciled.removed.length} no longer in repo: ${reconciled.removed.join(", ")})`
-          : "") +
-        "\n";
-      onOutput(summary);
       return { success: true, output: summary };
     },
   });

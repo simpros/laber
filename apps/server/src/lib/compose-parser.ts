@@ -37,99 +37,13 @@ type ComposeNetwork = {
 
 export type { ComposeFile, ComposeService, ComposeNetwork };
 
-// Load-bearing shape gate: the document must be an object with a `services`
-// mapping. Everything below that is narrowed field-by-field so exotic but
-// valid compose files (numeric ports, non-string env values, extension
-// fields) keep working exactly as they did under the old blind cast.
+// Load-bearing shape gate only: the document must be an object with a
+// `services` mapping whose entries are mappings. Everything below that is
+// consumed as-is (ComposeFile) — exotic but valid compose shapes (numeric
+// ports, long-form objects, extension fields) pass through untouched.
 const composeDocumentSchema = v.object({
-  services: v.record(v.string(), v.unknown()),
+  services: v.record(v.string(), v.record(v.string(), v.unknown())),
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.map((entry) => String(entry));
-}
-
-function asStringRecord(value: unknown): Record<string, string> | undefined {
-  if (!isRecord(value)) return undefined;
-  const out: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === "string") out[key] = entry;
-    else if (entry !== undefined && entry !== null) out[key] = String(entry);
-  }
-  return out;
-}
-
-function toComposeService(raw: unknown): ComposeService {
-  if (!isRecord(raw)) {
-    throw new ValidationError(
-      "Invalid compose file: every service must be a mapping"
-    );
-  }
-  const svc: ComposeService = {};
-  // Preserve extension fields (deploy, build, ...) via the index signature.
-  for (const [key, value] of Object.entries(raw)) svc[key] = value;
-  const image = asString(raw.image);
-  if (image !== undefined) svc.image = image;
-  else delete svc.image;
-  const containerName = asString(raw.container_name);
-  if (containerName !== undefined) svc.container_name = containerName;
-  else delete svc.container_name;
-  const environment = Array.isArray(raw.environment)
-    ? asStringArray(raw.environment)
-    : asStringRecord(raw.environment);
-  if (environment !== undefined) svc.environment = environment;
-  else delete svc.environment;
-  const labels = Array.isArray(raw.labels)
-    ? asStringArray(raw.labels)
-    : asStringRecord(raw.labels);
-  if (labels !== undefined) svc.labels = labels;
-  else delete svc.labels;
-  for (const key of ["ports", "volumes", "secrets"] as const) {
-    const list = asStringArray(raw[key]);
-    if (list !== undefined) svc[key] = list;
-    else delete svc[key];
-  }
-  const restart = asString(raw.restart);
-  if (restart !== undefined) svc.restart = restart;
-  else delete svc.restart;
-  const networks = Array.isArray(raw.networks)
-    ? asStringArray(raw.networks)
-    : isRecord(raw.networks)
-      ? raw.networks
-      : undefined;
-  if (networks !== undefined) svc.networks = networks;
-  else delete svc.networks;
-  return svc;
-}
-
-function toComposeNetwork(raw: unknown): ComposeNetwork {
-  if (!isRecord(raw)) return {};
-  const net: ComposeNetwork = {};
-  const name = asString(raw.name);
-  if (name !== undefined) net.name = name;
-  if (typeof raw.external === "boolean") net.external = raw.external;
-  return net;
-}
-
-function toComposeSecretDef(raw: unknown): ComposeSecretDef | undefined {
-  if (!isRecord(raw)) return undefined;
-  const def: ComposeSecretDef = {};
-  const file = asString(raw.file);
-  if (file !== undefined) def.file = file;
-  const environment = asString(raw.environment);
-  if (environment !== undefined) def.environment = environment;
-  if (typeof raw.external === "boolean") def.external = raw.external;
-  return def;
-}
 
 type ServiceInfo = {
   name: string;
@@ -159,30 +73,7 @@ export function parseComposeContent(content: string): ComposeFile {
       "Invalid compose file: missing 'services' section"
     );
   }
-  const services: Record<string, ComposeService> = {};
-  for (const [name, raw] of Object.entries(result.output.services)) {
-    services[name] = toComposeService(raw);
-  }
-  const compose: ComposeFile = { services };
-  if (isRecord(parsed) && isRecord(parsed.networks)) {
-    const networks: Record<string, ComposeNetwork> = {};
-    for (const [name, raw] of Object.entries(parsed.networks)) {
-      networks[name] = toComposeNetwork(raw);
-    }
-    compose.networks = networks;
-  }
-  if (isRecord(parsed) && isRecord(parsed.volumes)) {
-    compose.volumes = parsed.volumes;
-  }
-  if (isRecord(parsed) && isRecord(parsed.secrets)) {
-    const secrets: Record<string, ComposeSecretDef> = {};
-    for (const [name, raw] of Object.entries(parsed.secrets)) {
-      const def = toComposeSecretDef(raw);
-      if (def !== undefined) secrets[name] = def;
-    }
-    compose.secrets = secrets;
-  }
-  return compose;
+  return parsed as ComposeFile;
 }
 
 export type ParsedComposeFile = {

@@ -8,6 +8,7 @@ import {
   stackSecrets,
   repositories,
   deploymentLogs,
+  type Db,
 } from "@laber/db";
 import { eq, desc } from "drizzle-orm";
 import { listContainers, runComposeCommand } from "./docker";
@@ -249,6 +250,23 @@ export type SecretEntry = {
   value: string | null;
 };
 
+/**
+ * One transaction shell for the nullable keyed-bag tables (stack env vars,
+ * stack secrets): delete-all + insert replaces the whole set. Callers only
+ * differ in the row mapping.
+ */
+type StackTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+function replaceStackRows(
+  clear: (tx: StackTx) => void,
+  fill: (tx: StackTx) => void
+): void {
+  db.transaction((tx) => {
+    clear(tx);
+    fill(tx);
+  });
+}
+
 export async function replaceStackEnv(name: string, entries: EnvEntry[]) {
   requireName(name);
   const { stack } = await getStackAndRepo(name);
@@ -261,24 +279,27 @@ export async function replaceStackEnv(name: string, entries: EnvEntry[]) {
   const isSecretByKey = new Map(entries.map((e) => [e.key, e.isSecret]));
   const merged = replaceNullableKeyedRows(existingByKey, entries);
 
-  db.transaction((tx) => {
-    tx.delete(stackEnvVars)
-      .where(eq(stackEnvVars.stackId, stack.id))
-      .run();
-
-    if (merged.length > 0) {
-      tx.insert(stackEnvVars)
-        .values(
-          merged.map((e) => ({
-            stackId: stack.id,
-            key: e.key,
-            value: e.value,
-            isSecret: isSecretByKey.get(e.key) ?? false,
-          }))
-        )
+  replaceStackRows(
+    (tx) => {
+      tx.delete(stackEnvVars)
+        .where(eq(stackEnvVars.stackId, stack.id))
         .run();
+    },
+    (tx) => {
+      if (merged.length > 0) {
+        tx.insert(stackEnvVars)
+          .values(
+            merged.map((e) => ({
+              stackId: stack.id,
+              key: e.key,
+              value: e.value,
+              isSecret: isSecretByKey.get(e.key) ?? false,
+            }))
+          )
+          .run();
+      }
     }
-  });
+  );
 
   return { success: true };
 }
@@ -300,23 +321,26 @@ export async function replaceStackSecrets(
     entries.map((e) => ({ key: e.name, value: e.value }))
   );
 
-  db.transaction((tx) => {
-    tx.delete(stackSecrets)
-      .where(eq(stackSecrets.stackId, stack.id))
-      .run();
-
-    if (merged.length > 0) {
-      tx.insert(stackSecrets)
-        .values(
-          merged.map((e) => ({
-            stackId: stack.id,
-            name: e.key,
-            value: e.value,
-          }))
-        )
+  replaceStackRows(
+    (tx) => {
+      tx.delete(stackSecrets)
+        .where(eq(stackSecrets.stackId, stack.id))
         .run();
+    },
+    (tx) => {
+      if (merged.length > 0) {
+        tx.insert(stackSecrets)
+          .values(
+            merged.map((e) => ({
+              stackId: stack.id,
+              name: e.key,
+              value: e.value,
+            }))
+          )
+          .run();
+      }
     }
-  });
+  );
 
   return { success: true };
 }
