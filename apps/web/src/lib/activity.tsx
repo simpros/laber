@@ -82,7 +82,11 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         setActivities((prev) => applyEvent(prev, event));
         if (event.type === "start" && !openRef.current) setOpen(true);
       } catch {
-        // ignore malformed frames
+        // Malformed frames mean a server/stream bug: silent stalls look
+        // like idle deploys, so say so loudly in dev instead of swallowing.
+        if (import.meta.env.DEV) {
+          console.warn("[activity] ignoring malformed frame", raw.data);
+        }
       }
     };
 

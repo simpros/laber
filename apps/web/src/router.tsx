@@ -7,55 +7,54 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 import { authClient } from "@/lib/auth";
+import { api, unwrap } from "@/lib/api";
 import Layout from "@/components/Layout";
 import DashboardPage from "@/pages/DashboardPage";
 import StacksPage from "@/pages/StacksPage";
-import StackDetailPage from "@/pages/StackDetailPage";
+import StackDetailPage, { type StackTab } from "@/pages/StackDetailPage";
 import CorePage from "@/pages/CorePage";
 import RepositoryPage from "@/pages/RepositoryPage";
 import LoginPage from "@/pages/LoginPage";
 import SetupPage from "@/pages/SetupPage";
 
 /**
- * Setup probe for the route guards. Fail-closed: any transport or shape
- * failure throws, so the router renders the error UI with a retry instead
- * of inventing `needsSetup: false` and misrouting to /login on a fresh DB.
+ * Setup probe for the route guards, over the same Eden client as every
+ * other resource — one HTTP path, not a parallel hand-rolled fetch stack.
+ * Fail-closed: any transport or shape failure throws, so the router renders
+ * the error UI with a retry instead of inventing `needsSetup: false` and
+ * misrouting to /login on a fresh DB.
  */
 async function fetchSetupStatus(): Promise<{ needsSetup: boolean }> {
-  let res: Response;
+  let status: { needsSetup: boolean };
   try {
-    res = await fetch("/api/setup/status", {
-      credentials: "same-origin",
-    });
+    status = unwrap(await api.api.setup.status.get());
   } catch (e) {
     throw new Error(
       `Setup status probe failed: ${e instanceof Error ? e.message : "network error"}`,
       { cause: e }
     );
   }
-  if (!res.ok) {
-    throw new Error(`Setup status probe failed: HTTP ${res.status}`);
-  }
-  const body: unknown = await res.json();
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("needsSetup" in body) ||
-    typeof body.needsSetup !== "boolean"
-  ) {
+  if (typeof status.needsSetup !== "boolean") {
     throw new Error("Setup status probe returned an unexpected shape");
   }
-  return { needsSetup: body.needsSetup };
+  return status;
 }
 
+/**
+ * Fail-closed like the setup probe: a transport blip must surface the retry
+ * UI, not silently masquerade as logged-out and bounce to /login.
+ */
 async function getSessionUser() {
   try {
     const { data } = await authClient.getSession({
       fetchOptions: { credentials: "include" },
     });
     return data?.user ?? null;
-  } catch {
-    return null;
+  } catch (e) {
+    throw new Error(
+      `Session probe failed: ${e instanceof Error ? e.message : "network error"}`,
+      { cause: e }
+    );
   }
 }
 
@@ -158,8 +157,27 @@ export const stackDetailRoute = createRoute({
         return { tab: undefined };
     }
   },
-  component: StackDetailPage,
+  component: StackDetailRouteComponent,
 });
+
+/**
+ * One-line wrapper: reads params/search from the route and passes them as
+ * plain props, so the page module never imports this router module back
+ * (no module cycle — the dependency stays router → page).
+ */
+function StackDetailRouteComponent() {
+  const { name } = stackDetailRoute.useParams();
+  const { tab } = stackDetailRoute.useSearch();
+  const navigate = stackDetailRoute.useNavigate();
+  const activeTab: StackTab = tab ?? "services";
+  return (
+    <StackDetailPage
+      name={name}
+      tab={activeTab}
+      onTabChange={(next) => navigate({ search: { tab: next } })}
+    />
+  );
+}
 
 const coreRoute = createRoute({
   getParentRoute: () => appRoute,

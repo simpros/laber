@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
 import { Card, CardHeader, Button, Alert } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
+import { useActivity } from "@/lib/activity";
 import { statusColor } from "@/lib/utils";
 import {
   CORE_KEYS,
@@ -14,40 +9,27 @@ import {
   type CoreKeyGroup,
 } from "@/lib/core-keys";
 import {
-  secretStatus,
+  markSaved,
   valueForSave,
   type MaskedSecretState,
 } from "@/lib/masked-secret";
+import {
+  useCore,
+  useCoreAction,
+  useSaveCoreConfig,
+  type CoreAction,
+} from "@/lib/queries/core";
 import SecretBadge from "@/components/SecretBadge";
-
-export function useCore() {
-  return useQuery({
-    queryKey: ["core"],
-    queryFn: async () => unwrap(await api.api.core.get()),
-  });
-}
+import { MaskedSecretField } from "@/components/MaskedSecretField";
 
 type FieldState = MaskedSecretState & {
   key: CoreKey;
   secret: boolean;
 };
 
-type CoreAction = "deploy" | "stop" | "restart";
-
-const CORE_ACTIONS = {
-  deploy: () => api.api.core.deploy.post(),
-  stop: () => api.api.core.stop.post(),
-  restart: () => api.api.core.restart.post(),
-} as const;
-
 export default function CorePage() {
   const { data, isLoading, isError, error } = useCore();
-  const queryClient = useQueryClient();
-  const [result, setResult] = useState<{
-    success?: boolean;
-    output?: string;
-    message?: string;
-  } | null>(null);
+  const { setOpen } = useActivity();
   const [fields, setFields] = useState<FieldState[]>([]);
   const initializedRef = useRef(false);
 
@@ -77,58 +59,23 @@ export default function CorePage() {
     );
   }, [data]);
 
-  const saveMutation = useMutation({
-    mutationFn: async (values: Partial<Record<CoreKey, string | null>>) => {
-      const res = await api.api.core.config.put(values);
-      return unwrap(res);
-    },
-    onSuccess: (res) => {
-      setResult(res);
-      // The server now holds what we sent: fold it into the local
-      // snapshot instead of waiting for the refetch.
+  const saveMutation = useSaveCoreConfig({
+    // The server now holds what we sent: fold it into the local snapshot
+    // instead of waiting for the refetch. Secrets clear back to the
+    // untouched snapshot; plain values just lose their dirty flag.
+    onSaved: () =>
       setFields((prev) =>
-        prev.map((f) => {
-          if (!f.dirty) return f;
-          if (!f.secret) return { ...f, dirty: false };
-          return {
-            ...f,
-            hadValue: f.value !== "",
-            value: "",
-            dirty: false,
-          };
-        })
-      );
-      queryClient.invalidateQueries({ queryKey: ["core"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (e) => {
-      setResult({
-        success: false,
-        output: e instanceof Error ? e.message : "Unknown error",
-      });
-    },
+        prev.map((f) =>
+          f.dirty
+            ? { ...f, ...(f.secret ? markSaved(f) : { dirty: false }) }
+            : f
+        )
+      ),
   });
 
-  const actionMutation = useMutation({
-    mutationFn: async (action: CoreAction) => {
-      return unwrap(await CORE_ACTIONS[action]());
-    },
-    onSuccess: (res) => {
-      setResult(res);
-      queryClient.invalidateQueries({ queryKey: ["core"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (e) => {
-      setResult({
-        success: false,
-        output: e instanceof Error ? e.message : "Unknown error",
-      });
-    },
-  });
+  const actionMutation = useCoreAction();
 
-  const pendingAction = actionMutation.isPending
-    ? actionMutation.variables
-    : undefined;
+  const pendingAction = actionMutation.pendingAction;
 
   function fieldFor(key: string): FieldState | undefined {
     return fields.find((f) => f.key === key);
@@ -141,7 +88,8 @@ export default function CorePage() {
   }
 
   function handleAction(action: CoreAction) {
-    setResult(null);
+    saveMutation.clearResult();
+    actionMutation.clearResult();
     actionMutation.mutate(action);
   }
 
@@ -151,7 +99,8 @@ export default function CorePage() {
     for (const f of fields) {
       values[f.key] = f.secret ? valueForSave(f) : f.value;
     }
-    setResult(null);
+    saveMutation.clearResult();
+    actionMutation.clearResult();
     await saveMutation.mutateAsync(values);
   }
 
@@ -174,19 +123,27 @@ export default function CorePage() {
         </p>
       </div>
 
-      {result?.output && (
-        <Alert variant={result?.success ? "success" : "error"} mono>
-          {result.output}
+      {saveMutation.result?.message && (
+        <Alert
+          variant={saveMutation.result?.success ? "success" : "error"}
+        >
+          {saveMutation.result.message}
         </Alert>
       )}
-      {result?.message && (
-        <Alert variant="success">{result.message}</Alert>
-      )}
-      {saveMutation.isError && !result && (
-        <Alert variant="error">
-          {saveMutation.error instanceof Error
-            ? saveMutation.error.message
-            : "Save failed"}
+      {actionMutation.result?.message && (
+        <Alert
+          variant={actionMutation.result?.success ? "success" : "error"}
+        >
+          {actionMutation.result.message}{" "}
+          {actionMutation.result?.success && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="underline underline-offset-2"
+            >
+              View activity
+            </button>
+          )}
         </Alert>
       )}
 
@@ -270,62 +227,66 @@ export default function CorePage() {
                         ) : null}
                       </label>
                       <div className="col-span-2">
-                        <div className="flex items-center gap-2">
-                          <input
+                        {keyDef.secret && field ? (
+                          <MaskedSecretField
                             id={keyDef.key}
                             name={keyDef.key}
-                            type={keyDef.secret ? "password" : "text"}
-                            value={field?.value ?? ""}
-                            onChange={(e) =>
-                              field &&
+                            entry={field}
+                            onInput={(value) =>
                               updateField(keyDef.key, {
-                                value: e.target.value,
+                                value,
                                 dirty: true,
                               })
                             }
-                            placeholder={
-                              keyDef.secret &&
-                              field &&
-                              secretStatus(field) === "set"
-                                ? "Leave empty to keep the current value…"
-                                : keyDef.placeholder
+                            onUndo={() =>
+                              updateField(keyDef.key, {
+                                value: "",
+                                dirty: false,
+                              })
                             }
-                            className="w-full font-mono text-sm"
+                            onClear={() =>
+                              updateField(keyDef.key, {
+                                value: "",
+                                dirty: true,
+                              })
+                            }
                           />
-                          {field?.dirty ? (
-                            <button
-                              type="button"
-                              onClick={() =>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <input
+                              id={keyDef.key}
+                              name={keyDef.key}
+                              type="text"
+                              value={field?.value ?? ""}
+                              onChange={(e) =>
+                                field &&
                                 updateField(keyDef.key, {
-                                  value: field.secret
-                                    ? ""
-                                    : (data.config[keyDef.key]?.value ??
-                                      ""),
-                                  dirty: false,
-                                })
-                              }
-                              className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
-                              aria-label="Undo changes"
-                              title="Undo changes"
-                            >
-                              Undo
-                            </button>
-                          ) : keyDef.secret && field?.hadValue ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateField(keyDef.key, {
-                                  value: "",
+                                  value: e.target.value,
                                   dirty: true,
                                 })
                               }
-                              className="text-text-muted hover:text-danger shrink-0 p-1 text-xs transition-colors"
-                              title="Clear stored value"
-                            >
-                              Clear
-                            </button>
-                          ) : null}
-                        </div>
+                              placeholder={keyDef.placeholder}
+                              className="w-full font-mono text-sm"
+                            />
+                            {field?.dirty ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateField(keyDef.key, {
+                                    value:
+                                      data.config[keyDef.key]?.value ?? "",
+                                    dirty: false,
+                                  })
+                                }
+                                className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
+                                aria-label="Undo changes"
+                                title="Undo changes"
+                              >
+                                Undo
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

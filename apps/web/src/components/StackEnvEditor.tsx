@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Icon } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
-import { valueForSave, markSaved } from "@/lib/masked-secret";
+import { valueForSave, type MaskedSecretState } from "@/lib/masked-secret";
+import { useSaveStackEnv } from "@/lib/queries/stacks";
+import SecretBadge from "@/components/SecretBadge";
+import { MaskedSecretField, useMaskedEntries } from "@/components/MaskedSecretField";
 
 type EnvEntry = {
   key: string;
@@ -11,12 +11,15 @@ type EnvEntry = {
   hasValue: boolean;
 };
 
-type Row = {
+/**
+ * One row model for both plain and secret vars: the shared masked-secret
+ * state plus the row chrome. `hadValue` is only meaningful for secret rows
+ * (the server never echoes secret values); plain rows always carry their
+ * literal value.
+ */
+type Row = MaskedSecretState & {
   key: string;
-  value: string;
   isSecret: boolean;
-  hadValue: boolean;
-  dirty: boolean;
 };
 
 function rowFor(entry: EnvEntry): Row {
@@ -42,47 +45,36 @@ export default function StackEnvEditor({
   stackName: string;
   detectedEnvVars?: string[];
 }) {
-  const queryClient = useQueryClient();
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
-  const [entries, setEntries] = useState<Row[]>(() => envVars.map(rowFor));
+  const { entries, setEntries, update, applySaved } = useMaskedEntries<Row>(
+    () => envVars.map(rowFor)
+  );
 
   const missingVars = detectedEnvVars.filter(
     (name) => !entries.some((e) => e.key === name)
   );
 
-  const saveMutation = useMutation({
-    mutationFn: async (
-      payload: Array<{
-        key: string;
-        value: string | null;
-        isSecret: boolean;
-      }>
-    ) => {
-      const res = await api.api
-        .stacks({ name: stackName })
-        .env.put({ entries: payload });
-      return unwrap(res);
-    },
-    onSuccess: () => {
-      // Fold the save into the local snapshot (secret inputs clear back
-      // to untouched) instead of waiting for the refetch.
-      setEntries((prev) =>
-        prev.map((e) => (e.isSecret ? { ...e, ...markSaved(e) } : e))
-      );
-      queryClient.invalidateQueries({ queryKey: ["stack", stackName] });
-    },
-  });
+  const saveMutation = useSaveStackEnv(stackName);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     await saveMutation.mutateAsync(
-      entries.map((e) => ({
-        key: e.key,
-        value: e.isSecret ? valueForSave(e) : e.value,
-        isSecret: e.isSecret,
+      entries.map((entry) => ({
+        key: entry.key,
+        // Untouched secrets send null (keep); an untouched row that *was*
+        // secret still sends null after unchecking — we hold no value to
+        // send, and "" would wrongly clear it.
+        value:
+          entry.isSecret || (entry.hadValue && !entry.dirty)
+            ? valueForSave(entry)
+            : entry.value,
+        isSecret: entry.isSecret,
       }))
     );
+    // Secrets clear back to the untouched snapshot; plain rows keep their
+    // local values (the refetch converges underneath).
+    applySaved((entry) => entry.isSecret);
   }
 
   function addEnvVar() {
@@ -101,12 +93,6 @@ export default function StackEnvEditor({
     setEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function updateEntry(index: number, patch: Partial<Row>) {
-    setEntries((prev) =>
-      prev.map((e, i) => (i === index ? { ...e, ...patch } : e))
-    );
-  }
-
   return (
     <form onSubmit={handleSave} className="pb-2">
       <div className="space-y-2">
@@ -116,31 +102,41 @@ export default function StackEnvEditor({
             <div key={i} className="flex items-center gap-2">
               <input
                 value={entry.key}
-                onChange={(e) => updateEntry(i, { key: e.target.value })}
+                onChange={(e) => update(i, { key: e.target.value })}
                 placeholder="KEY"
                 className="w-48 font-mono text-xs"
               />
-              <input
-                value={entry.value}
-                onChange={(e) =>
-                  updateEntry(i, {
-                    value: e.target.value,
-                    dirty: true,
-                  })
-                }
-                placeholder={
-                  entry.hadValue && !entry.dirty
-                    ? "Hidden — leave empty to keep"
-                    : "value"
-                }
-                type={entry.isSecret ? "password" : "text"}
-                className="flex-1 font-mono text-xs"
-              />
+              <div className="flex-1">
+                {entry.isSecret ? (
+                  <MaskedSecretField
+                    entry={entry}
+                    type="password"
+                    keepPlaceholder="Hidden — leave empty to keep"
+                    editPlaceholder="value"
+                    onInput={(value) => update(i, { value, dirty: true })}
+                    onUndo={() => update(i, { value: "", dirty: false })}
+                  />
+                ) : (
+                  <input
+                    value={entry.value}
+                    onChange={(e) =>
+                      update(i, {
+                        value: e.target.value,
+                        dirty: true,
+                      })
+                    }
+                    placeholder="value"
+                    type="text"
+                    className="w-full font-mono text-xs"
+                  />
+                )}
+              </div>
               {isDetected && (
                 <span className="bg-accent/15 text-accent rounded px-1.5 py-0.5 text-[10px] font-medium">
                   detected
                 </span>
               )}
+              {entry.isSecret && <SecretBadge entry={entry} />}
               <label
                 className="text-text-muted flex items-center gap-1 text-xs"
                 title="Masks the value in the UI and hides it from API responses. The actual value is still stored and passed to Docker on deploy."
@@ -149,7 +145,7 @@ export default function StackEnvEditor({
                   type="checkbox"
                   checked={entry.isSecret}
                   onChange={(e) =>
-                    updateEntry(i, { isSecret: e.target.checked })
+                    update(i, { isSecret: e.target.checked })
                   }
                   className="rounded"
                 />
@@ -170,11 +166,9 @@ export default function StackEnvEditor({
         })}
       </div>
 
-      {saveMutation.isError && (
+      {saveMutation.result && !saveMutation.result.success && (
         <p className="text-danger mt-2 text-sm">
-          {saveMutation.error instanceof Error
-            ? saveMutation.error.message
-            : "Save failed"}
+          {saveMutation.result.message}
         </p>
       )}
 
@@ -198,52 +192,47 @@ export default function StackEnvEditor({
       </div>
 
       {detectedEnvVars.length > 0 && (
-        <>
-          {/* Spacer: the bar below is fixed, so reserve its height in flow
-              to keep Save / bottom rows clickable. */}
-          <div className="h-16" aria-hidden />
-          <div className="bg-surface-1 border-border fixed inset-x-0 bottom-0 z-10 border-t px-4 py-3 sm:px-6 md:px-8">
-            <div className="flex items-center gap-3">
-              <span className="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase">
-                Detected
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {detectedEnvVars.map((name) => {
-                  const isMissing = missingVars.includes(name);
-                  return isMissing ? (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => addDetectedVar(name)}
-                      className="border-warning/40 text-warning hover:bg-warning/10 rounded border px-2 py-0.5 font-mono text-xs transition-colors"
-                    >
-                      + {name}
-                    </button>
-                  ) : (
-                    <span
-                      key={name}
-                      className="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs"
-                    >
-                      {name}
-                    </span>
-                  );
-                })}
-              </div>
-              {missingVars.length > 0 && (
-                <div className="ml-auto shrink-0">
-                  <Button
-                    variant="secondary"
-                    size="sm"
+        <div className="bg-surface-1 border-border mt-4 rounded-xl border px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-text-secondary shrink-0 text-xs font-medium tracking-wider uppercase">
+              Detected
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {detectedEnvVars.map((name) => {
+                const isMissing = missingVars.includes(name);
+                return isMissing ? (
+                  <button
+                    key={name}
                     type="button"
-                    onClick={addAllMissing}
+                    onClick={() => addDetectedVar(name)}
+                    className="border-warning/40 text-warning hover:bg-warning/10 rounded border px-2 py-0.5 font-mono text-xs transition-colors"
                   >
-                    Add All Missing
-                  </Button>
-                </div>
-              )}
+                    + {name}
+                  </button>
+                ) : (
+                  <span
+                    key={name}
+                    className="text-success/60 bg-surface-3 rounded px-2 py-0.5 font-mono text-xs"
+                  >
+                    {name}
+                  </span>
+                );
+              })}
             </div>
+            {missingVars.length > 0 && (
+              <div className="ml-auto shrink-0">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={addAllMissing}
+                >
+                  Add All Missing
+                </Button>
+              </div>
+            )}
           </div>
-        </>
+        </div>
       )}
     </form>
   );

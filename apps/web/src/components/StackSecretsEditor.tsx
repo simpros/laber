@@ -1,14 +1,8 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Icon } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
-import {
-  isUnset,
-  valueForSave,
-  markSaved,
-  type MaskedSecretState,
-} from "@/lib/masked-secret";
+import { isUnset, valueForSave, type MaskedSecretState } from "@/lib/masked-secret";
+import { useSaveStackSecrets } from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
+import { MaskedSecretField, useMaskedEntries } from "@/components/MaskedSecretField";
 
 type SecretEntry = {
   name: string;
@@ -30,45 +24,35 @@ export default function StackSecretsEditor({
   secrets: SecretEntry[];
   stackName: string;
 }) {
-  const queryClient = useQueryClient();
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
-  const [entries, setEntries] = useState<Row[]>(() =>
-    secrets.map((s) => ({
-      name: s.name,
-      filePath: s.filePath,
-      services: s.services,
-      hadValue: s.hasValue,
-      value: "",
-      dirty: false,
-    }))
+  const { entries, update, applySaved } = useMaskedEntries<Row>(
+    () =>
+      secrets.map((s) => ({
+        name: s.name,
+        filePath: s.filePath,
+        services: s.services,
+        hadValue: s.hasValue,
+        value: "",
+        dirty: false,
+      }))
   );
 
   const unsetCount = entries.filter(isUnset).length;
 
-  const saveMutation = useMutation({
-    mutationFn: async (
-      payload: Array<{ name: string; value: string | null }>
-    ) => {
-      const res = await api.api
-        .stacks({ name: stackName })
-        .secrets.put({ entries: payload });
-      return unwrap(res);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["stack", stackName] });
-      setEntries((prev) => prev.map((e) => ({ ...e, ...markSaved(e) })));
-    },
-  });
+  const saveMutation = useSaveStackSecrets(stackName);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     await saveMutation.mutateAsync(
-      entries.map((e) => ({
-        name: e.name,
-        value: valueForSave(e),
+      entries.map((entry) => ({
+        name: entry.name,
+        value: valueForSave(entry),
       }))
     );
+    // The server now holds what we sent: secrets clear back to the
+    // untouched snapshot instead of waiting for the refetch.
+    applySaved();
   }
 
   if (entries.length === 0) {
@@ -95,7 +79,7 @@ export default function StackSecretsEditor({
           </div>
         )}
 
-        {entries.map((entry) => (
+        {entries.map((entry, i) => (
           <div
             key={entry.name}
             className="bg-surface-2 border-border rounded-lg border p-3"
@@ -110,55 +94,11 @@ export default function StackSecretsEditor({
               <SecretBadge entry={entry} />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                value={entry.value}
-                onChange={(e) =>
-                  setEntries((prev) =>
-                    prev.map((x) =>
-                      x.name === entry.name
-                        ? { ...x, value: e.target.value, dirty: true }
-                        : x
-                    )
-                  )
-                }
-                placeholder={
-                  entry.hadValue && !entry.dirty
-                    ? "Leave empty to keep the current value…"
-                    : "Enter secret value…"
-                }
-                type="password"
-                className="flex-1 font-mono text-xs"
-              />
-              {entry.dirty && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEntries((prev) =>
-                      prev.map((x) =>
-                        x.name === entry.name
-                          ? { ...x, value: "", dirty: false }
-                          : x
-                      )
-                    )
-                  }
-                  className="text-text-muted hover:text-danger p-1 transition-colors"
-                  aria-label="Reset"
-                  title="Undo changes"
-                >
-                  <Icon>
-                    <path
-                      d="M2.5 2v4.5h4.5M2.87 8a5.5 5.5 0 1 0 1.01-3.25"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </Icon>
-                </button>
-              )}
-            </div>
+            <MaskedSecretField
+              entry={entry}
+              onInput={(value) => update(i, { value, dirty: true })}
+              onUndo={() => update(i, { value: "", dirty: false })}
+            />
 
             <div className="text-text-muted mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
               <span className="font-mono">{entry.filePath}</span>
@@ -170,11 +110,9 @@ export default function StackSecretsEditor({
         ))}
       </div>
 
-      {saveMutation.isError && (
+      {saveMutation.result && !saveMutation.result.success && (
         <p className="text-danger mt-2 text-sm">
-          {saveMutation.error instanceof Error
-            ? saveMutation.error.message
-            : "Save failed"}
+          {saveMutation.result.message}
         </p>
       )}
 

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
+import { useSaveStackCompose } from "@/lib/queries/stacks";
 import { Icon } from "@laber/ui";
 
 export function StackComposeView({
@@ -16,8 +15,6 @@ export function StackComposeView({
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
-  const [error, setError] = useState("");
-  const queryClient = useQueryClient();
 
   // The parent remounts per stack (`key={name}`); this only covers a
   // background refetch while viewing. Never clobber an in-progress edit.
@@ -25,22 +22,13 @@ export function StackComposeView({
     if (!editing) setDraft(content);
   }, [content, editing]);
 
-  const saveMutation = useMutation({
-    mutationFn: async (next: string) => {
-      const res = await api.api
-        .stacks({ name: stackName })
-        .compose.put({ content: next });
-      return unwrap(res);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["stack", stackName] });
-      setEditing(false);
-      setError("");
-    },
-    onError: (e) => {
-      setError(e instanceof Error ? e.message : "Save failed");
-    },
+  const saveMutation = useSaveStackCompose(stackName, {
+    onSaved: () => setEditing(false),
   });
+
+  const error = saveMutation.result?.success
+    ? ""
+    : (saveMutation.result?.message ?? "");
 
   async function copyToClipboard() {
     await navigator.clipboard.writeText(content);
@@ -59,7 +47,7 @@ export function StackComposeView({
             type="button"
             onClick={() => {
               setDraft(content);
-              setError("");
+              saveMutation.clearResult();
               setEditing((v) => !v);
             }}
             className="text-text-muted hover:text-text-secondary flex items-center gap-1 text-xs transition-colors"

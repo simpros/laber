@@ -1,13 +1,11 @@
-import { useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Alert, Button } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
-import { stackDetailRoute } from "@/router";
+import { useActivity } from "@/lib/activity";
+import {
+  useStackAction,
+  useStackDetail,
+  type StackAction,
+} from "@/lib/queries/stacks";
 import StackServices from "@/components/StackServices";
 import StackEnvEditor from "@/components/StackEnvEditor";
 import StackSecretsEditor from "@/components/StackSecretsEditor";
@@ -24,62 +22,30 @@ const tabs = [
 
 export type StackTab = (typeof tabs)[number]["id"];
 
-export function useStackDetail(name: string) {
-  return useQuery({
-    queryKey: ["stack", name],
-    queryFn: async () => unwrap(await api.api.stacks({ name }).get()),
-  });
-}
-
-type StackAction = "deploy" | "stop" | "restart" | "pull";
-
-export default function StackDetailPage() {
-  const { name } = stackDetailRoute.useParams();
-  const { tab } = stackDetailRoute.useSearch();
-  const navigate = stackDetailRoute.useNavigate();
-  const activeTab: StackTab = tab ?? "services";
-  const queryClient = useQueryClient();
+/**
+ * Pure page: `name`/`tab` arrive as props from the one-line route wrapper
+ * in `router.tsx`, so this module never imports the router tree that
+ * imports it (no module cycle). Editors remount per stack via `key={name}`,
+ * which is what makes prop-initialized local state correct.
+ */
+export default function StackDetailPage({
+  name,
+  tab,
+  onTabChange,
+}: {
+  name: string;
+  tab: StackTab;
+  onTabChange: (tab: StackTab) => void;
+}) {
   const { data, isLoading, isError, error } = useStackDetail(name);
+  const { setOpen } = useActivity();
 
-  const [result, setResult] = useState<{
-    success?: boolean;
-    output?: string;
-  } | null>(null);
+  const actionMutation = useStackAction(name);
 
-  const actionMutation = useMutation({
-    mutationFn: async (action: StackAction) => {
-      const stack = api.api.stacks({ name });
-      switch (action) {
-        case "deploy":
-          return unwrap(await stack.deploy.post());
-        case "stop":
-          return unwrap(await stack.stop.post());
-        case "restart":
-          return unwrap(await stack.restart.post());
-        case "pull":
-          return unwrap(await stack.pull.post());
-      }
-    },
-    onSuccess: (res) => {
-      setResult(res);
-      queryClient.invalidateQueries({ queryKey: ["stack", name] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (e) => {
-      setResult({
-        success: false,
-        output: e instanceof Error ? e.message : "Unknown error",
-      });
-    },
-  });
-
-  const pendingAction = actionMutation.isPending
-    ? actionMutation.variables
-    : undefined;
+  const pendingAction = actionMutation.pendingAction;
 
   function handleAction(action: StackAction) {
-    setResult(null);
+    actionMutation.clearResult();
     actionMutation.mutate(action);
   }
 
@@ -96,10 +62,6 @@ export default function StackDetailPage() {
     data.containers.length > 0
       ? data.containers.some((c) => c.state === "running")
       : data.stack.status === "deployed";
-
-  function setTab(next: StackTab) {
-    navigate({ search: { tab: next } });
-  }
 
   return (
     <div className="space-y-6">
@@ -164,9 +126,20 @@ export default function StackDetailPage() {
         </div>
       </div>
 
-      {result?.output && (
-        <Alert variant={result?.success ? "success" : "error"} mono>
-          {result.output}
+      {actionMutation.result?.message && (
+        <Alert
+          variant={actionMutation.result?.success ? "success" : "error"}
+        >
+          {actionMutation.result.message}{" "}
+          {actionMutation.result?.success && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="underline underline-offset-2"
+            >
+              View activity
+            </button>
+          )}
         </Alert>
       )}
 
@@ -174,9 +147,9 @@ export default function StackDetailPage() {
         {tabs.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => onTabChange(t.id)}
             className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === t.id
+              tab === t.id
                 ? "border-accent text-text-primary"
                 : "text-text-muted hover:text-text-secondary border-transparent"
             }`}
@@ -186,13 +159,13 @@ export default function StackDetailPage() {
         ))}
       </div>
 
-      {activeTab === "services" && (
+      {tab === "services" && (
         <StackServices
           containers={data.containers}
           services={data.services}
         />
       )}
-      {activeTab === "env" && (
+      {tab === "env" && (
         <StackEnvEditor
           key={name}
           envVars={data.envVars}
@@ -200,14 +173,14 @@ export default function StackDetailPage() {
           detectedEnvVars={data.detectedEnvVars}
         />
       )}
-      {activeTab === "secrets" && (
+      {tab === "secrets" && (
         <StackSecretsEditor
           key={name}
           secrets={data.secrets}
           stackName={name}
         />
       )}
-      {activeTab === "compose" && (
+      {tab === "compose" && (
         <StackComposeView
           key={name}
           content={data.composeRaw}
@@ -215,7 +188,7 @@ export default function StackDetailPage() {
           stackName={name}
         />
       )}
-      {activeTab === "logs" && <StackDeploymentLogs logs={data.logs} />}
+      {tab === "logs" && <StackDeploymentLogs logs={data.logs} />}
     </div>
   );
 }

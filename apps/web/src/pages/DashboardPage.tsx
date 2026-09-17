@@ -1,17 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Card, CardHeader, StatusBadge } from "@laber/ui";
-import { api, unwrap, ApiError } from "@/lib/api";
 import { statusColor, timeAgo } from "@/lib/utils";
-
-export function useDashboard() {
-  return useQuery({
-    queryKey: ["dashboard"],
-    queryFn: async () => unwrap(await api.api.dashboard.get()),
-    retry: (count, err) =>
-      err instanceof ApiError && err.status === 401 ? false : count < 1,
-  });
-}
+import { useDashboard } from "@/lib/queries/dashboard";
 
 export default function DashboardPage() {
   const { data, isLoading, isError, error } = useDashboard();

@@ -1,96 +1,28 @@
 import { useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
 import { useForm } from "@tanstack/react-form";
 import { Card, Button, Alert, Icon } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
-
-export function useRepositories() {
-  return useQuery({
-    queryKey: ["repositories"],
-    queryFn: async () => unwrap(await api.api.repositories.get()),
-  });
-}
+import {
+  useAddRepository,
+  useRemoveRepository,
+  useRepositories,
+  useSyncRepository,
+} from "@/lib/queries/repositories";
 
 export default function RepositoryPage() {
   const { data, isLoading, isError, error } = useRepositories();
-  const queryClient = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
 
-  const addMutation = useMutation({
-    mutationFn: async (input: {
-      name: string;
-      url: string;
-      branch: string;
-      stacksPath: string;
-      sshPrivateKey: string | null;
-    }) => {
-      const res = await api.api.repositories.post(input);
-      return unwrap(res);
-    },
-    onSuccess: (result) => {
-      setShowAddForm(false);
-      setSuccessMsg(
-        `Repository added. Discovered ${result.discovered} stack(s).`
-      );
-      queryClient.invalidateQueries({ queryKey: ["repositories"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (e) => {
-      setErrorMsg(
-        e instanceof Error ? e.message : "Failed to add repository"
-      );
-    },
+  const addMutation = useAddRepository({
+    onAdded: () => setShowAddForm(false),
   });
+  const syncMutation = useSyncRepository();
+  const removeMutation = useRemoveRepository();
 
-  const syncMutation = useMutation({
-    mutationFn: async (repoId: string) => {
-      const res = await api.api.repositories({ id: repoId }).sync.post();
-      return unwrap(res);
-    },
-    onSuccess: (result) => {
-      const parts = [
-        `${result.newStacks} new`,
-        `${result.updatedStacks} updated`,
-      ];
-      if (result.removedStacks.length > 0) {
-        parts.push(
-          `${result.removedStacks.length} removed (${result.removedStacks.join(", ")})`
-        );
-      }
-      setSuccessMsg(`Synced. Found ${parts.join(", ")} stack(s).`);
-      queryClient.invalidateQueries({ queryKey: ["repositories"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
-    },
-    onError: (e) => {
-      setErrorMsg(
-        e instanceof Error ? e.message : "Failed to sync repository"
-      );
-    },
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: async (repoId: string) => {
-      const res = await api.api.repositories({ id: repoId }).delete();
-      return unwrap(res);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["repositories"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
-    },
-    onError: (e) => {
-      setErrorMsg(
-        e instanceof Error ? e.message : "Failed to remove repository"
-      );
-    },
-  });
+  // One Alert owns the page feedback: every attempt clears the sibling
+  // channels first, so at most one result is ever visible.
+  const result =
+    addMutation.result ?? syncMutation.result ?? removeMutation.result;
 
   const form = useForm({
     defaultValues: {
@@ -101,8 +33,7 @@ export default function RepositoryPage() {
       sshPrivateKey: "",
     },
     onSubmit: async ({ value }) => {
-      setErrorMsg("");
-      setSuccessMsg("");
+      clearAll();
       await addMutation.mutateAsync({
         name: value.name,
         url: value.url,
@@ -113,9 +44,13 @@ export default function RepositoryPage() {
     },
   });
 
-  const syncingRepoId = syncMutation.isPending
-    ? syncMutation.variables
-    : undefined;
+  const syncingRepoId = syncMutation.syncingRepoId;
+
+  function clearAll() {
+    addMutation.clearResult();
+    syncMutation.clearResult();
+    removeMutation.clearResult();
+  }
 
   if (isLoading)
     return <p className="text-text-muted text-sm">Loading…</p>;
@@ -129,14 +64,12 @@ export default function RepositoryPage() {
     );
 
   function handleSync(repoId: string) {
-    setErrorMsg("");
-    setSuccessMsg("");
+    clearAll();
     syncMutation.mutate(repoId);
   }
 
   function handleRemove(repoId: string) {
-    setErrorMsg("");
-    setSuccessMsg("");
+    clearAll();
     removeMutation.mutate(repoId);
   }
 
@@ -156,8 +89,11 @@ export default function RepositoryPage() {
         )}
       </div>
 
-      {errorMsg && <Alert variant="error">{errorMsg}</Alert>}
-      {successMsg && <Alert variant="success">{successMsg}</Alert>}
+      {result && (
+        <Alert variant={result.success ? "success" : "error"}>
+          {result.message}
+        </Alert>
+      )}
 
       {(showAddForm || data.repositories.length === 0) && (
         <form

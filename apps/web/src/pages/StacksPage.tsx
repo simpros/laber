@@ -1,15 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Card, Icon } from "@laber/ui";
-import { api, unwrap } from "@/lib/api";
 import { statusBadge } from "@/lib/utils";
-
-export function useStacks() {
-  return useQuery({
-    queryKey: ["stacks"],
-    queryFn: async () => unwrap(await api.api.stacks.get()),
-  });
-}
+import { useStacks } from "@/lib/queries/stacks";
 
 export default function StacksPage() {
   const { data: stacks, isLoading, isError, error } = useStacks();
