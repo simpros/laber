@@ -82,40 +82,6 @@ describe("discoverStacks", () => {
     expect(result).toEqual([]);
   });
 
-  it("extracts network name from compose file with external network", async () => {
-    const stackDir = join(tempDir, "stacks", "myapp");
-    mkdirSync(stackDir, { recursive: true });
-    writeFileSync(
-      join(stackDir, "docker-compose.yaml"),
-      [
-        "services:",
-        "  web:",
-        "    image: nginx:latest",
-        "networks:",
-        "  proxy:",
-        "    name: traefik-net",
-        "    external: true",
-      ].join("\n")
-    );
-
-    const result = await discoverStacks(tempDir, "stacks");
-    expect(result).toHaveLength(1);
-    expect(result[0].networkName).toBe("traefik-net");
-  });
-
-  it("returns null networkName when no external networks", async () => {
-    const stackDir = join(tempDir, "stacks", "myapp");
-    mkdirSync(stackDir, { recursive: true });
-    writeFileSync(
-      join(stackDir, "docker-compose.yaml"),
-      "services:\n  web:\n    image: nginx:latest\n"
-    );
-
-    const result = await discoverStacks(tempDir, "stacks");
-    expect(result).toHaveLength(1);
-    expect(result[0].networkName).toBeNull();
-  });
-
   it("skips subdirectories without compose files", async () => {
     const stacksDir = join(tempDir, "stacks");
     mkdirSync(join(stacksDir, "valid-app"), { recursive: true });

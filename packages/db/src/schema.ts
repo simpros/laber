@@ -46,6 +46,11 @@ export const stacks = sqliteTable("stacks", {
   })
     .notNull()
     .default("discovered"),
+  // Legacy cache owned by the frozen SvelteKit tree (`apps/web` renders it
+  // as a `net:` badge and keeps writing it on sync). The Elysia server
+  // neither reads nor writes it — deploy re-parses the compose file fresh,
+  // the only correctness-critical consumer. Drop this column with the
+  // SvelteKit-deletion ticket, not before.
   networkName: text("network_name"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

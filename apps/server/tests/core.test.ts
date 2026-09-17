@@ -139,10 +139,8 @@ describe("POST /api/core/deploy|stop|restart", () => {
     );
     expect(deploy.status).toBe(200);
     const deployBody = (await deploy.json()) as {
-      success: boolean;
       output: string;
     };
-    expect(deployBody.success).toBe(true);
     expect(deployBody.output).toContain("core up");
 
     for (const action of ["stop", "restart"] as const) {
@@ -150,8 +148,8 @@ describe("POST /api/core/deploy|stop|restart", () => {
         jsonReq(`/api/core/${action}`, "POST", {}, cookie)
       );
       expect(res.status).toBe(200);
-      expect(((await res.json()) as { success: boolean }).success).toBe(
-        true
+      expect(((await res.json()) as { output: string }).output).toBe(
+        "mocked"
       );
     }
   });
@@ -165,11 +163,16 @@ describe("POST /api/core/deploy|stop|restart", () => {
         cookie
       )
     );
-    dockerStub.execCompose = async () => ({
-      stdout: "",
-      stderr: "core blew up",
-      exitCode: 1,
-    });
+    dockerStub.execCompose = async (options) => {
+      // Streamed detail is what the deployment log records; the wire
+      // message stays short.
+      options.onOutput?.("core blew up");
+      return {
+        stdout: "",
+        stderr: "core blew up",
+        exitCode: 1,
+      };
+    };
 
     const res = await app.handle(
       jsonReq("/api/core/deploy", "POST", {}, cookie)

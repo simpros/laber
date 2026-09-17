@@ -2,10 +2,10 @@ import { dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { db, stackEnvVars, stackSecrets } from "@laber/db";
 import { eq } from "drizzle-orm";
-import { parseComposeContent } from "./compose-parser";
+import { parseDetailContent } from "./compose-detail";
 import { getStackAndRepo } from "./config";
 import { ValidationError } from "./errors";
-import type { StackTx } from "./git";
+import type { StackTx } from "./db-tx";
 
 function requireName(name: string): string {
   if (!name) throw new ValidationError("Stack name must not be empty");
@@ -17,9 +17,9 @@ export async function saveComposeContent(name: string, content: string) {
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
-  // Reuse the single compose-shape gate: syntax errors and a missing
+  // Reuse the detail-side compose gate: syntax errors and a missing
   // `services` section are rejected before anything hits disk.
-  parseComposeContent(content);
+  parseDetailContent(content);
   const { composePath } = await getStackAndRepo(name);
 
   mkdirSync(dirname(composePath), { recursive: true });

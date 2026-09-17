@@ -6,6 +6,7 @@ import {
   ensureNetwork,
   connectTraefikToNetwork,
 } from "./docker";
+import { ActionFailedError } from "./errors";
 
 type SecretFile = {
   filePath: string;
@@ -21,10 +22,7 @@ type DeployOptions = {
   onOutput?: (chunk: string) => void;
 };
 
-type DeployResult = {
-  success: boolean;
-  output: string;
-};
+export type { DeployOptions };
 
 export function escapeEnvValue(value: string): string {
   if (!/[\s#"'\\]/.test(value)) return value;
@@ -62,9 +60,16 @@ function removeSecretFiles(files: SecretFile[]): void {
   }
 }
 
+/**
+ * Single failure contract: returns the deploy output on success, throws
+ * `ActionFailedError` on a nonzero exit (after wiping freshly-written secret
+ * files). `runLoggedAction` maps that to the contextual failure message, so
+ * the message here stays short — the transcript is already in the activity
+ * stream and deployment log.
+ */
 export async function deployStack(
   options: DeployOptions
-): Promise<DeployResult> {
+): Promise<{ output: string }> {
   if (options.networkName) {
     await ensureNetwork(options.networkName);
   }
@@ -111,16 +116,16 @@ export async function deployStack(
       }
     }
 
-    if (result.exitCode !== 0 && options.secretFiles?.length) {
-      // A failed deploy must not leave freshly-written secret files behind.
-      // (On success they stay: running containers mount these paths.)
-      removeSecretFiles(options.secretFiles);
+    if (result.exitCode !== 0) {
+      if (options.secretFiles?.length) {
+        // A failed deploy must not leave freshly-written secret files behind.
+        // (On success they stay: running containers mount these paths.)
+        removeSecretFiles(options.secretFiles);
+      }
+      throw new ActionFailedError("Deploy failed");
     }
 
-    return {
-      success: result.exitCode === 0,
-      output,
-    };
+    return { output };
   } finally {
     if (envFilePath) {
       try {

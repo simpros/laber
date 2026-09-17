@@ -1,6 +1,7 @@
 import simpleGit from "simple-git";
 import { ConflictError } from "./errors";
-import { stacks, type Db } from "@laber/db";
+import { stacks } from "@laber/db";
+import type { StackTx } from "./db-tx";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   mkdtempSync,
@@ -11,7 +12,6 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { parseComposeFile, extractNetworkName } from "./compose-parser";
 
 function withSshKey(
   sshKey: string | undefined,
@@ -61,6 +61,14 @@ export async function pullRepo(
   });
 }
 
+/**
+ * Filesystem discovery only: which stack directories exist and which compose
+ * file each one uses. Deliberately no compose parsing here — deploy re-parses
+ * the compose file fresh (the only correctness-critical consumer), so a
+ * cached network name would be a second source of truth deploy refuses to
+ * trust. The `network_name` column still exists for the frozen SvelteKit
+ * tree; this server neither reads nor writes it.
+ */
 export async function discoverStacks(
   repoDir: string,
   stacksPath: string
@@ -69,7 +77,6 @@ export async function discoverStacks(
     name: string;
     relativePath: string;
     composeFile: string;
-    networkName: string | null;
   }>
 > {
   const fullPath = join(repoDir, stacksPath);
@@ -80,7 +87,6 @@ export async function discoverStacks(
     name: string;
     relativePath: string;
     composeFile: string;
-    networkName: string | null;
   }> = [];
 
   for (const entry of entries) {
@@ -93,18 +99,10 @@ export async function discoverStacks(
     ]) {
       const composePath = join(dirPath, candidate);
       if (existsSync(composePath)) {
-        let networkName: string | null = null;
-        try {
-          const compose = parseComposeFile(composePath);
-          networkName = extractNetworkName(compose) ?? null;
-        } catch {
-          // ignore parse errors
-        }
         stacks.push({
           name: entry.name,
           relativePath: join(stacksPath, entry.name),
           composeFile: candidate,
-          networkName,
         });
         break;
       }
@@ -117,8 +115,6 @@ export async function discoverStacks(
 export type DiscoveredStack = Awaited<
   ReturnType<typeof discoverStacks>
 >[number];
-
-export type StackTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export type ReconcileCounts = {
   added: number;
@@ -151,8 +147,7 @@ export function reconcileStacksTx(
     return (
       prev &&
       (prev.relativePath !== s.relativePath ||
-        prev.composeFile !== s.composeFile ||
-        prev.networkName !== s.networkName)
+        prev.composeFile !== s.composeFile)
     );
   });
   const removed = existing.filter((s) => !discoveredByName.has(s.name));
@@ -191,7 +186,6 @@ export function reconcileStacksTx(
           name: s.name,
           relativePath: s.relativePath,
           composeFile: s.composeFile,
-          networkName: s.networkName,
         }))
       )
       .run();
@@ -201,7 +195,6 @@ export function reconcileStacksTx(
       .set({
         relativePath: s.relativePath,
         composeFile: s.composeFile,
-        networkName: s.networkName,
         updatedAt: new Date(),
       })
       .where(and(eq(stacks.repositoryId, repoId), eq(stacks.name, s.name)))

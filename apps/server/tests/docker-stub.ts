@@ -48,8 +48,7 @@ const defaults = {
     _command: string[],
     _projectName?: string,
     _onOutput?: (chunk: string) => void
-  ): Promise<{ success: boolean; output: string }> => ({
-    success: true,
+  ): Promise<{ output: string }> => ({
     output: "mocked",
   }),
   connectTraefikToNetwork: async (

@@ -3,9 +3,11 @@ import { join } from "path";
 import { sql } from "drizzle-orm";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
-import { listContainers, runComposeCommand } from "./docker";
-import { deployStack } from "./deploy";
-import { runLoggedAction } from "./logged-action";
+import { listContainers } from "./docker";
+import {
+  runComposeCommandLifecycle,
+  runDeployLifecycle,
+} from "./compose-lifecycle";
 import { DATA_DIR } from "./config";
 import { getCoreComposeContent } from "./core-compose";
 import { CORE_KEYS, type CoreConfigShape } from "./core-keys";
@@ -58,28 +60,6 @@ function getComposeDir(): string {
 
 function getComposePath(): string {
   return join(getComposeDir(), "docker-compose.yaml");
-}
-
-export async function deployCoreStack(
-  config: CoreConfig,
-  onOutput?: (chunk: string) => void
-): Promise<{ success: boolean; output: string }> {
-  const composePath = getComposePath();
-  writeFileSync(composePath, getCoreComposeContent(config), "utf-8");
-
-  const envVars: Record<string, string> = {
-    CF_DNS_API_TOKEN: config.cfDnsApiToken,
-  };
-  if (config.tunnelToken) {
-    envVars.TUNNEL_TOKEN = config.tunnelToken;
-  }
-
-  return deployStack({
-    composePath,
-    envVars,
-    projectName: "laber-core",
-    onOutput,
-  });
 }
 
 export async function getCoreStatus(): Promise<CoreServiceStatus[]> {
@@ -169,45 +149,44 @@ export async function saveCoreConfig(
   return { success: true, message: "Configuration saved" };
 }
 
-/**
- * Core-side twin of `runStackLifecycle`: one call that looks the stack up,
- * runs the compose command under logging, and throws `ActionFailedError`
- * on failure. Core has no stack row, so this only flags `isCore`.
- */
-async function runCoreCommand(
-  title: string,
-  action: string,
-  command: string[]
-) {
-  const { output } = await runLoggedAction({
-    title,
-    action,
-    isCore: true,
-    failureMessage: `${title} failed`,
-    run: (onOutput) =>
-      runComposeCommand(getComposePath(), command, "laber-core", onOutput),
-  });
-
-  return { success: true as const, output };
-}
-
 export async function deployCore() {
   const config = await loadCoreConfig();
-  const { output } = await runLoggedAction({
+  const composePath = getComposePath();
+  writeFileSync(composePath, getCoreComposeContent(config), "utf-8");
+
+  const envVars: Record<string, string> = {
+    CF_DNS_API_TOKEN: config.cfDnsApiToken,
+  };
+  if (config.tunnelToken) {
+    envVars.TUNNEL_TOKEN = config.tunnelToken;
+  }
+
+  return runDeployLifecycle({
     title: "Deploying core services",
     action: "deploy",
     isCore: true,
-    failureMessage: "Deploying core services failed",
-    run: (onOutput) => deployCoreStack(config, onOutput),
+    deploy: { composePath, envVars, projectName: "laber-core" },
   });
-
-  return { success: true as const, output };
 }
 
 export async function stopCore() {
-  return runCoreCommand("Stopping core services", "stop", ["down"]);
+  return runComposeCommandLifecycle({
+    title: "Stopping core services",
+    action: "stop",
+    isCore: true,
+    composePath: getComposePath(),
+    projectName: "laber-core",
+    command: ["down"],
+  });
 }
 
 export async function restartCore() {
-  return runCoreCommand("Restarting core services", "restart", ["restart"]);
+  return runComposeCommandLifecycle({
+    title: "Restarting core services",
+    action: "restart",
+    isCore: true,
+    composePath: getComposePath(),
+    projectName: "laber-core",
+    command: ["restart"],
+  });
 }

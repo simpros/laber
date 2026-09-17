@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
 import { getRepoDir } from "../src/lib/config";
+import { ActionFailedError } from "../src/lib/errors";
 import { dockerStub, resetDockerStub } from "./docker-stub";
 
 let cookie = "";
@@ -193,10 +194,8 @@ describe("POST /api/stacks/:name/deploy", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      success: boolean;
       output: string;
     };
-    expect(body.success).toBe(true);
     expect(body.output).toContain("deployed");
 
     const [updated] = await db
@@ -248,11 +247,17 @@ describe("POST /api/stacks/:name/deploy", () => {
 
   it("returns 500 when the deploy command fails", async () => {
     const { stack } = await seedStack("failed-deploy", BASIC_COMPOSE);
-    dockerStub.execCompose = async () => ({
-      stdout: "",
-      stderr: "boom",
-      exitCode: 1,
-    });
+    dockerStub.execCompose = async (options) => {
+      // The stub streams what the real docker CLI would stream; the shell
+      // records the transcript in the deployment log and keeps the wire
+      // message short.
+      options.onOutput?.("boom");
+      return {
+        stdout: "",
+        stderr: "boom",
+        exitCode: 1,
+      };
+    };
 
     const res = await app.handle(
       jsonReq("/api/stacks/failed-deploy/deploy", "POST", {}, cookie)
@@ -317,7 +322,6 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       .set({ status: "deployed" })
       .where(eq(stacks.id, stack.id));
     dockerStub.runComposeCommand = async () => ({
-      success: true,
       output: "stopped",
     });
 
@@ -325,8 +329,8 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
       jsonReq("/api/stacks/stop-me/stop", "POST", {}, cookie)
     );
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { success: boolean }).success).toBe(
-      true
+    expect(((await res.json()) as { output: string }).output).toBe(
+      "stopped"
     );
     const [updated] = await db
       .select()
@@ -337,10 +341,17 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
 
   it("returns 500 when stopping fails", async () => {
     const { stack } = await seedStack("unstoppable", BASIC_COMPOSE);
-    dockerStub.runComposeCommand = async () => ({
-      success: false,
-      output: "down blew up",
-    });
+    dockerStub.runComposeCommand = async (
+      _composePath,
+      _command,
+      _projectName,
+      onOutput
+    ) => {
+      // Operational failure is a throw, not a flag; the streamed detail is
+      // what the deployment log records.
+      onOutput?.("down blew up");
+      throw new ActionFailedError("Compose down failed");
+    };
 
     const res = await app.handle(
       jsonReq("/api/stacks/unstoppable/stop", "POST", {}, cookie)
@@ -366,8 +377,8 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
         jsonReq(`/api/stacks/bounce-me/${action}`, "POST", {}, cookie)
       );
       expect(res.status).toBe(200);
-      expect(((await res.json()) as { success: boolean }).success).toBe(
-        true
+      expect(((await res.json()) as { output: string }).output).toBe(
+        "mocked"
       );
     }
   });

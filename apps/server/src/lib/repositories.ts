@@ -8,12 +8,12 @@ import {
   discoverStacks,
   reconcileStacksTx,
   type DiscoveredStack,
-  type StackTx,
 } from "./git";
+import type { StackTx } from "./db-tx";
 import { getRepoDir, getComposePath } from "./config";
 import { runComposeCommand } from "./docker";
 import { runLoggedAction } from "./logged-action";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ConflictError, ActionFailedError } from "./errors";
 
 export type AddRepositoryInput = {
   name: string;
@@ -30,15 +30,16 @@ type RemoteTree = Pick<
 
 /**
  * Ensure the local git tree exists (fresh clone, or clone-if-missing /
- * pull). Returns a failure message for *operational* git errors, or null
- * when the tree is ready.
+ * pull). Throws `ActionFailedError` on operational git failures — the
+ * detail line is already streamed, so `runLoggedAction` maps the throw to
+ * the contextual failure message. Domain errors are never produced here.
  */
 async function ensureRemoteTree(
   repoDir: string,
   remote: RemoteTree,
   onOutput: (chunk: string) => void,
   fresh: boolean
-): Promise<string | null> {
+): Promise<void> {
   try {
     if (fresh || !existsSync(repoDir)) {
       await cloneRepo(
@@ -50,11 +51,10 @@ async function ensureRemoteTree(
     } else {
       await pullRepo(repoDir, remote.sshPrivateKey ?? undefined);
     }
-    return null;
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     onOutput(`Sync failed: ${message}\n`);
-    return message;
+    throw new ActionFailedError("Sync failed");
   }
 }
 
@@ -79,8 +79,8 @@ async function materializeRepoTree<T>(options: {
   ) => { summary: string; result: T };
 }): Promise<T> {
   // The discovered value flows out through the run's return type — no
-  // out-of-band `captured` variable. A soft `{ success: false }` throws
-  // inside `runLoggedAction` before `value` is ever read.
+  // out-of-band variable, no boolean, no cast. `run` throws on failure, so
+  // reaching the return below proves success to the type system.
   const { value } = await runLoggedAction<T>({
     title: options.title,
     action: options.action,
@@ -91,17 +91,18 @@ async function materializeRepoTree<T>(options: {
           ? `Cloning ${options.remote.url} (branch: ${options.remote.branch})...\n`
           : `Pulling latest changes from ${options.remote.url}...\n`
       );
-      const failure = await ensureRemoteTree(
-        options.repoDir,
-        options.remote,
-        onOutput,
-        options.fresh
-      );
-      if (failure !== null) {
+      try {
+        await ensureRemoteTree(
+          options.repoDir,
+          options.remote,
+          onOutput,
+          options.fresh
+        );
+      } catch (e) {
         if (options.fresh) {
           rmSync(options.repoDir, { recursive: true, force: true });
         }
-        return { success: false, output: failure };
+        throw e;
       }
       onOutput(
         options.fresh
@@ -113,15 +114,12 @@ async function materializeRepoTree<T>(options: {
         options.repoDir,
         options.stacksPath
       );
-      // `db.transaction` runs the callback synchronously, so `applied` is
-      // assigned unless the callback threw — in which case this run throws
-      // too and the success return below is never reached.
-      let applied: { summary: string; result: T } | undefined;
-      db.transaction((tx) => {
-        applied = options.applyDiscovery(tx, discovered, onOutput);
-      });
-      const done = applied as { summary: string; result: T };
-      return { success: true, output: done.summary, value: done.result };
+      // The sync transaction returns the callback's value (and rolls back on
+      // throw), so there is nothing to smuggle out or assert.
+      const applied = db.transaction((tx) =>
+        options.applyDiscovery(tx, discovered, onOutput)
+      );
+      return { output: applied.summary, value: applied.result };
     },
   });
 
@@ -263,6 +261,17 @@ export async function deleteRepository(id: string) {
     .select()
     .from(stacks)
     .where(eq(stacks.repositoryId, id));
+
+  // One rule, mirroring sync: a stack that is still deployed is never
+  // orphaned. Sync refuses to reconcile it away (`ConflictError`); delete
+  // refuses to drop its rows while containers may keep running. Stop the
+  // stacks first, then delete.
+  const deployed = repoStacks.filter((s) => s.status === "deployed");
+  if (deployed.length > 0) {
+    throw new ConflictError(
+      `Cannot delete: stack(s) still deployed: ${deployed.map((s) => s.name).join(", ")}. Stop them before deleting.`
+    );
+  }
 
   // One ordered state machine: the DB delete is authoritative and commits
   // first; container shutdown and disk removal are best-effort cleanup after

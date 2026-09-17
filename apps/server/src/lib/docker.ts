@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import { dirname } from "path";
+import { ActionFailedError } from "./errors";
 import type { ContainerInfo } from "./types";
 
 export type { ContainerInfo };
@@ -189,12 +190,18 @@ export async function execCompose(options: {
   return { stdout, stderr, exitCode };
 }
 
+/**
+ * Single failure contract: returns the command output on success, throws
+ * `ActionFailedError` on a nonzero exit. `runLoggedAction` maps that to the
+ * contextual failure message; direct callers (repo delete) surface the
+ * message in their own warnings.
+ */
 export async function runComposeCommand(
   composePath: string,
   command: string[],
   projectName?: string,
   onOutput?: (chunk: string) => void
-): Promise<{ success: boolean; output: string }> {
+): Promise<{ output: string }> {
   const result = await execCompose({
     composePath,
     command,
@@ -202,10 +209,13 @@ export async function runComposeCommand(
     onOutput,
   });
 
-  return {
-    success: result.exitCode === 0,
-    output: result.stdout + result.stderr,
-  };
+  const output = result.stdout + result.stderr;
+  if (result.exitCode !== 0) {
+    throw new ActionFailedError(
+      `Compose ${command.join(" ")} failed${projectName ? ` for ${projectName}` : ""}`
+    );
+  }
+  return { output };
 }
 
 export async function connectTraefikToNetwork(

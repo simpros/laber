@@ -4,7 +4,7 @@ import { execFileSync } from "child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { db, repositories } from "@laber/db";
+import { db, repositories, stacks } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { app } from "../src/app";
 import { signUp, req, jsonReq } from "./helpers";
@@ -159,6 +159,58 @@ describe("repositories", () => {
       })
     );
     expect(del.status).toBe(404);
+  });
+
+  it("refuses to delete a repository with deployed stacks", async () => {
+    const fixtureDir = initFixtureRepo(["doomed"]);
+
+    const addRes = await app.handle(
+      jsonReq(
+        "/api/repositories",
+        "POST",
+        {
+          name: "doomed-fixture",
+          url: fixtureDir,
+          branch: "main",
+          stacksPath: "stacks",
+        },
+        cookie
+      )
+    );
+    expect(addRes.status).toBe(201);
+
+    const list = (await (
+      await app.handle(req("/api/repositories", { headers: { cookie } }))
+    ).json()) as {
+      repositories: Array<{ id: string; name: string }>;
+    };
+    const repo = list.repositories.find((r) => r.name === "doomed-fixture")!;
+    const repoStacks = await db
+      .select()
+      .from(stacks)
+      .where(eq(stacks.repositoryId, repo.id));
+    expect(repoStacks).toHaveLength(1);
+    await db
+      .update(stacks)
+      .set({ status: "deployed" })
+      .where(eq(stacks.id, repoStacks[0].id));
+
+    // Same rule as sync: a still-deployed stack is never orphaned.
+    const delRes = await app.handle(
+      req(`/api/repositories/${repo.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      })
+    );
+    expect(delRes.status).toBe(409);
+
+    const remaining = await db
+      .select()
+      .from(repositories)
+      .where(eq(repositories.id, repo.id));
+    expect(remaining).toHaveLength(1);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
   });
 
   it("returns 500 when cloning fails", async () => {
