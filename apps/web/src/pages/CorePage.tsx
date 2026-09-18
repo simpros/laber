@@ -16,7 +16,7 @@ import {
   undoSecretEntry,
   valueForSave,
   type MaskedSecretState,
-  type Secrecy,
+  type SecrecyState,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import {
@@ -33,9 +33,8 @@ import QueryStatus from "@/components/QueryStatus";
 import LifecycleToolbar from "@/components/LifecycleToolbar";
 import ConfigValueField from "@/components/ConfigValueField";
 
-type FieldState = MaskedSecretState & {
+type FieldState = MaskedSecretState & SecrecyState & {
   key: CoreKey;
-  secrecy: Secrecy;
 };
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
@@ -46,8 +45,8 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
 
-// Init policy lives in `maskedFromServer` — this only attaches the key and
-// the one secrecy discriminant (core keys never demote, so no `demote-pending`).
+// Init policy (masked + secrecy) lives in `maskedFromServer` — this only
+// attaches the key (core keys never demote, so only steady states occur).
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
@@ -58,7 +57,6 @@ function fieldStatesFor(config: CoreData["config"]): FieldState[] {
         hasValue: stored?.hasValue,
       }),
       key: keyDef.key,
-      secrecy: keyDef.secret ? "secret" : "plain",
     };
   });
 }

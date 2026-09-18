@@ -39,15 +39,14 @@ function secretKeyOf(e: Pick<SecretRow, "name">): string {
 }
 
 // One row builder for mount and server-echo snapshots so the two cannot
-// drift apart. Init policy lives in `maskedFromServer` — this only attaches
-// the secret identity fields.
+// drift apart. Init policy (masked + secrecy) lives in `maskedFromServer` —
+// this only attaches the secret identity fields.
 export function rowForSecret(s: SecretEntry): SecretRow {
   return {
     ...maskedFromServer({ isSecret: true, hasValue: s.hasValue }),
     name: s.name,
     filePath: s.filePath,
     services: s.services,
-    secrecy: "secret",
   };
 }
 

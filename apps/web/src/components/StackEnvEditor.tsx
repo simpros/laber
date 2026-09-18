@@ -32,8 +32,8 @@ export type EnvEntry = {
  * (`plain`/`secret`/`demote-pending`) — the chrome and the wire each read
  * it through `chromeIsSecret`/`wireIsSecret`, never a raw flag. `id` is the
  * stable React identity across add/remove/rename; `key` is the editable
- * variable name. Init policy lives in `maskedFromServer` — this only
- * attaches the key.
+ * variable name. Init policy (masked + secrecy) lives in `maskedFromServer`
+ * — this only attaches the row identity (`id`/`key`).
  */
 export type EnvRow = MaskedSecretState & {
   id: string;
@@ -50,7 +50,6 @@ export function rowForEnv(entry: EnvEntry): EnvRow {
     }),
     id: entry.key,
     key: entry.key,
-    secrecy: entry.isSecret ? "secret" : "plain",
   };
 }
 

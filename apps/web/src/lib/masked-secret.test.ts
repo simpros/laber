@@ -77,17 +77,23 @@ describe("maskedFromServer", () => {
   it("blanks secrets with hadValue, carries plain literals", () => {
     expect(
       maskedFromServer({ isSecret: true, hasValue: true }),
-    ).toEqual({ value: "", hadValue: true, dirty: false });
+    ).toEqual({ value: "", hadValue: true, dirty: false, secrecy: "secret" });
     expect(
       maskedFromServer({ isSecret: true, hasValue: false }),
-    ).toEqual({ value: "", hadValue: false, dirty: false });
+    ).toEqual({ value: "", hadValue: false, dirty: false, secrecy: "secret" });
     expect(
       maskedFromServer({ isSecret: false, value: "example.com" }),
-    ).toEqual({ value: "example.com", hadValue: false, dirty: false });
+    ).toEqual({
+      value: "example.com",
+      hadValue: false,
+      dirty: false,
+      secrecy: "plain",
+    });
     expect(maskedFromServer({ isSecret: false })).toEqual({
       value: "",
       hadValue: false,
       dirty: false,
+      secrecy: "plain",
     });
   });
 });
@@ -370,6 +376,38 @@ describe("mergeServerEntries", () => {
     const merged = mergeServerEntries(local, server, keyOf);
     expect(merged[0]).toEqual(local[0]);
     expect(merged[1]).toEqual(server[1]);
+  });
+
+  it("preserves a pending demote across a still-secret echo (pre-save refetch)", () => {
+    // Untouched secret demoted but not yet saved; a background invalidate
+    // (Deploy/Pull/focus) echoes the still-secret snapshot. The pending
+    // intent must survive — not flip back to `secret`.
+    const demoted = setRowSecret<EnvRow>(
+      {
+        key: "TOKEN",
+        value: "",
+        secrecy: "secret",
+        hadValue: true,
+        dirty: false,
+      },
+      false,
+    );
+    expect(demoted.secrecy).toBe("demote-pending");
+    const folded = markMixedSaved(demoted);
+    const staleEcho: EnvRow = {
+      key: "TOKEN",
+      value: "",
+      secrecy: "secret",
+      hadValue: true,
+      dirty: false,
+    };
+    const merged = mergeServerEntries([folded], [staleEcho], keyOf);
+    expect(merged).toEqual([folded]);
+    expect(merged[0].secrecy).toBe("demote-pending");
+    // Wire still reads plain, chrome still reads secret — no clobber.
+    expect(wireIsSecret(merged[0])).toBe(false);
+    expect(chromeIsSecret(merged[0])).toBe(true);
+    expect(valueForSave(merged[0])).toBeNull();
   });
 
   it("never clobbers in-progress (dirty) rows", () => {

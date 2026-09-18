@@ -48,8 +48,10 @@ export function secretStatus(entry: MaskedSecretState): SecretStatus {
 /**
  * Server snapshot → local row, the one init policy every list editor shares:
  * secrets blank out (the server never echoes values) with `hadValue` from
- * the server; plain rows carry their literal. Callers only attach identity
- * fields (key/name/…) on top.
+ * the server; plain rows carry their literal. Returns the full masked +
+ * secrecy state (steady `secret`/`plain` only — never `demote-pending`),
+ * so callers only attach identity fields (key/name/…) on top and a missing
+ * discriminant is a type error, not a runtime chrome/wire bug.
  */
 export function maskedFromServer({
   isSecret,
@@ -59,10 +61,10 @@ export function maskedFromServer({
   isSecret: boolean;
   value?: string;
   hasValue?: boolean;
-}): MaskedSecretState {
+}): MaskedSecretState & SecrecyState {
   return isSecret
-    ? { value: "", hadValue: hasValue ?? false, dirty: false }
-    : { value: value ?? "", hadValue: false, dirty: false };
+    ? { value: "", hadValue: hasValue ?? false, dirty: false, secrecy: "secret" }
+    : { value: value ?? "", hadValue: false, dirty: false, secrecy: "plain" };
 }
 
 /** User typed: set the value and mark the row in progress. */
@@ -178,8 +180,12 @@ export function markMixedSaved<T extends MaskedSecretState & SecrecyState>(
 /**
  * Server-echo convergence for prop-initialized lists: non-dirty rows are
  * rebuilt from the latest server snapshot, in-progress (dirty) rows are
- * never touched. This is what heals a demoted env row — local `""` becomes
- * the server plaintext on refetch — without inventing a literal we hold.
+ * never touched. A `demote-pending` row is merge-preserved intent: it
+ * survives a still-secret echo (pre-save refetch from Deploy/Pull/focus —
+ * the server hasn't flipped yet) and heals only when the echo arrives as
+ * `plain` (post-save). Without this, any invalidate before save would
+ * clobber the pending demote back to `secret` and the third state would
+ * disagree with the sync policy that is supposed to heal it.
  */
 export function mergeServerEntries<T extends MaskedSecretState>(
   local: T[],
@@ -190,6 +196,22 @@ export function mergeServerEntries<T extends MaskedSecretState>(
   const localKeys = new Set(local.map(keyOf));
   const merged = local.map((entry) => {
     if (entry.dirty) return entry;
+    if ((entry as Partial<SecrecyState>).secrecy === "demote-pending") {
+      const echoed = serverByKey.get(keyOf(entry));
+      if (!echoed) return entry;
+      const serverSecrecy = (echoed as Partial<SecrecyState>).secrecy;
+      // Still secret on the server → keep the pending intent.
+      if (serverSecrecy === "secret") return entry;
+      // Plain echo → heal to the server plaintext.
+      if (serverSecrecy === "plain") return echoed;
+      // Secrecy-unaware snapshot fallback: a still-secret echo carries no
+      // literal (`value: ""` + `hadValue`), a healed echo carries one.
+      if (serverSecrecy === undefined) {
+        if (echoed.value === "" && echoed.hadValue) return entry;
+        return echoed;
+      }
+      return echoed;
+    }
     return serverByKey.get(keyOf(entry)) ?? entry;
   });
   for (const entry of server) {
