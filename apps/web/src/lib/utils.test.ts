@@ -1,5 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { statusColor, containerStatusBg, statusBadge, timeAgo } from "./utils";
+import {
+  statusColor,
+  containerStatusBg,
+  statusBadge,
+  timeAgo,
+} from "./utils";
 
 describe("statusColor", () => {
   it("returns success class for running state", () => {
@@ -43,7 +48,9 @@ describe("containerStatusBg", () => {
   });
 
   it("returns danger bg for any unrecognized state", () => {
-    expect(containerStatusBg("dead")).toBe("bg-danger/10 border-danger/20");
+    expect(containerStatusBg("dead")).toBe(
+      "bg-danger/10 border-danger/20"
+    );
   });
 });
 
@@ -61,11 +68,15 @@ describe("statusBadge", () => {
   });
 
   it("returns discovered badge for discovered status", () => {
-    expect(statusBadge("discovered")).toBe("bg-surface-3 text-text-secondary");
+    expect(statusBadge("discovered")).toBe(
+      "bg-surface-3 text-text-secondary"
+    );
   });
 
   it("falls back to discovered for unknown status", () => {
-    expect(statusBadge("unknown")).toBe("bg-surface-3 text-text-secondary");
+    expect(statusBadge("unknown")).toBe(
+      "bg-surface-3 text-text-secondary"
+    );
   });
 });
 

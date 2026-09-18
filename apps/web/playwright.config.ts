@@ -6,21 +6,31 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PORT = 3000;
-const BASE_URL = `http://localhost:${PORT}`;
+const WEB_PORT = 3000;
+const API_PORT = 3001;
+const BASE_URL = `http://localhost:${WEB_PORT}`;
+const API_URL = `http://localhost:${API_PORT}`;
 const E2E_DATA_DIR = join(__dirname, "tests/.data");
 
 if (!process.env.TEST_WORKER_INDEX) {
   rmSync(E2E_DATA_DIR, { recursive: true, force: true });
   mkdirSync(E2E_DATA_DIR, { recursive: true });
 
-  const buildEntry = join(__dirname, "build/index.js");
+  const buildEntry = join(__dirname, "build/index.html");
   if (!existsSync(buildEntry)) {
-    console.log("Building app for e2e tests...");
+    console.log("Building SPA for e2e tests...");
     execSync("bun run build", { stdio: "inherit", cwd: __dirname });
     console.log("Build complete\n");
   }
 }
+
+const apiEnv = {
+  PORT: String(API_PORT),
+  DATA_DIR: E2E_DATA_DIR,
+  MIGRATIONS_FOLDER: join(__dirname, "../../packages/db/drizzle"),
+  BETTER_AUTH_SECRET: "e2e-test-secret-key-for-testing-only",
+  BETTER_AUTH_BASE_URL: BASE_URL,
+};
 
 export default defineConfig({
   testDir: "./tests",
@@ -59,18 +69,26 @@ export default defineConfig({
       dependencies: ["auth setup"],
     },
   ],
-  webServer: {
-    command: `bun run ${join(__dirname, "build/index.js")}`,
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    env: {
-      PORT: String(PORT),
-      ORIGIN: BASE_URL,
-      DATA_DIR: E2E_DATA_DIR,
-      MIGRATIONS_FOLDER: join(__dirname, "../../packages/db/drizzle"),
-      BETTER_AUTH_SECRET: "e2e-test-secret-key-for-testing-only",
-      BETTER_AUTH_BASE_URL: BASE_URL,
+  webServer: [
+    {
+      // Elysia API with a temp SQLite file.
+      command: "bun run src/index.ts",
+      cwd: join(__dirname, "../server"),
+      url: `${API_URL}/api/setup/status`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: apiEnv,
     },
-  },
+    {
+      // Built React SPA; /api/* proxies to the Elysia backend.
+      command: "bun run preview",
+      cwd: __dirname,
+      url: BASE_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        LABER_API_URL: API_URL,
+      },
+    },
+  ],
 });

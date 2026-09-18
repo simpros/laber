@@ -1,3 +1,2 @@
 [test]
-preload = ["../../svelte-test-setup.ts"]
 root = "./src"
