@@ -187,7 +187,7 @@ export function markMixedSaved<T extends MaskedSecretState & SecrecyState>(
  * clobber the pending demote back to `secret` and the third state would
  * disagree with the sync policy that is supposed to heal it.
  */
-export function mergeServerEntries<T extends MaskedSecretState>(
+export function mergeServerEntries<T extends MaskedSecretState & SecrecyState>(
   local: T[],
   server: T[],
   keyOf: (entry: T) => string,
@@ -196,20 +196,12 @@ export function mergeServerEntries<T extends MaskedSecretState>(
   const localKeys = new Set(local.map(keyOf));
   const merged = local.map((entry) => {
     if (entry.dirty) return entry;
-    if ((entry as Partial<SecrecyState>).secrecy === "demote-pending") {
+    if (entry.secrecy === "demote-pending") {
       const echoed = serverByKey.get(keyOf(entry));
       if (!echoed) return entry;
-      const serverSecrecy = (echoed as Partial<SecrecyState>).secrecy;
       // Still secret on the server → keep the pending intent.
-      if (serverSecrecy === "secret") return entry;
+      if (echoed.secrecy === "secret") return entry;
       // Plain echo → heal to the server plaintext.
-      if (serverSecrecy === "plain") return echoed;
-      // Secrecy-unaware snapshot fallback: a still-secret echo carries no
-      // literal (`value: ""` + `hadValue`), a healed echo carries one.
-      if (serverSecrecy === undefined) {
-        if (echoed.value === "" && echoed.hadValue) return entry;
-        return echoed;
-      }
       return echoed;
     }
     return serverByKey.get(keyOf(entry)) ?? entry;

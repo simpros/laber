@@ -5,6 +5,7 @@ import {
   mergeServerEntries,
   touchEntry,
   type MaskedSecretState,
+  type SecrecyState,
 } from "@/lib/masked-secret";
 import { useApiMutation } from "@/lib/queries/actions";
 
@@ -25,7 +26,10 @@ import { useApiMutation } from "@/lib/queries/actions";
  * snapshot reset) runs as the mutation's required `onSuccess`: no optional
  * `onSaved` callback that every caller must remember to pass.
  */
-export function useMaskedListEditor<T extends MaskedSecretState, TPayload>(opts: {
+export function useMaskedListEditor<
+  T extends MaskedSecretState & SecrecyState,
+  TPayload,
+>(opts: {
   init: () => T[];
   syncValues: T[];
   keyOf: (entry: T) => string;

@@ -24,6 +24,12 @@ export default defineConfig({
   },
   preview: {
     port: 3000,
+    // Pin IPv4 loopback: the default `localhost` bind resolves to a single
+    // address family (observed ::1-only in CI), while HTTP clients pick
+    // their own family to try first — a refused first family with no
+    // fallback means the e2e readiness probe never connects even though the
+    // server is up. 127.0.0.1 is deterministic on every machine.
+    host: "127.0.0.1",
     proxy: {
       "/api": {
         target: apiTarget,
