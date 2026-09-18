@@ -2,6 +2,7 @@ import { ActionFailedError, ConflictError } from "./errors";
 import { listContainers } from "./docker-engine";
 
 
+// Only the probe below mints one, so removal cannot skip Docker; stacks.status is not part of the gate.
 export class RemovableClearance {
   private constructor(
     readonly repoId: string,
@@ -26,6 +27,7 @@ export async function countProjectContainers(
   return containers.filter((c) => c.state === "running").length;
 }
 
+// Fail-closed commit gate: an unreadable daemon refuses removal.
 export async function assertStackRemovable(stack: {
   name: string;
 }): Promise<void> {

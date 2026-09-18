@@ -8,6 +8,7 @@ const apiTarget = process.env.LABER_API_URL ?? "http://localhost:3001";
 export default defineConfig({
   plugins: [tailwindcss(), react(), tsconfigPaths()],
   build: {
+    // CI and the Dockerfile consume apps/web/build/, not the Vite default dist/.
     outDir: "build",
   },
   server: {

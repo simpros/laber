@@ -4,6 +4,7 @@ import { createActivity, appendOutput, finishActivity } from "./activity";
 import type { Activity } from "./activity";
 import { ActionFailedError } from "./errors";
 
+// Only kind "stack" moves stacks.status; stack-log and core never do.
 export type ActionIdentity =
   | { kind: "stack"; stackId: string; onSuccess: "deployed" | "stopped" }
   | { kind: "stack-log"; stackId: string }
@@ -49,7 +50,7 @@ async function recordActionOutcome(options: {
     try {
       finishActivity(options.activityId, "error");
     } catch {
-      // Best-effort cleanup: ignore failure.
+      // The persist error is what matters.
     }
     throw persistError;
   }

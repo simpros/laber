@@ -76,6 +76,7 @@ async function pullOrCloneRemoteTree(
   }
 }
 
+// Re-check under lock: a concurrent delete may have committed between lookup and lock.
 async function requireLiveRepo(id: string) {
   const [live] = await db
     .select()
@@ -235,6 +236,7 @@ export async function syncRepository(id: string) {
         onOutput,
         expectRepo: true,
         clearanceFor: (disappearing) =>
+          // Fail-closed Docker probe minted outside the sync tx (which cannot await Docker); stacks.status is not consulted.
           RemovableClearance.clear(repo.id, disappearing),
         commitRepoRow: (tx) => {
           tx.update(repositories)
@@ -266,6 +268,7 @@ export async function deleteRepository(id: string) {
     title: `Deleting repository ${repo.name}`,
     failureMessage: `Failed to delete repository ${repo.name}`,
     run: async (onOutput) =>
+      // Down gates the row delete; teardown uses downProject directly, never the locked runStackOp.
       withRepoLock(id, async () => {
         const live = await requireLiveRepo(id);
         const repoStacks = await db

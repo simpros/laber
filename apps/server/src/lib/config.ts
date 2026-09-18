@@ -16,4 +16,5 @@ export function getComposePath(
 }
 
 
+// Three-state: null (or omitted) keeps, "" clears, string sets.
 export type ConfigValue = string | null;

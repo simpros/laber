@@ -20,7 +20,9 @@ type SecretFile = {
 
 type DeployOptions = {
   composePath: string;
+  // Exact bytes Docker applies, frozen to a temp snapshot: validated === applied.
   composeBytes: string;
+  // Promote applied bytes to the live path in the same attempt; failures compensate instead of drifting.
   commitLive?: boolean;
   envVars: Record<string, string>;
   secretFiles?: SecretFile[];
@@ -62,11 +64,12 @@ function removeSecretFiles(files: SecretFile[]): void {
     try {
       rmSync(filePath, { force: true });
     } catch {
-      // Best-effort cleanup: ignore failure.
+      // Cleanup must not mask the deploy error.
     }
   }
 }
 
+// Success means up -d plus Traefik attached; failure wipes written secrets and downs started containers.
 export async function deployStack(
   options: DeployOptions
 ): Promise<{ output: string }> {
@@ -123,6 +126,7 @@ export async function deployStack(
     if (options.commitLive) {
       writeFileSync(options.composePath, options.composeBytes, "utf-8");
     }
+    // Running containers mount the secret files, so they stay on success.
     secretsWritten = false;
     return { output };
   } catch (e) {
@@ -148,14 +152,14 @@ export async function deployStack(
       try {
         unlinkSync(envFilePath);
       } catch {
-        // Best-effort cleanup: ignore failure.
+        // Cleanup must not mask the deploy error.
       }
     }
     if (snapshotPath) {
       try {
         rmSync(snapshotPath, { force: true });
       } catch {
-        // Best-effort cleanup: ignore failure.
+        // Cleanup must not mask the deploy error.
       }
     }
   }

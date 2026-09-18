@@ -45,6 +45,7 @@ export async function listContainers(
   return containers.map(mapContainer);
 }
 
+// Read paths see "unknown" (empty); commit gates must use hard listContainers.
 export async function listContainersSoft(
   projectLabel?: string
 ): Promise<ContainerInfo[]> {

@@ -44,6 +44,7 @@ export function createActivity(title: string): Activity {
     startedAt: Date.now(),
   };
   activities.unshift(activity);
+  // Never evict running work, or SSE clients would stick on forever-running.
   if (activities.length > MAX_ACTIVITIES) {
     let evict = -1;
     for (let i = activities.length - 1; i >= 0; i--) {

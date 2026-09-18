@@ -1,9 +1,11 @@
+// The server never echoes secrets: untouched input keeps the stored value, empty clears.
 export type MaskedSecretState = {
   hadValue: boolean;
   value: string;
   dirty: boolean;
 };
 
+// Demote-pending is an untouched secret unchecked but not yet echoed back as plain; chrome and wire read it separately.
 export type Secrecy = "plain" | "secret" | "demote-pending";
 
 export type SecrecyState = {
@@ -72,6 +74,7 @@ export function isUnset(entry: MaskedSecretState): boolean {
   return entry.dirty ? entry.value === "" : !entry.hadValue;
 }
 
+// Untouched secrets send null (keep); everything else sends the literal.
 export function valueForSave(entry: MaskedSecretState): string | null {
   return !entry.dirty && entry.hadValue ? null : entry.value;
 }

@@ -86,6 +86,7 @@ function runLifecycleOp(
   });
 }
 
+// Stop holds the repo lock (it removes containers the sync probe reads); restart/pull run unlocked and never write status.
 export async function runStackOp(
   name: string,
   op: LifecycleOp

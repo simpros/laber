@@ -27,7 +27,7 @@ function withSshKey(
     try {
       unlinkSync(keyPath);
     } catch {
-      // Best-effort cleanup: ignore failure.
+      // Cleanup must not mask the git error.
     }
   });
 }

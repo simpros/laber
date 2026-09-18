@@ -35,7 +35,7 @@ export function sseResponse(
       try {
         fn();
       } catch {
-        // Best-effort cleanup: ignore failure.
+        // One cleanup must not skip the rest.
       }
     }
   };
@@ -53,7 +53,7 @@ export function sseResponse(
             try {
               controller.close();
             } catch {
-              // Best-effort cleanup: ignore failure.
+              // Already closed.
             }
           });
         }
@@ -62,7 +62,7 @@ export function sseResponse(
         try {
           controller.close();
         } catch {
-          // Best-effort cleanup: ignore failure.
+          // Already closed.
         }
       }
     },

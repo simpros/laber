@@ -1,6 +1,6 @@
 const tails = new Map<string, Promise<void>>();
 
-// Holders must never nest.
+// Process-local mutex; never nest (delete uses downProject, not locked runStackOp).
 export async function withRepoLock<T>(
   repoId: string,
   fn: () => Promise<T>

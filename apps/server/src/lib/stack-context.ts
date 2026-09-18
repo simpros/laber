@@ -35,6 +35,7 @@ export function assertStackName(name: string): string {
   return name;
 }
 
+// Re-resolve under lock so a mid-flight sync delete 404s instead of mutating an orphan.
 export async function withLockedStack<T>(
   name: string,
   fn: (ctx: { stack: Awaited<ReturnType<typeof getStackAndRepo>>["stack"]; composePath: string }) => Promise<T>

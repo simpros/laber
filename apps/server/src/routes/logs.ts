@@ -21,6 +21,7 @@ export const logRoutes = new Elysia().get(
       const reader = stream.getReader();
       onCleanup(() => {
         reader.cancel().catch(() => {
+          // Already closed.
         });
       });
       try {
@@ -34,7 +35,7 @@ export const logRoutes = new Elysia().get(
         try {
           controller.close();
         } catch {
-          // Best-effort cleanup: ignore failure.
+          // Already closed.
         }
       } finally {
         reader.releaseLock();
