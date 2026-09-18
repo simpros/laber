@@ -67,6 +67,31 @@ async function loadGate() {
   return { needsSetup, user };
 }
 
+type GateKind = "login" | "setup" | "app";
+
+/**
+ * The redirect matrix each route guard encodes: given the gate probe, the
+ * target the route must bounce to, or `null` to stay. One table instead of
+ * three hand-rolled `if` ladders.
+ */
+function gateRedirect(
+  kind: GateKind,
+  gate: { needsSetup: boolean; user: unknown },
+): "/setup" | "/login" | "/" | null {
+  if (kind === "login") {
+    if (gate.needsSetup) return "/setup";
+    if (gate.user) return "/";
+    return null;
+  }
+  if (kind === "setup") {
+    if (gate.needsSetup) return null;
+    return gate.user ? "/" : "/login";
+  }
+  if (gate.needsSetup) return "/setup";
+  if (!gate.user) return "/login";
+  return null;
+}
+
 function RootError() {
   const router = useRouter();
   return (
@@ -95,9 +120,8 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   beforeLoad: async () => {
-    const { needsSetup, user } = await loadGate();
-    if (needsSetup) throw redirect({ to: "/setup" });
-    if (user) throw redirect({ to: "/" });
+    const target = gateRedirect("login", await loadGate());
+    if (target) throw redirect({ to: target });
   },
   component: LoginPage,
 });
@@ -106,9 +130,8 @@ const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
   beforeLoad: async () => {
-    const { needsSetup, user } = await loadGate();
-    if (!needsSetup && user) throw redirect({ to: "/" });
-    if (!needsSetup && !user) throw redirect({ to: "/login" });
+    const target = gateRedirect("setup", await loadGate());
+    if (target) throw redirect({ to: target });
   },
   component: SetupPage,
 });
@@ -117,11 +140,8 @@ const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
   beforeLoad: async () => {
-    const { needsSetup, user } = await loadGate();
-    if (needsSetup) throw redirect({ to: "/setup" });
-    if (!user) {
-      throw redirect({ to: "/login" });
-    }
+    const target = gateRedirect("app", await loadGate());
+    if (target) throw redirect({ to: target });
   },
   component: () => (
     <Layout>

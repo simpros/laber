@@ -44,6 +44,18 @@ export function useStackAction(name: string) {
   });
 }
 
+/** Render-local `isRunning` used to be recomputed in the page; the query
+ * layer owns it so every consumer reads one rule. */
+export function stackIsRunning(detail: {
+  containers: { state: string }[];
+  stack: { status: string };
+}): boolean {
+  if (detail.containers.length > 0) {
+    return detail.containers.some((c) => c.state === "running");
+  }
+  return detail.stack.status === "deployed";
+}
+
 export type StackEnvPayload = Array<{
   key: string;
   value: string | null;

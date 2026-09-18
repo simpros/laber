@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { Button } from "@laber/ui";
-import { useActivity } from "@/lib/activity";
 import {
+  stackIsRunning,
   useStackAction,
   useStackDetail,
   type StackAction,
@@ -12,6 +11,9 @@ import StackSecretsEditor from "@/components/StackSecretsEditor";
 import StackComposeView from "@/components/StackComposeView";
 import StackDeploymentLogs from "@/components/StackDeploymentLogs";
 import MutationNotice from "@/components/MutationNotice";
+import LifecycleToolbar, {
+  type LifecycleActionItem,
+} from "@/components/LifecycleToolbar";
 import QueryStatus from "@/components/QueryStatus";
 
 const tabs = [
@@ -40,24 +42,44 @@ export default function StackDetailPage({
   onTabChange: (tab: StackTab) => void;
 }) {
   const query = useStackDetail(name);
-  const { setOpen } = useActivity();
 
   const actionMutation = useStackAction(name);
 
   const pendingAction = actionMutation.pendingAction;
 
   function handleAction(action: StackAction) {
-    actionMutation.reset();
     actionMutation.mutate(action);
   }
 
   return (
     <QueryStatus query={query} failedMessage="Failed to load stack">
       {(data) => {
-        const isRunning =
-          data.containers.length > 0
-            ? data.containers.some((c) => c.state === "running")
-            : data.stack.status === "deployed";
+        const isRunning = stackIsRunning(data);
+        const lifecycleActions: LifecycleActionItem<StackAction>[] = [
+          { action: "pull", label: "Pull", pendingLabel: "Pulling..." },
+          ...(isRunning
+            ? ([
+                {
+                  action: "restart",
+                  label: "Restart",
+                  pendingLabel: "Restarting...",
+                },
+                {
+                  action: "stop",
+                  label: "Stop",
+                  pendingLabel: "Stopping...",
+                  variant: "danger",
+                },
+              ] as const)
+            : ([
+                {
+                  action: "deploy",
+                  label: "Deploy",
+                  pendingLabel: "Deploying...",
+                  variant: "primary",
+                },
+              ] as const)),
+        ];
 
         return (
     <div className="space-y-6">
@@ -81,51 +103,19 @@ export default function StackDetailPage({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={actionMutation.isPending}
-            onClick={() => handleAction("pull")}
-          >
-            {pendingAction === "pull" ? "Pulling..." : "Pull"}
-          </Button>
-
-          {isRunning ? (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={actionMutation.isPending}
-                onClick={() => handleAction("restart")}
-              >
-                {pendingAction === "restart" ? "Restarting..." : "Restart"}
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={actionMutation.isPending}
-                onClick={() => handleAction("stop")}
-              >
-                {pendingAction === "stop" ? "Stopping..." : "Stop"}
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={actionMutation.isPending}
-              onClick={() => handleAction("deploy")}
-            >
-              {pendingAction === "deploy" ? "Deploying..." : "Deploy"}
-            </Button>
-          )}
+          <LifecycleToolbar
+            actions={lifecycleActions}
+            pendingAction={pendingAction}
+            isPending={actionMutation.isPending}
+            onAction={handleAction}
+          />
         </div>
       </div>
 
       <MutationNotice
         mutation={actionMutation}
         errorFallback="Action failed"
-        onViewActivity={() => setOpen(true)}
+        linkActivity
       />
 
       <div className="border-border flex gap-0 border-b">

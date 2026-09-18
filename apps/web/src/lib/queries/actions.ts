@@ -32,8 +32,9 @@ export function toErrorMessage(
  * through React Query's `error`/`isError`, so no hook owns a parallel result
  * channel. Pages render `mutation.data` / `mutation.error` through
  * `MutationNotice` — multi-mutation surfaces pass the group and the notice
- * shows the latest-settled state, so pages never choreograph sibling
- * `reset()` calls.
+ * shows the latest-settled state; any pending hides stale notices on both
+ * paths — so pages never choreograph sibling `reset()` calls and never
+ * `reset()` themselves before firing.
  */
 export function useApiMutation<TData, TVariables>(opts: {
   mutationFn: (variables: TVariables) => Promise<TData>;

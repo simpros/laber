@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
 import { Card, Button, Icon } from "@laber/ui";
 import { timeAgo } from "@/lib/utils";
 import {
@@ -21,26 +20,32 @@ export default function RepositoryPage() {
   const syncMutation = useSyncRepository();
   const removeMutation = useRemoveRepository();
 
-  const form = useForm({
-    defaultValues: {
-      name: "",
-      url: "",
-      branch: "main",
-      stacksPath: "stacks",
-      sshPrivateKey: "",
-    },
-    onSubmit: async ({ value }) => {
-      // Awaited so react-form stays submitting through the mutation —
-      // the same atomic handoff auth pages get via `enterApp`.
-      await addMutation.mutateAsync({
-        name: value.name,
-        url: value.url,
-        branch: value.branch || "main",
-        stacksPath: value.stacksPath || "stacks",
-        sshPrivateKey: value.sshPrivateKey || null,
-      });
-    },
+  // Plain controlled inputs: the only async owner is the mutation, so
+  // `isPending` is the button state — no form library, no second pending
+  // channel (react-form stays on `AuthCredentialsForm`, which needs
+  // `isSubmitting` for the `enterApp` gate handoff).
+  const [formValues, setFormValues] = useState({
+    name: "",
+    url: "",
+    branch: "main",
+    stacksPath: "stacks",
+    sshPrivateKey: "",
   });
+
+  function setField(key: keyof typeof formValues, value: string) {
+    setFormValues((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleAddSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await addMutation.mutateAsync({
+      name: formValues.name,
+      url: formValues.url,
+      branch: formValues.branch || "main",
+      stacksPath: formValues.stacksPath || "stacks",
+      sshPrivateKey: formValues.sshPrivateKey || null,
+    });
+  }
 
   const syncingRepoId = syncMutation.syncingRepoId;
 
@@ -85,12 +90,7 @@ export default function RepositoryPage() {
       />
 
       {(showAddForm || data.repositories.length === 0) && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            form.handleSubmit();
-          }}
-        >
+        <form onSubmit={handleAddSubmit}>
           <Card className="p-5">
             <h2 className="mb-4 text-sm font-medium">Add Repository</h2>
             <div className="space-y-3">
@@ -102,21 +102,15 @@ export default function RepositoryPage() {
                   >
                     Name
                   </label>
-                  <form.Field name="name">
-                    {(field) => (
-                      <input
-                        id="name"
-                        name="name"
-                        required
-                        placeholder="homelab"
-                        className="w-full"
-                        value={field.state.value}
-                        onChange={(e) =>
-                          field.handleChange(e.target.value)
-                        }
-                      />
-                    )}
-                  </form.Field>
+                  <input
+                    id="name"
+                    name="name"
+                    required
+                    placeholder="homelab"
+                    className="w-full"
+                    value={formValues.name}
+                    onChange={(e) => setField("name", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1">
                   <label
@@ -125,20 +119,14 @@ export default function RepositoryPage() {
                   >
                     Branch
                   </label>
-                  <form.Field name="branch">
-                    {(field) => (
-                      <input
-                        id="branch"
-                        name="branch"
-                        placeholder="main"
-                        className="w-full"
-                        value={field.state.value}
-                        onChange={(e) =>
-                          field.handleChange(e.target.value)
-                        }
-                      />
-                    )}
-                  </form.Field>
+                  <input
+                    id="branch"
+                    name="branch"
+                    placeholder="main"
+                    className="w-full"
+                    value={formValues.branch}
+                    onChange={(e) => setField("branch", e.target.value)}
+                  />
                 </div>
               </div>
               <div className="space-y-1">
@@ -148,19 +136,15 @@ export default function RepositoryPage() {
                 >
                   Repository URL
                 </label>
-                <form.Field name="url">
-                  {(field) => (
-                    <input
-                      id="url"
-                      name="url"
-                      required
-                      placeholder="git@gitlab.com:user/homelab.git"
-                      className="w-full font-mono text-sm"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                    />
-                  )}
-                </form.Field>
+                <input
+                  id="url"
+                  name="url"
+                  required
+                  placeholder="git@gitlab.com:user/homelab.git"
+                  className="w-full font-mono text-sm"
+                  value={formValues.url}
+                  onChange={(e) => setField("url", e.target.value)}
+                />
               </div>
               <div className="space-y-1">
                 <label
@@ -169,18 +153,14 @@ export default function RepositoryPage() {
                 >
                   Stacks Path
                 </label>
-                <form.Field name="stacksPath">
-                  {(field) => (
-                    <input
-                      id="stacksPath"
-                      name="stacksPath"
-                      placeholder="stacks"
-                      className="w-full font-mono text-sm"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                    />
-                  )}
-                </form.Field>
+                <input
+                  id="stacksPath"
+                  name="stacksPath"
+                  placeholder="stacks"
+                  className="w-full font-mono text-sm"
+                  value={formValues.stacksPath}
+                  onChange={(e) => setField("stacksPath", e.target.value)}
+                />
                 <p className="text-text-muted text-xs">
                   Subdirectory containing stack folders
                 </p>
@@ -192,19 +172,15 @@ export default function RepositoryPage() {
                 >
                   SSH Private Key (optional)
                 </label>
-                <form.Field name="sshPrivateKey">
-                  {(field) => (
-                    <textarea
-                      id="sshPrivateKey"
-                      name="sshPrivateKey"
-                      rows={3}
-                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                      className="w-full font-mono text-xs"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                    />
-                  )}
-                </form.Field>
+                <textarea
+                  id="sshPrivateKey"
+                  name="sshPrivateKey"
+                  rows={3}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  className="w-full font-mono text-xs"
+                  value={formValues.sshPrivateKey}
+                  onChange={(e) => setField("sshPrivateKey", e.target.value)}
+                />
               </div>
             </div>
             <div className="mt-4 flex gap-2">

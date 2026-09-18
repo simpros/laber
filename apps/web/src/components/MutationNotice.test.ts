@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import {
   latestSettled,
+  shouldHideNotice,
   type MutationNoticeSource,
   type NoticeMutation,
 } from "./MutationNotice";
@@ -54,5 +55,28 @@ describe("latestSettled", () => {
 
   it("ignores unsettled sources", () => {
     expect(latestSettled([source(stub(), "never")])).toBeUndefined();
+  });
+});
+
+describe("shouldHideNotice", () => {
+  it("hides a stale error while its retry is pending", () => {
+    expect(
+      shouldHideNotice(
+        stub({ isPending: true, isError: true, error: new Error("boom") }),
+      ),
+    ).toBe(true);
+  });
+
+  it("shows settled terminal states once pending clears", () => {
+    expect(
+      shouldHideNotice(
+        stub({ isPending: false, isError: true, error: new Error("boom") }),
+      ),
+    ).toBe(false);
+    expect(
+      shouldHideNotice(
+        stub({ isPending: false, isSuccess: true, data: "Saved." }),
+      ),
+    ).toBe(false);
   });
 });

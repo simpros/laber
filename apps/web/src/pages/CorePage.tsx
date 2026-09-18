@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { Card, CardHeader, Button } from "@laber/ui";
-import { useActivity } from "@/lib/activity";
 import { statusColor } from "@/lib/utils";
 import {
   CORE_KEYS,
@@ -23,7 +22,8 @@ import {
 import SecretBadge from "@/components/SecretBadge";
 import MutationNotice from "@/components/MutationNotice";
 import QueryStatus from "@/components/QueryStatus";
-import { MaskedSecretField } from "@/components/MaskedSecretField";
+import LifecycleToolbar from "@/components/LifecycleToolbar";
+import ConfigValueField from "@/components/ConfigValueField";
 
 type FieldState = MaskedSecretState & {
   key: CoreKey;
@@ -62,9 +62,10 @@ function coreKeyOf(e: Pick<FieldState, "key">): string {
 /**
  * Mounted only once `QueryStatus` has the snapshot (parent renders it inside
  * the render-prop with `key="core"`), so fields init from props directly —
- * no init effect, no empty first paint. Server echo converges non-dirty rows
- * and the save fold owns the optimistic reset, so a background refetch never
- * clobbers in-progress edits.
+ * no init effect, no empty first paint. Two halves of one policy: the save
+ * fold owns the optimistic snapshot, and the shared hook merges the server
+ * echo into non-dirty rows underneath — a background refetch never clobbers
+ * in-progress edits.
  */
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   // Server echo owns convergence through the shared hook: a background
@@ -106,7 +107,6 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
       // through one path with no branch.
       values[f.key] = valueForSave(f);
     }
-    saveMutation.reset();
     saveMutation.mutate(values);
   }
 
@@ -145,56 +145,37 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                       {field.isSecret ? <SecretBadge entry={field} /> : null}
                     </label>
                     <div className="col-span-2">
-                      {field.isSecret ? (
-                        <MaskedSecretField
-                          id={keyDef.key}
-                          name={keyDef.key}
-                          entry={field}
-                          onInput={(value) =>
-                            updateField(keyDef.key, { value, dirty: true })
-                          }
-                          onUndo={() =>
-                            updateField(keyDef.key, { value: "", dirty: false })
-                          }
-                          onClear={() =>
-                            updateField(keyDef.key, { value: "", dirty: true })
-                          }
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <input
-                            id={keyDef.key}
-                            name={keyDef.key}
-                            type="text"
-                            value={field.value}
-                            onChange={(e) =>
-                              updateField(keyDef.key, {
-                                value: e.target.value,
-                                dirty: true,
-                              })
-                            }
-                            placeholder={keyDef.placeholder}
-                            className="w-full font-mono text-sm"
-                          />
-                          {field.dirty ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateField(keyDef.key, {
+                      <ConfigValueField
+                        id={keyDef.key}
+                        name={keyDef.key}
+                        isSecret={field.isSecret}
+                        entry={field}
+                        placeholder={keyDef.placeholder}
+                        onInput={(value) =>
+                          updateField(keyDef.key, { value, dirty: true })
+                        }
+                        onUndo={() =>
+                          updateField(
+                            keyDef.key,
+                            field.isSecret
+                              ? { value: "", dirty: false }
+                              : {
                                   value:
                                     snapshot.config[keyDef.key]?.value ?? "",
                                   dirty: false,
+                                },
+                          )
+                        }
+                        onClear={
+                          field.isSecret
+                            ? () =>
+                                updateField(keyDef.key, {
+                                  value: "",
+                                  dirty: true,
                                 })
-                              }
-                              className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
-                              aria-label="Undo changes"
-                              title="Undo changes"
-                            >
-                              Undo
-                            </button>
-                          ) : null}
-                        </div>
-                      )}
+                            : undefined
+                        }
+                      />
                     </div>
                   </div>
                 );
@@ -218,14 +199,12 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
 
 export default function CorePage() {
   const query = useCore();
-  const { setOpen } = useActivity();
 
   const actionMutation = useCoreAction();
 
   const pendingAction = actionMutation.pendingAction;
 
   function handleAction(action: CoreAction) {
-    actionMutation.reset();
     actionMutation.mutate(action);
   }
 
@@ -244,7 +223,7 @@ export default function CorePage() {
           <MutationNotice
             mutation={actionMutation}
             errorFallback="Action failed"
-            onViewActivity={() => setOpen(true)}
+            linkActivity
           />
 
           {data.coreServices.length > 0 && (
@@ -252,24 +231,24 @@ export default function CorePage() {
               <CardHeader
                 title="Status"
                 actions={
-                  <>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={actionMutation.isPending}
-                      onClick={() => handleAction("restart")}
-                    >
-                      {pendingAction === "restart" ? "..." : "Restart"}
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      disabled={actionMutation.isPending}
-                      onClick={() => handleAction("stop")}
-                    >
-                      {pendingAction === "stop" ? "..." : "Stop"}
-                    </Button>
-                  </>
+                  <LifecycleToolbar
+                    actions={[
+                      {
+                        action: "restart",
+                        label: "Restart",
+                        pendingLabel: "Restarting...",
+                      },
+                      {
+                        action: "stop",
+                        label: "Stop",
+                        pendingLabel: "Stopping...",
+                        variant: "danger",
+                      },
+                    ]}
+                    pendingAction={pendingAction}
+                    isPending={actionMutation.isPending}
+                    onAction={handleAction}
+                  />
                 }
               />
               <div className="divide-border divide-y">

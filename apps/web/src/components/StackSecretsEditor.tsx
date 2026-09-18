@@ -68,7 +68,6 @@ export default function StackSecretsEditor({
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    saveMutation.reset();
     saveMutation.mutate(
       entries.map((entry) => ({
         name: entry.name,

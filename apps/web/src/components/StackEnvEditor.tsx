@@ -10,7 +10,7 @@ import {
 import { useSaveStackEnv } from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
 import MutationNotice from "@/components/MutationNotice";
-import { MaskedSecretField } from "@/components/MaskedSecretField";
+import ConfigValueField from "@/components/ConfigValueField";
 
 type EnvEntry = {
   key: string;
@@ -70,6 +70,11 @@ export default function StackEnvEditor({
     { values: serverValues, keyOf: envKeyOf },
   );
 
+  const serverByKey = useMemo(
+    () => new Map(serverValues.map((e) => [e.key, e])),
+    [serverValues],
+  );
+
   const missingVars = detectedEnvVars.filter(
     (name) => !entries.some((e) => e.key === name),
   );
@@ -85,7 +90,7 @@ export default function StackEnvEditor({
     // `valueForSave` keys off `hadValue`/`dirty` — "the server still holds a
     // masked value we never echoed → null (keep)" — and never looks at
     // `isSecret`, so both toggle directions save correctly with no branch.
-    saveMutation.reset();
+    // The notice hides stale errors while pending, so no `reset()` ritual.
     saveMutation.mutate(
       entries.map((entry) => ({
         key: entry.key,
@@ -127,30 +132,37 @@ export default function StackEnvEditor({
                 className="w-48 font-mono text-xs"
               />
               <div className="flex-1">
-                {entry.isSecret ? (
-                  <MaskedSecretField
-                    entry={entry}
-                    type="password"
-                    keepPlaceholder="Hidden — leave empty to keep"
-                    editPlaceholder="value"
-                    onInput={(value) => update(i, { value, dirty: true })}
-                    onUndo={() => update(i, { value: "", dirty: false })}
-                    onClear={() => update(i, { value: "", dirty: true })}
-                  />
-                ) : (
-                  <input
-                    value={entry.value}
-                    onChange={(e) =>
-                      update(i, {
-                        value: e.target.value,
-                        dirty: true,
-                      })
+                <ConfigValueField
+                  isSecret={entry.isSecret}
+                  entry={entry}
+                  inputClassName="w-full font-mono text-xs"
+                  placeholder="value"
+                  keepPlaceholder="Hidden — leave empty to keep"
+                  editPlaceholder="value"
+                  onInput={(value) => update(i, { value, dirty: true })}
+                  onUndo={() => {
+                    if (entry.isSecret) {
+                      update(i, { value: "", dirty: false });
+                      return;
                     }
-                    placeholder="value"
-                    type="text"
-                    className="w-full font-mono text-xs"
-                  />
-                )}
+                    const server = serverByKey.get(entry.key);
+                    if (!server) {
+                      // Brand-new row: nothing to restore, so undo removes
+                      // it instead of inventing a literal.
+                      removeEnvVar(i);
+                      return;
+                    }
+                    update(i, {
+                      value: !server.isSecret ? server.value : "",
+                      dirty: false,
+                    });
+                  }}
+                  onClear={
+                    entry.isSecret
+                      ? () => update(i, { value: "", dirty: true })
+                      : undefined
+                  }
+                />
               </div>
               {isDetected && (
                 <span className="bg-accent/15 text-accent rounded px-1.5 py-0.5 text-[10px] font-medium">

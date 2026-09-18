@@ -1,5 +1,6 @@
 import { Alert } from "@laber/ui";
 import { toErrorMessage } from "@/lib/queries/actions";
+import { useActivity } from "@/lib/activity";
 
 type NoticeMutation = {
   data: string | null | undefined;
@@ -21,6 +22,19 @@ export type MutationNoticeSource = {
   errorFallback: string;
 };
 
+/**
+ * Pending hides every notice — single and multi alike. React Query keeps
+ * sticky per-mutation errors, so without this gate a retry shows the old
+ * failure for the whole request. Pages must not `reset()` before
+ * `mutate`/`mutateAsync` to paper over that; the notice owns it. (`reset()`
+ * survives only where cancel must clear a notice without a new mutation.)
+ */
+export function shouldHideNotice(
+  mutation: Pick<NoticeMutation, "isPending">,
+): boolean {
+  return mutation.isPending;
+}
+
 function SingleNotice({
   mutation,
   errorFallback,
@@ -30,6 +44,7 @@ function SingleNotice({
   errorFallback: string;
   onViewActivity?: () => void;
 }) {
+  if (shouldHideNotice(mutation)) return null;
   if (mutation.data) {
     return (
       <Alert variant="success">
@@ -82,18 +97,24 @@ export function latestSettled(
   return best;
 }
 
-type SingleMutationProps = {
+type ActivityLink = {
+  /** Explicit opener; wins over `linkActivity` when both are passed. */
+  onViewActivity?: () => void;
+  /** Wire the Activity pointer to `useActivity().setOpen(true)` without the
+   * page importing the activity module for a one-liner callback. */
+  linkActivity?: boolean;
+};
+
+type SingleMutationProps = ActivityLink & {
   mutation: NoticeMutation;
   errorFallback: string;
   mutations?: never;
-  onViewActivity?: () => void;
 };
 
-type MultiMutationProps = {
+type MultiMutationProps = ActivityLink & {
   mutations: MutationNoticeSource[];
   mutation?: never;
   errorFallback?: never;
-  onViewActivity?: () => void;
 };
 
 /**
@@ -101,17 +122,20 @@ type MultiMutationProps = {
  * resolve to their display message, `null` = silent success), failures from
  * `mutation.error`. Single-mutation surfaces pass `mutation` +
  * `errorFallback`; multi-mutation surfaces pass `mutations` and the notice
- * shows the latest-settled terminal state — any pending hides stale
- * notices — so pages never choreograph sibling `reset()` calls.
+ * shows the latest-settled terminal state. Any pending hides stale notices
+ * on both paths — so pages never choreograph sibling `reset()` calls and
+ * never `reset()` themselves before firing.
  * Lifecycle ops (deploy/stop/restart) render through this too —
- * `onViewActivity` adds the Activity pointer instead of a second hand-rolled
- * Alert.
+ * `linkActivity` (or `onViewActivity`) adds the Activity pointer instead of
+ * a second hand-rolled Alert.
  */
 export function MutationNotice(props: SingleMutationProps | MultiMutationProps) {
-  const { onViewActivity } = props;
+  const { setOpen } = useActivity();
+  const onViewActivity =
+    props.onViewActivity ?? (props.linkActivity ? () => setOpen(true) : undefined);
   if (props.mutations) {
     const mutations = props.mutations;
-    if (mutations.some(({ mutation: m }) => m.isPending)) return null;
+    if (mutations.some(({ mutation: m }) => shouldHideNotice(m))) return null;
     const settled = latestSettled(mutations);
     if (!settled) return null;
     return (

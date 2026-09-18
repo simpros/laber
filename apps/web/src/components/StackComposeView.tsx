@@ -29,6 +29,9 @@ export function StackComposeView({
 
   function toggleEditing() {
     setDraft(content);
+    // Cancel-path clear without a new mutation: the one `reset()` that
+    // survives the notice-owned pending gate (the notice is unmounted with
+    // the edit surface on close, so this only matters when reopening).
     saveMutation.reset();
     setEditing((v) => !v);
   }
