@@ -5,8 +5,6 @@
 node_modules
 
 # Build outputs (rebuilt in container)
-.svelte-kit
-build
 dist
 .turbo
 
@@ -24,7 +22,15 @@ dist
 # Docker
 Dockerfile
 .dockerignore
-docker-compose.yml
+docker-compose*.yml
+
+# Local SQLite data (the images use a /data volume instead)
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 
 # Misc
 LICENSE

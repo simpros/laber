@@ -1,18 +1,35 @@
 services:
-  web:
-    image: ghcr.io/simpros/laber:latest
-    container_name: laber-web
+  api:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: ghcr.io/simpros/laber-api:latest
+    container_name: laber-api
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3001"
     environment:
+      PORT: 3001
       DATABASE_PATH: /data/laber.db
+      DATA_DIR: /data
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in your .env file}
       BETTER_AUTH_BASE_URL: ${BETTER_AUTH_BASE_URL:-http://localhost:3000}
-      DATA_DIR: /data
     volumes:
       - laber_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: ghcr.io/simpros/laber-web:latest
+    container_name: laber-web
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   laber_data:

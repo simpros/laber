@@ -1,59 +1,34 @@
 ARG COMMIT_SHA=unknown
 
-FROM oven/bun:1.3.13-alpine AS base
+FROM oven/bun:1.3.13-alpine AS builder
 
 WORKDIR /app
 
-# ---- Prune monorepo ----
-FROM base AS prepare
-
-RUN bun add -g turbo@^2
-
-COPY . .
-RUN turbo prune @laber/web --docker
-
-# ---- Install deps + build ----
-FROM base AS builder
-
-# Install dependencies (cached until lockfile/package.json changes)
-COPY --from=prepare /app/out/json/ .
-COPY --from=prepare /app/bun.lock ./bun.lock
-COPY --from=prepare /app/packages/typescript-config/package.json ./packages/typescript-config/package.json
-RUN bun install --frozen-lockfile
-
-# Build the project
-COPY --from=prepare /app/out/full/ .
-COPY --from=prepare /app/packages/typescript-config/ ./packages/typescript-config/
-RUN bun run build --filter=@laber/web
-
-# ---- Production runner ----
-FROM base AS runner
+# Full source (node_modules, dist, data and .git are excluded via .dockerignore).
+COPY package.json ./package.json
+COPY bun.lock ./bun.lock
+COPY turbo.json ./turbo.json
+COPY bunfig.toml ./bunfig.toml
+COPY patches ./patches
+COPY apps ./apps
+COPY packages ./packages
 
 ARG COMMIT_SHA
+ENV VITE_COMMIT_SHA=${COMMIT_SHA}
 
-RUN apk add --no-cache curl git openssh-client docker-cli docker-cli-compose && \
-    addgroup --system --gid 1001 app && \
-    adduser --system --uid 1001 -G app app && \
-    mkdir -p /data && chown app:app /data
-USER app
+RUN bun install --frozen-lockfile
+RUN bun run build --filter=@laber/web
 
-ENV NODE_ENV=production
-ENV PORT=3000
+# ---- Production runner: static files behind nginx ----
+FROM nginx:1.27-alpine AS runner
+
+ARG COMMIT_SHA
 ENV COMMIT_SHA=${COMMIT_SHA}
-ENV DATABASE_PATH=/data/laber.db
-ENV DATA_DIR=/data
 
-COPY --from=builder --chown=app:app /app/apps/web/build ./
-# Deploy invariant: the image ships drizzle migrations from @laber/db.
-# Run `bun run db:generate` (once @laber/db has a schema) before building;
-# local/CI `bun run build` intentionally does NOT fabricate this directory.
-COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
-VOLUME /data
-
-EXPOSE 3000/tcp
+EXPOSE 80/tcp
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-CMD ["bun", "run", "index.js"]
+  CMD wget -qO- http://localhost:80/health || exit 1
