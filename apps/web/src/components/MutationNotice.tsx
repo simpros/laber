@@ -1,18 +1,23 @@
 import { Alert } from "@laber/ui";
 import { toErrorMessage } from "@/lib/queries/actions";
 
-type MutationState = {
+type NoticeMutation = {
   data: string | null | undefined;
-  isError: boolean;
-  isPending?: boolean;
   error: unknown;
+  isPending: boolean;
+  isError: boolean;
+  isSuccess: boolean;
+  // Optional because React Query's idle variant omits the clocks; an idle
+  // mutation is never `isSuccess`/`isError`, so it still settles as 0 below.
   /** TanStack settlement clocks; latest-settled wins in multi-notices. */
   dataUpdatedAt?: number;
   errorUpdatedAt?: number;
 };
 
+export type { NoticeMutation };
+
 export type MutationNoticeSource = {
-  mutation: MutationState;
+  mutation: NoticeMutation;
   errorFallback: string;
 };
 
@@ -21,7 +26,7 @@ function SingleNotice({
   errorFallback,
   onViewActivity,
 }: {
-  mutation: MutationState;
+  mutation: NoticeMutation;
   errorFallback: string;
   onViewActivity?: () => void;
 }) {
@@ -53,8 +58,11 @@ function SingleNotice({
 
 /** Newest terminal state across the group, so a later success hides an
  * older sibling failure (React Query keeps sticky per-mutation errors, and
- * array order would resurrect them). Unsettled sources sort as 0. */
-function latestSettled(
+ * array order would resurrect them). Settlement keys off `isSuccess` /
+ * `isError` — never truthy `data` — because silent successes resolve `null`
+ * on purpose and must still clear older sibling errors. Unsettled sources
+ * sort as 0. */
+export function latestSettled(
   mutations: MutationNoticeSource[],
 ): MutationNoticeSource | undefined {
   let best: MutationNoticeSource | undefined;
@@ -63,7 +71,7 @@ function latestSettled(
     const { mutation } = source;
     const settledAt = mutation.isError
       ? (mutation.errorUpdatedAt ?? 0)
-      : mutation.data
+      : mutation.isSuccess
         ? (mutation.dataUpdatedAt ?? 0)
         : 0;
     if (settledAt > 0 && settledAt >= bestAt) {
@@ -75,7 +83,7 @@ function latestSettled(
 }
 
 type SingleMutationProps = {
-  mutation: MutationState;
+  mutation: NoticeMutation;
   errorFallback: string;
   mutations?: never;
   onViewActivity?: () => void;

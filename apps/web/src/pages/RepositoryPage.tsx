@@ -30,7 +30,9 @@ export default function RepositoryPage() {
       sshPrivateKey: "",
     },
     onSubmit: async ({ value }) => {
-      addMutation.mutate({
+      // Awaited so react-form stays submitting through the mutation —
+      // the same atomic handoff auth pages get via `enterApp`.
+      await addMutation.mutateAsync({
         name: value.name,
         url: value.url,
         branch: value.branch || "main",

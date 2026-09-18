@@ -29,6 +29,19 @@ function secretKeyOf(e: Pick<Row, "name">): string {
   return e.name;
 }
 
+// One row builder for mount and server-echo snapshots so the two cannot
+// drift apart.
+function rowForSecret(s: SecretEntry): Row {
+  return {
+    name: s.name,
+    filePath: s.filePath,
+    services: s.services,
+    hadValue: s.hasValue,
+    value: "",
+    dirty: false,
+  };
+}
+
 export default function StackSecretsEditor({
   secrets,
   stackName,
@@ -39,28 +52,9 @@ export default function StackSecretsEditor({
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
   // Server echo converges through the same hook every list editor uses.
-  const serverValues = useMemo(
-    () =>
-      secrets.map((s) => ({
-        name: s.name,
-        filePath: s.filePath,
-        services: s.services,
-        hadValue: s.hasValue,
-        value: "",
-        dirty: false,
-      })),
-    [secrets],
-  );
+  const serverValues = useMemo(() => secrets.map(rowForSecret), [secrets]);
   const { entries, update, applySaved } = useMaskedEntries<Row>(
-    () =>
-      secrets.map((s) => ({
-        name: s.name,
-        filePath: s.filePath,
-        services: s.services,
-        hadValue: s.hasValue,
-        value: "",
-        dirty: false,
-      })),
+    () => secrets.map(rowForSecret),
     { values: serverValues, keyOf: secretKeyOf },
   );
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * One masked-secret field model for every secret input in the SPA.
@@ -116,9 +116,8 @@ export function mergeServerEntries<T extends MaskedSecretState>(
  * fold is the other half of the same policy, not a second owner: secrets
  * can only reset locally because the server never echoes their values.
  * Every list editor opts in with one line instead of bolting on its own
- * effect. `keyOf` is read through a ref so call-site identity never
- * re-fires the sync; reference equality against the previous entries keeps
- * the effect idempotent.
+ * effect. `keyOf` must be module-stable (all call sites pass module-level
+ * helpers) so the sync never re-fires on function identity.
  */
 export function useMaskedEntries<T extends MaskedSecretState>(
   init: () => T[],
@@ -127,13 +126,9 @@ export function useMaskedEntries<T extends MaskedSecretState>(
   const [entries, setEntries] = useState<T[]>(init);
 
   const syncValues = sync?.values;
-  const keyOfRef = useRef(sync?.keyOf);
-  useEffect(() => {
-    keyOfRef.current = sync?.keyOf;
-  });
+  const keyOf = sync?.keyOf;
 
   useEffect(() => {
-    const keyOf = keyOfRef.current;
     if (!syncValues || !keyOf) return;
     setEntries((prev) => {
       const merged = mergeServerEntries(prev, syncValues, keyOf);
@@ -145,7 +140,7 @@ export function useMaskedEntries<T extends MaskedSecretState>(
       }
       return merged;
     });
-  }, [syncValues]);
+  }, [syncValues, keyOf]);
 
   return {
     entries,

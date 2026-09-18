@@ -62,8 +62,9 @@ function coreKeyOf(e: Pick<FieldState, "key">): string {
 /**
  * Mounted only once `QueryStatus` has the snapshot (parent renders it inside
  * the render-prop with `key="core"`), so fields init from props directly —
- * no init effect, no empty first paint. After init the save fold owns the
- * local snapshot, so a background refetch never clobbers in-progress edits.
+ * no init effect, no empty first paint. Server echo converges non-dirty rows
+ * and the save fold owns the optimistic reset, so a background refetch never
+ * clobbers in-progress edits.
  */
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   // Server echo owns convergence through the shared hook: a background
