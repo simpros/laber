@@ -16,8 +16,8 @@ if (!process.env.TEST_WORKER_INDEX) {
   rmSync(E2E_DATA_DIR, { recursive: true, force: true });
   mkdirSync(E2E_DATA_DIR, { recursive: true });
 
-  const distEntry = join(__dirname, "dist/index.html");
-  if (!existsSync(distEntry)) {
+  const buildEntry = join(__dirname, "build/index.html");
+  if (!existsSync(buildEntry)) {
     console.log("Building SPA for e2e tests...");
     execSync("bun run build", { stdio: "inherit", cwd: __dirname });
     console.log("Build complete\n");
