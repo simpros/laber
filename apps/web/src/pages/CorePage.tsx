@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Card, CardHeader, Button } from "@laber/ui";
 import { useActivity } from "@/lib/activity";
 import { statusColor } from "@/lib/utils";
@@ -26,7 +27,7 @@ import { MaskedSecretField } from "@/components/MaskedSecretField";
 
 type FieldState = MaskedSecretState & {
   key: CoreKey;
-  secret: boolean;
+  isSecret: boolean;
 };
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
@@ -40,11 +41,14 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
+    const isSecret = keyDef.secret;
     return {
       key: keyDef.key,
-      secret: keyDef.secret,
-      hadValue: stored?.hasValue ?? false,
-      value: keyDef.secret ? "" : (stored?.value ?? ""),
+      isSecret,
+      // `hadValue` is only meaningful for secrets (the server never echoes
+      // secret values); plain rows always carry their literal value.
+      hadValue: isSecret && (stored?.hasValue ?? false),
+      value: isSecret ? "" : (stored?.value ?? ""),
       dirty: false,
     };
   });
@@ -57,11 +61,20 @@ function fieldStatesFor(config: CoreData["config"]): FieldState[] {
  * local snapshot, so a background refetch never clobbers in-progress edits.
  */
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
+  // Server echo owns convergence through the shared hook: a background
+  // refetch rebuilds non-dirty rows, in-progress edits are never touched.
+  const serverValues = useMemo(
+    () => fieldStatesFor(snapshot.config),
+    [snapshot.config],
+  );
   const {
     entries: fields,
     setEntries: setFields,
     applySaved,
-  } = useMaskedEntries<FieldState>(() => fieldStatesFor(snapshot.config));
+  } = useMaskedEntries<FieldState>(() => fieldStatesFor(snapshot.config), {
+    values: serverValues,
+    keyOf: (f) => f.key,
+  });
 
   const saveMutation = useSaveCoreConfig({
     // The server now holds what we sent: fold it into the local snapshot
@@ -82,7 +95,10 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
     e.preventDefault();
     const values: Partial<Record<CoreKey, string | null>> = {};
     for (const f of fields) {
-      values[f.key] = f.secret ? valueForSave(f) : f.value;
+      // `valueForSave` keys off `hadValue`/`dirty` — untouched secrets send
+      // null (keep) — and never looks at secrecy, so secrets and plains save
+      // through one path with no branch.
+      values[f.key] = valueForSave(f);
     }
     saveMutation.reset();
     saveMutation.mutate(values);
@@ -120,10 +136,10 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                       className="text-text-secondary text-sm font-medium"
                     >
                       {keyDef.label}
-                      {keyDef.secret ? <SecretBadge entry={field} /> : null}
+                      {field.isSecret ? <SecretBadge entry={field} /> : null}
                     </label>
                     <div className="col-span-2">
-                      {keyDef.secret ? (
+                      {field.isSecret ? (
                         <MaskedSecretField
                           id={keyDef.key}
                           name={keyDef.key}

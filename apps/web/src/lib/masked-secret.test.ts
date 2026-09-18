@@ -168,39 +168,21 @@ describe("markMixedSaved", () => {
     });
   });
 
-  it("supports the core `secret` row shape too", () => {
-    type CoreRow = {
-      key: string;
-      value: string;
-      secret: boolean;
-      hadValue: boolean;
-      dirty: boolean;
-    };
-    const secretEntry: CoreRow = {
-      key: "CF_DNS_API_TOKEN",
-      value: "new",
-      secret: true,
-      hadValue: true,
-      dirty: true,
-    };
-    const saved = markMixedSaved(secretEntry);
-    expect(saved).toEqual({
-      key: "CF_DNS_API_TOKEN",
-      value: "",
-      secret: true,
-      hadValue: true,
-      dirty: false,
-    });
-    const plainEntry: CoreRow = {
+  it("clears only the dirty flag on plain rows", () => {
+    const entry: EnvRow = {
       key: "ROOT_DOMAIN",
       value: "example.com",
-      secret: false,
+      isSecret: false,
       hadValue: false,
       dirty: true,
     };
-    const plain = markMixedSaved(plainEntry);
-    expect(plain.value).toBe("example.com");
-    expect(plain.dirty).toBe(false);
+    expect(markMixedSaved(entry)).toEqual({
+      key: "ROOT_DOMAIN",
+      value: "example.com",
+      isSecret: false,
+      hadValue: false,
+      dirty: false,
+    });
   });
 });
 

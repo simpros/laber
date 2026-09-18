@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@laber/ui";
-import { toErrorMessage } from "@/lib/queries/actions";
 import { useSaveStackCompose } from "@/lib/queries/stacks";
+import MutationNotice from "@/components/MutationNotice";
 import { Icon } from "@laber/ui";
 
 export function StackComposeView({
@@ -77,11 +77,7 @@ export function StackComposeView({
             rows={24}
             className="w-full font-mono text-xs"
           />
-          {saveMutation.isError && (
-            <p className="text-danger mt-2 text-xs">
-              {toErrorMessage(saveMutation.error, "Save failed")}
-            </p>
-          )}
+          <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
           <div className="mt-2 flex justify-end">
             <Button
               variant="primary"

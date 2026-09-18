@@ -1,8 +1,7 @@
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { Button, Icon } from "@laber/ui";
 import {
   markMixedSaved,
-  mergeServerEntries,
   setRowSecret,
   useMaskedEntries,
   valueForSave,
@@ -56,27 +55,15 @@ export default function StackEnvEditor({
 }) {
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
+  // Server echo owns convergence through the shared hook (heals a demoted
+  // row — local `""` becomes the server plaintext — without inventing a
+  // literal; dirty rows are never touched). The save fold is the optimistic
+  // half of the same hook-owned policy, not a second owner.
+  const serverValues = useMemo(() => envVars.map(rowFor), [envVars]);
   const { entries, setEntries, update, applySaved } = useMaskedEntries<Row>(
     () => envVars.map(rowFor),
+    { values: serverValues, keyOf: (e) => e.key },
   );
-
-  // Server echo owns convergence: after save (or any refetch) a list with
-  // no in-progress edits is rebuilt from props. This heals a demoted row —
-  // local `""` becomes the server plaintext — instead of the save fold
-  // guessing at a literal it never held. Dirty rows are never touched, and
-  // key renames mark the row dirty so refetches cannot wipe or duplicate
-  // them while the user is editing.
-  useEffect(() => {
-    setEntries((prev) =>
-      prev.some((e) => e.dirty)
-        ? prev
-        : mergeServerEntries(
-            prev,
-            envVars.map(rowFor),
-            (e) => e.key,
-          ),
-    );
-  }, [envVars, setEntries]);
 
   const missingVars = detectedEnvVars.filter(
     (name) => !entries.some((e) => e.key === name),

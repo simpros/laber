@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Button, Icon } from "@laber/ui";
 import {
   isUnset,
@@ -32,6 +33,19 @@ export default function StackSecretsEditor({
 }) {
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
+  // Server echo converges through the same hook every list editor uses.
+  const serverValues = useMemo(
+    () =>
+      secrets.map((s) => ({
+        name: s.name,
+        filePath: s.filePath,
+        services: s.services,
+        hadValue: s.hasValue,
+        value: "",
+        dirty: false,
+      })),
+    [secrets],
+  );
   const { entries, update, applySaved } = useMaskedEntries<Row>(
     () =>
       secrets.map((s) => ({
@@ -41,7 +55,8 @@ export default function StackSecretsEditor({
         hadValue: s.hasValue,
         value: "",
         dirty: false,
-      }))
+      })),
+    { values: serverValues, keyOf: (e) => e.name },
   );
 
   const unsetCount = entries.filter(isUnset).length;

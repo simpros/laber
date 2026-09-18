@@ -27,7 +27,7 @@ type ActivityEvent =
   | {
       type: "finish";
       id: string;
-      status: ActivityStatus;
+      status: "success" | "error";
       finishedAt: number;
     };
 
@@ -88,9 +88,7 @@ function isActivityEvent(value: unknown): value is ActivityEvent {
     case "finish":
       return (
         typeof value.id === "string" &&
-        (value.status === "running" ||
-          value.status === "success" ||
-          value.status === "error") &&
+        (value.status === "success" || value.status === "error") &&
         typeof value.finishedAt === "number"
       );
     default:

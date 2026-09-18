@@ -21,14 +21,6 @@ export default function RepositoryPage() {
   const syncMutation = useSyncRepository();
   const removeMutation = useRemoveRepository();
 
-  // Sibling reset before every attempt: at most one notice is ever visible,
-  // with no shared channel to choreograph.
-  function resetAll() {
-    addMutation.reset();
-    syncMutation.reset();
-    removeMutation.reset();
-  }
-
   const form = useForm({
     defaultValues: {
       name: "",
@@ -38,7 +30,6 @@ export default function RepositoryPage() {
       sshPrivateKey: "",
     },
     onSubmit: async ({ value }) => {
-      resetAll();
       addMutation.mutate({
         name: value.name,
         url: value.url,
@@ -52,12 +43,10 @@ export default function RepositoryPage() {
   const syncingRepoId = syncMutation.syncingRepoId;
 
   function handleSync(repoId: string) {
-    resetAll();
     syncMutation.mutate(repoId);
   }
 
   function handleRemove(repoId: string) {
-    resetAll();
     removeMutation.mutate(repoId);
   }
 
@@ -80,16 +69,17 @@ export default function RepositoryPage() {
       </div>
 
       <MutationNotice
-        mutation={addMutation}
-        errorFallback="Failed to add repository"
-      />
-      <MutationNotice
-        mutation={syncMutation}
-        errorFallback="Failed to sync repository"
-      />
-      <MutationNotice
-        mutation={removeMutation}
-        errorFallback="Failed to remove repository"
+        mutations={[
+          { mutation: addMutation, errorFallback: "Failed to add repository" },
+          {
+            mutation: syncMutation,
+            errorFallback: "Failed to sync repository",
+          },
+          {
+            mutation: removeMutation,
+            errorFallback: "Failed to remove repository",
+          },
+        ]}
       />
 
       {(showAddForm || data.repositories.length === 0) && (
