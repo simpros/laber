@@ -18,6 +18,11 @@ if (!process.env.TEST_WORKER_INDEX) {
 
   const distEntry = join(__dirname, "dist/index.html");
   if (!existsSync(distEntry)) {
+    if (process.env.CI) {
+      throw new Error(
+        "apps/web/dist/index.html is missing: the CI build job must upload the web-dist artifact before e2e runs. Refusing to rebuild locally-built output on CI.",
+      );
+    }
     console.log("Building SPA for e2e tests...");
     execSync("bun run build", { stdio: "inherit", cwd: __dirname });
     console.log("Build complete\n");

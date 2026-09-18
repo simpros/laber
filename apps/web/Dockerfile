@@ -1,22 +1,30 @@
 ARG COMMIT_SHA=unknown
 
-FROM oven/bun:1.3.13-alpine AS builder
+FROM oven/bun:1.3.13-alpine AS base
 
 WORKDIR /app
 
-# Full source (node_modules, dist, data and .git are excluded via .dockerignore).
-COPY package.json ./package.json
-COPY bun.lock ./bun.lock
-COPY turbo.json ./turbo.json
-COPY bunfig.toml ./bunfig.toml
-COPY patches ./patches
-COPY apps ./apps
-COPY packages ./packages
+# ---- Prune the monorepo to the web build subgraph ----
+# (@laber/web -> @laber/api-client -> @laber/server types, so the pruned
+# sources include the server for typechecking. Only dist/ leaves the builder.)
+FROM base AS pruner
+
+RUN bun add -g turbo@^2
+
+COPY . .
+RUN turbo prune @laber/web --docker
+
+# ---- Install pruned deps + build the SPA ----
+FROM base AS builder
+
+COPY --from=pruner /app/out/json/ .
+RUN bun install --frozen-lockfile
+
+COPY --from=pruner /app/out/full/ .
 
 ARG COMMIT_SHA
 ENV VITE_COMMIT_SHA=${COMMIT_SHA}
 
-RUN bun install --frozen-lockfile
 RUN bun run build --filter=@laber/web
 
 # ---- Production runner: static files behind nginx ----
