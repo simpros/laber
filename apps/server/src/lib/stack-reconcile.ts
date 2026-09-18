@@ -20,10 +20,7 @@ function isUniqueViolation(e: unknown): boolean {
 }
 
 /**
- * Race between the pre-check above and the insert below: re-read inside the
- * same tx to name only the rows another repo actually owns, instead of
- * blaming the whole add batch. Falls back to a generic message when nothing
- * is found (the UNIQUE failure came from somewhere — never invent names).
+ * Re-read in-tx to name only rows another repo actually owns; generic message when none found.
  */
 function alreadyRegisteredConflict(
   tx: StackTx,
@@ -52,13 +49,8 @@ function alreadyRegisteredConflict(
 }
 
 /**
- * Stack-table reconcile: apply filesystem discovery to the stacks table.
- * This is persistence policy, not VCS work — it lives here (next to
- * repositories, not in `git.ts`) so the VCS module never imports the stacks
- * table. Always called inside the caller's transaction (sync drizzle-tx
- * style: reads via `.all()`, writes via `.run()`). Throwing rolls back
- * everything the outer transaction did — repo insert and `lastSyncedAt`
- * included — so callers stay atomic by construction.
+ * Persistence policy next to repositories (not VCS work in `git.ts`), always
+ * inside the caller's transaction so throwing rolls back repo insert and `lastSyncedAt` too.
  */
 export function reconcileStacksTx(
   tx: StackTx,
@@ -86,17 +78,8 @@ export function reconcileStacksTx(
   const removed = existing.filter((s) => !discoveredByName.has(s.name));
   const removedNames = removed.map((s) => s.name);
 
-  // Removal requires a clearance only the Docker probe can mint: every name
-  // about to disappear must be in `clearance.names` for this repo. The
-  // transaction cannot await Docker, so the async pre-check in
-  // `repositories.ts` mints it under the per-repo lock — there is
-  // deliberately no probe twin here, and no caller can skip the gate without
-  // the type system noticing. `stacks.status` is UI/history and never
-  // consulted. Out-of-band daemon changes are best-effort either way. Stale
-  // rows are deleted (env/secrets cascade, logs detach) in the same
-  // transaction as the adds/updates so sync never leaves zombies behind.
-  // No clearance is needed when nothing disappears (fresh register passes
-  // none) — the gate only runs for actual removals.
+  // Removal needs a clearance the async pre-check mints under the per-repo
+  // lock (the tx cannot await Docker); `stacks.status` is never consulted.
   if (removedNames.length > 0) {
     if (!clearance || clearance.repoId !== repoId) {
       throw new ActionFailedError(
@@ -112,9 +95,7 @@ export function reconcileStacksTx(
     }
   }
 
-  // NOTE: drizzle only executes queries that are awaited (async tx) or
-  // finished with `.run()` (sync tx). Bare `tx.delete(...)` chains are
-  // lazy and would silently persist nothing.
+  // Drizzle sync-tx queries are lazy: only `.run()` executes them.
   if (removedNames.length > 0) {
     tx.delete(stacks)
       .where(
@@ -126,12 +107,8 @@ export function reconcileStacksTx(
       .run();
   }
   if (added.length > 0) {
-    // Global UNIQUE on `stacks.name`: the API keys every stack by bare name
-    // (and Docker `--project-name` collides on it), so a discovered name
-    // owned by another repo is a 409 with a product message — never a raw
-    // SQLite 500. The batch-duplicate check below is the cheap synchronous
-    // case; cross-repo races surface through the constraint catch, which
-    // re-reads to name the real foreign owners.
+    // `stacks.name` is globally UNIQUE (API keys and `--project-name` collide
+    // on it): a foreign-owned name is a 409, with cross-repo races surfacing via the constraint catch below.
     const addedNames = added.map((s) => s.name);
     const dupInBatch = addedNames.filter(
       (n, i) => addedNames.indexOf(n) !== i

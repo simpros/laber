@@ -25,12 +25,7 @@ const tabs = [
 
 export type StackTab = (typeof tabs)[number]["id"];
 
-/**
- * Pure page: `name`/`tab` arrive as props from the one-line route wrapper
- * in `router.tsx`, so this module never imports the router tree that
- * imports it (no module cycle). Editors remount per stack via `key={name}`,
- * which is what makes prop-initialized local state correct.
- */
+/** Props arrive from the route wrapper, so this module never imports the router back. */
 export default function StackDetailPage({
   name,
   tab,
@@ -53,8 +48,6 @@ export default function StackDetailPage({
   return (
     <QueryStatus query={query} failedMessage="Failed to load stack">
       {(data) => {
-        // The action list lives in the query layer next to `stackIsRunning`
-        // — the page renders the catalog, it never builds it.
         const lifecycleActions = stackLifecycleActions(stackIsRunning(data));
 
         return (
@@ -116,10 +109,7 @@ export default function StackDetailPage({
           services={data.services}
         />
       )}
-      {/* Stateful editors stay mounted across tab switches (hidden + inert
-        when inactive) so dirty env/secrets/compose drafts survive — tabs
-        switch visibility, never state lifetime. Stateless Services/Logs
-        above stay conditional. */}
+      {/* Editors stay mounted (hidden + inert) so drafts survive tab switches. */}
       <div hidden={tab !== "env"} inert={tab !== "env"}>
         <StackEnvEditor
           key={name}

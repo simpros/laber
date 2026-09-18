@@ -1,7 +1,6 @@
 /**
- * Transport-agnostic domain errors. Libs throw these; only the HTTP adapter
- * (`app.ts`) knows what wire status each kind maps to. No numeric status
- * lives here by design — the ops domain must not carry HTTP notions.
+ * Transport-agnostic domain errors: only the HTTP adapter (`app.ts`) maps
+ * each kind to a wire status — no numerics live here.
  */
 export type DomainErrorKind =
   | "not_found"
@@ -41,9 +40,7 @@ export class ValidationError extends DomainError {
 }
 
 /**
- * A compose/git run failed. The full transcript already lives in the
- * deployment log and the activity stream, so the message stays short —
- * it is what the API returns as `{ error }`.
+ * The transcript already lives in the deployment log and activity stream, so the message stays short.
  */
 export class ActionFailedError extends DomainError {
   constructor(message: string) {

@@ -5,11 +5,7 @@ import {
 } from "./docker-engine";
 import { NotFoundError } from "./errors";
 
-/**
- * Stack-log domain: container selection plus snapshot-vs-follow branching.
- * Transport-agnostic: snapshot returns data, follow returns the raw log
- * stream. The route module alone owns SSE framing (`sseResponse`).
- */
+/** Container selection plus snapshot-vs-follow branching; the route alone owns SSE framing. */
 async function resolveLogContainerId(name: string): Promise<string> {
   const containers = await listContainers(name);
   if (containers.length === 0) {

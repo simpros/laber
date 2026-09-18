@@ -3,10 +3,7 @@ import { join } from "path";
 import { resolveDataDir } from "@laber/db/paths";
 
 /**
- * The one core identity: compose project, Traefik container, and Traefik
- * service names. Every module that names the core project or discovers
- * Traefik imports these — a rename touches one file, not the template,
- * engine, and actions in parallel.
+ * The one core identity: a rename touches this file, not every consumer in parallel.
  */
 export const CORE_PROJECT = "laber-core";
 export const TRAEFIK_CONTAINER = "laber-reverse-proxy";

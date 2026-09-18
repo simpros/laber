@@ -69,13 +69,12 @@ describe("PUT /api/core/config", () => {
     };
     expect(get.config.ROOT_DOMAIN.value).toBe("example.com");
     expect(get.config.ROOT_DOMAIN.hasValue).toBe(true);
-    // Secret contract: values never leak, only hasValue.
+    // Secrets never leak; only hasValue is exposed.
     expect(get.config.CF_DNS_API_TOKEN.value).toBe("");
     expect(get.config.CF_DNS_API_TOKEN.hasValue).toBe(true);
     expect(get.config.ACME_EMAIL.hasValue).toBe(false);
     expect(get.isConfigured).toBe(true);
 
-    // null leaves the stored value unchanged.
     await app.handle(
       jsonReq("/api/core/config", "PUT", { ROOT_DOMAIN: null }, cookie)
     );
@@ -84,7 +83,6 @@ describe("PUT /api/core/config", () => {
     ).json()) as typeof get;
     expect(kept.config.ROOT_DOMAIN.value).toBe("example.com");
 
-    // "" clears.
     await app.handle(
       jsonReq("/api/core/config", "PUT", { ROOT_DOMAIN: "" }, cookie)
     );
@@ -93,13 +91,11 @@ describe("PUT /api/core/config", () => {
     ).json()) as typeof get;
     expect(cleared.config.ROOT_DOMAIN.hasValue).toBe(false);
 
-    // Unknown keys are rejected.
     const bad = await app.handle(
       jsonReq("/api/core/config", "PUT", { NOPE: "x" }, cookie)
     );
     expect(bad.status).toBe(400);
 
-    // Restore for the deploy tests below.
     await app.handle(
       jsonReq(
         "/api/core/config",
@@ -137,8 +133,7 @@ describe("POST /api/core/deploy|stop|restart", () => {
       _projectName,
       _onOutput
     ) => ({
-      // Deploy and stop/restart share one compose runner now; answer by
-      // command so each action's output stays distinguishable.
+      // One compose runner: answer by command to keep outputs distinguishable.
       output: command.includes("up") ? "core up" : "mocked",
     });
 
@@ -151,9 +146,7 @@ describe("POST /api/core/deploy|stop|restart", () => {
     };
     expect(deployBody.output).toContain("core up");
 
-    // Disk + runtime share one success contract: the generated template is
-    // promoted inside the same attempt, so a 200 means the live file
-    // advanced too — not "containers up + stale live file + success log".
+    // 200 means the live file advanced too, not just containers up.
     const livePath = getCoreComposePath();
     expect(existsSync(livePath)).toBe(true);
     expect(readFileSync(livePath, "utf-8")).toContain("example.com");
@@ -184,8 +177,7 @@ describe("POST /api/core/deploy|stop|restart", () => {
       _projectName,
       onOutput
     ) => {
-      // Streamed detail is what the deployment log records; the wire
-      // message stays short.
+      // Streamed detail is what the log records; the wire message stays short.
       onOutput?.("core blew up");
       throw new ActionFailedError("Compose up -d failed for laber-core");
     };
@@ -195,8 +187,7 @@ describe("POST /api/core/deploy|stop|restart", () => {
     );
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
-    // Short failure contract: the wire message stays short; the full
-    // transcript lives in the deployment log and activity stream.
+    // Wire message stays short; the full transcript lives in the log.
     expect(body.error).toContain("Deploying core services failed");
     expect(body.error).not.toContain("core blew up");
 

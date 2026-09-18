@@ -4,15 +4,8 @@ import { join } from "path";
 import { mock } from "bun:test";
 import { dockerStub } from "./docker-stub";
 
-// Every test file imports this module first (before `../src/app`), so the
-// temp-database env vars are set before `@laber/db` is first evaluated and
-// the docker mocks are registered before `src/lib/docker-engine.ts` /
-// `src/lib/compose-cli.ts` are imported.
-//
-// NOTE: run these tests from this package directory (e.g. `bun test` here,
-// or `bun run test` at the repo root via turbo, which uses the package dir
-// as cwd). The repo-root bunfig preloads the Svelte happy-dom globals, which
-// shadow Response/Headers and break better-auth's Set-Cookie handling.
+// Env vars and docker mocks must register before `../src/app` imports.
+// Run from this package dir: repo-root happy-dom globals shadow Response/Headers and break auth cookies.
 const dir = mkdtempSync(join(tmpdir(), "laber-server-test-"));
 process.env.DATA_DIR = join(dir, "data");
 process.env.DATABASE_PATH = join(dir, "data", "laber.db");

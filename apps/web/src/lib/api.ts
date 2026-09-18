@@ -1,10 +1,8 @@
 import { createApiClient, type ApiClient } from "@laber/api-client";
 
 /**
- * Same-origin treaty client. Vite proxies `/api/*` to the Elysia backend
- * (dev + preview), so the browser never needs a second origin and session
- * cookies flow as first-party. `credentials: "same-origin"` is fetch's
- * default, which is exactly what we want — no cross-origin cookie config.
+ * Same-origin treaty client: Vite proxies `/api/*`, so cookies flow as
+ * first-party with no cross-origin config.
  */
 let cached: ApiClient | null = null;
 
@@ -13,9 +11,7 @@ export function getApiClient(baseUrl?: string): ApiClient {
     return createApiClient(baseUrl);
   }
   if (!cached) {
-    // Same-origin in the browser (Vite proxies `/api/*` to Elysia).
-    // `window.location.origin` keeps treaty URL construction absolute;
-    // an empty base breaks Eden's URL joining and surfaces as "Request failed".
+    // Absolute origin: an empty base breaks Eden's URL joining ("Request failed").
     const origin =
       typeof window !== "undefined" ? window.location.origin : "";
     cached = createApiClient(origin);
@@ -34,7 +30,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Unwrap an Eden `{ data, error }` union; throw ApiError on failure. */
+/** Unwrap an Eden `{ data, error }` union, throwing `ApiError` on failure. */
 export function unwrap<T>(res: { data: T | null; error: unknown }): T {
   if (res.error !== null && res.error !== undefined) {
     throw toApiError(res.error);

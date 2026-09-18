@@ -1,8 +1,6 @@
 /**
- * Server catalog of core config keys: only what the API needs (storage key,
- * typed config prop, secrecy, requiredness). Presentation metadata (labels,
- * placeholders, groups) lives with the future SPA — `GET /api/core` never
- * serves it, so the backend must not own a copy that can drift.
+ * Server catalog of core config keys (storage key, typed prop, secrecy,
+ * requiredness); presentation metadata lives with the SPA so no copy can drift.
  */
 export const CORE_KEYS = [
   { key: "ROOT_DOMAIN", prop: "rootDomain", secret: false, required: true },

@@ -20,17 +20,11 @@ type OpCtx = {
 
 type OpDef = {
   action: string;
-  /** Full identity factory per row: stop owns runtime intent (`stack` with
-   * `onSuccess: "stopped"`); restart/pull are log-only (`stack-log`). Each
-   * row carries a complete `ActionIdentity` variant — callers never branch
-   * on an optional, and `"deployed"` never appears here (deploy is not in
-   * this table). */
+  /** Stop owns runtime intent (`stack`); restart/pull are log-only (`stack-log`). */
   stackIdentity: (stackId: string) => ActionIdentity;
   /**
-   * Whether the op mutates the removable inputs the sync/delete lock owns.
-   * Stop brings containers down (the probe's ground truth); restart/pull
-   * neither start nor remove projects, so they run unlocked instead of
-   * serializing on a mutex they do not write.
+   * Stop removes the containers the sync probe reads, so it holds the lock;
+   * restart/pull neither start nor remove projects, so they run unlocked.
    */
   holdsRepoLock: boolean;
   title: (label: string) => string;
@@ -40,12 +34,7 @@ type OpDef = {
   }>;
 };
 
-// The one lifecycle table for every stoppable project (stacks and core):
-// stop is `downProject` by project name (compose file optional, label
-// fallback); restart/pull are plain compose argv. Each op owns its `run`,
-// so callers have no `if (op === ...)` branch — the table is the
-// discriminator. Stacks label ops with the stack name, core with
-// "core services" (same strings as before, one definition).
+// One lifecycle table for stacks and core: each op owns its `run`, so callers never branch on the op name.
 const OPS: Record<LifecycleOp, OpDef> = {
   stop: {
     action: "stop",
@@ -84,13 +73,7 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
 };
 
-/**
- * The one logged-lifecycle shell for every stoppable project: `runStackOp`
- * and `runCoreOp` only resolve identity + compose path, then run the table
- * def through here — so the status machine, activity title, and failure
- * phrasing live once. Identity is `ActionIdentity` directly: no second
- * twin union remapping 1:1 into it.
- */
+/** One logged-lifecycle shell: status machine, title, and failure phrasing live once. */
 function runLifecycleOp(
   op: LifecycleOp,
   identity: ActionIdentity,
@@ -111,15 +94,8 @@ function runLifecycleOp(
 }
 
 /**
- * Table-driven stack lifecycle: `runStackOp(name, "stop")` instead of three
- * near-identical wrappers. The table row owns the identity variant outright
- * (stop → `stack` with `onSuccess`; restart/pull → `stack-log` for
- * attribution with no status write — they do not change desired runtime).
- *
- * Stop holds the per-repo lock: it removes the very containers the sync
- * removable probe reads, so an unlocked stop racing a sync probe→commit
- * would orphan a live project under a deleted row. Restart/pull neither
- * start nor remove projects, so the table leaves them unlocked.
+ * Stop holds the per-repo lock (it removes the containers the sync probe
+ * reads); restart/pull run unlocked. Restart/pull never write status.
  */
 export async function runStackOp(
   name: string,
@@ -135,8 +111,6 @@ export async function runStackOp(
       { projectName: stack.name, composePath, label: stack.name }
     );
   }
-  // Stop removes the containers the sync probe reads: same `withLockedStack`
-  // choreography as deploy, one helper instead of a copy-pasted lock block.
   return withLockedStack(name, async ({ stack, composePath }) =>
     runLifecycleOp(
       op,
@@ -148,11 +122,7 @@ export async function runStackOp(
 
 type CoreOp = "stop" | "restart";
 
-/** Table-driven core lifecycle: `runCoreOp("stop")`. Core shares the one
- * `OPS` table with stacks (same `downProject` stop, same argv restart) —
- * only the identity (project, label) differs, resolved here so routes never
- * own the compose path. Core has no stack row, so no status commit by
- * construction. */
+/** Core shares the one `OPS` table with stacks; no stack row, so no status commit. */
 export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
   return runLifecycleOp(op, { kind: "core" }, {
     projectName: CORE_PROJECT,

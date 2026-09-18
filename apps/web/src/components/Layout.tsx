@@ -10,8 +10,7 @@ export default function Layout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // The drawer is navigation chrome: close it whenever the route changes
-  // (in addition to per-link close) so it never survives a navigation.
+  // Close the drawer on navigation so it never survives a route change.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   useEffect(() => {
     setSidebarOpen(false);

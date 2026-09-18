@@ -1,13 +1,7 @@
 import { Icon } from "@laber/ui";
 import type { MaskedSecretState } from "@/lib/masked-secret";
 
-/**
- * One secret input for every masked field in the SPA: the password input
- * plus undo/clear chrome over `lib/masked-secret`. Core keys, stack
- * secrets, and secret env rows compose this — the keep/clear contract
- * itself stays in the pure model, and callers place `SecretBadge` wherever
- * their layout wants it.
- */
+/** One secret input for every masked field; the keep/clear contract stays in the pure model. */
 export function MaskedSecretField({
   id,
   name,
@@ -22,11 +16,10 @@ export function MaskedSecretField({
   id?: string;
   name?: string;
   entry: MaskedSecretState;
-  /** User typed: caller sets value + dirty. */
   onInput: (value: string) => void;
-  /** Revert to the untouched snapshot. Omit to hide Undo. */
+  /** Omit to hide Undo. */
   onUndo?: () => void;
-  /** Mark the stored value cleared (empty + dirty). Omit to hide Clear. */
+  /** Omit to hide Clear. */
   onClear?: () => void;
   type?: "password" | "text";
   keepPlaceholder?: string;

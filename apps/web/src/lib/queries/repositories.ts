@@ -17,11 +17,7 @@ export type AddRepositoryInput = {
   sshPrivateKey: string | null;
 };
 
-/**
- * Query-layer half of the repository add: wire call + invalidation. The page
- * wraps it in `useApiMutation` with its own `onSuccess`
- * (`setShowAddForm(false)`) — no UI callback injected into the query hook.
- */
+/** Query-layer half of the repository add (wire + invalidation). */
 export function addRepositorySave() {
   return {
     mutationFn: async (input: AddRepositoryInput): Promise<string> => {
@@ -53,8 +49,7 @@ export function useSyncRepository() {
       }
       return `Synced. Found ${parts.join(", ")} stack(s).`;
     },
-    // Same dashboard coverage as add: repo/stack stats must converge no
-    // matter which repo command ran — one policy, not per-author memory.
+    // Same dashboard coverage as add, so stats converge whichever command ran.
     invalidate: [
       queryKeys.repositories,
       queryKeys.stacks,
@@ -74,7 +69,7 @@ export function useRemoveRepository() {
       unwrap(res);
       return null;
     },
-    // Same dashboard coverage as add; see `useSyncRepository`.
+    // Same dashboard coverage as add.
     invalidate: [
       queryKeys.repositories,
       queryKeys.stacks,

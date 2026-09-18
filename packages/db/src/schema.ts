@@ -1,15 +1,7 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 
-// ============================================================================
-// Auth tables (managed by better-auth via drizzle adapter)
-// ============================================================================
-
 export * from "./auth-schema";
-
-// ============================================================================
-// Application tables
-// ============================================================================
 
 export const repositories = sqliteTable("repositories", {
   id: text("id")
@@ -36,10 +28,8 @@ export const stacks = sqliteTable("stacks", {
   repositoryId: text("repository_id")
     .notNull()
     .references(() => repositories.id, { onDelete: "cascade" }),
-  // Globally unique: every route, lookup (`getStackAndRepo`), and Docker
-  // `--project-name` keys stacks by bare name, so the table enforces the
-  // invariant the API already assumes instead of silently `.limit(1)`-ing
-  // over duplicates.
+  // Unique because routes, lookups, and Docker `--project-name`
+  // key stacks by bare name.
   name: text("name").notNull().unique(),
   relativePath: text("relative_path").notNull(),
   composeFile: text("compose_file")
@@ -50,11 +40,8 @@ export const stacks = sqliteTable("stacks", {
   })
     .notNull()
     .default("discovered"),
-  // Legacy cache owned by the frozen SvelteKit tree (`apps/web` renders it
-  // as a `net:` badge and keeps writing it on sync). The Elysia server
-  // neither reads nor writes it — deploy re-parses the compose file fresh,
-  // the only correctness-critical consumer. Drop this column with the
-  // SvelteKit-deletion ticket, not before.
+  // Legacy cache written by the SvelteKit tree; the server never reads
+  // it (deploy re-parses compose fresh). Drop with the SvelteKit tree.
   networkName: text("network_name"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

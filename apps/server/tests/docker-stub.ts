@@ -11,8 +11,7 @@ const defaults = {
   listContainersSoft: async (
     _projectLabel?: string
   ): Promise<ContainerInfo[]> => {
-    // Soft by default, and follows `listContainers` overrides: tests stub
-    // the hard probe, and read paths degrade to empty on Docker failure.
+    // Fail soft: delegate to the hard probe, degrade to empty on failure.
     try {
       return await dockerStub.listContainers(_projectLabel);
     } catch {
@@ -56,11 +55,7 @@ const defaults = {
   }),
 };
 
-/**
- * Mutable stand-in for `src/lib/docker-engine.ts` + `src/lib/compose-cli.ts`.
- * Tests override individual functions per test and call `resetDockerStub()`
- * in `afterEach`.
- */
+// Mutable so tests can override per test (reset in afterEach).
 export const dockerStub: typeof defaults = { ...defaults };
 
 export function resetDockerStub() {

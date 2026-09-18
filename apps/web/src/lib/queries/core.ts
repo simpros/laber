@@ -11,11 +11,7 @@ export function useCore() {
   });
 }
 
-/**
- * Query-layer half of the core-config save: wire call + invalidation. The
- * form passes this into `useMaskedListEditor`, which owns entries, payload,
- * and the post-save fold — no `useSave*` hook with an optional `onSaved`.
- */
+/** Query-layer half of the core-config save (wire + invalidation). */
 export function coreConfigSave() {
   return {
     mutationFn: async (
@@ -30,7 +26,6 @@ export function coreConfigSave() {
 
 export type CoreAction = "deploy" | "stop" | "restart";
 
-/** Action → endpoint table; the table is the discriminator, no if-ladder. */
 const CORE_ACTIONS = {
   deploy: () => api.api.core.deploy.post(),
   stop: () => api.api.core.stop.post(),
@@ -51,11 +46,6 @@ export function useCoreAction() {
   });
 }
 
-/**
- * The core lifecycle catalog, owned by the query layer: the status card and
- * the bottom Deploy button render through the same `LifecycleToolbar` path
- * instead of a hand-rolled pending label in the page.
- */
 export const CORE_STATUS_ACTIONS: LifecycleActionItem<CoreAction>[] = [
   { action: "restart", label: "Restart", pendingLabel: "Restarting..." },
   {

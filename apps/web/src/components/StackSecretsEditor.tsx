@@ -29,7 +29,7 @@ export type SecretRow = MaskedSecretState & {
   name: string;
   filePath: string;
   services: string[];
-  /** Always-secret rows carry the steady state; never `demote-pending`. */
+  /** Always-secret rows; never `demote-pending`. */
   secrecy: Secrecy;
 };
 
@@ -38,9 +38,7 @@ function secretKeyOf(e: Pick<SecretRow, "name">): string {
   return e.name;
 }
 
-// One row builder for mount and server-echo snapshots so the two cannot
-// drift apart. Init policy (masked + secrecy) lives in `maskedFromServer` —
-// this only attaches the secret identity fields.
+// One builder for mount and echo snapshots so the two can't drift.
 export function rowForSecret(s: SecretEntry): SecretRow {
   return {
     ...maskedFromServer({ isSecret: true, hasValue: s.hasValue }),
@@ -57,9 +55,7 @@ export default function StackSecretsEditor({
   secrets: SecretEntry[];
   stackName: string;
 }) {
-  // Owned by stack identity: the parent remounts per stack (`key={name}`),
-  // so initializing from props once is correct — no fingerprint dance.
-  // Server echo converges through the same hook every list editor uses.
+  // Parent remounts per stack (`key={name}`), so prop-init is correct.
   const serverValues = useMemo(() => secrets.map(rowForSecret), [secrets]);
   const { entries, update, touch, saveMutation, handleSave } =
     useMaskedListEditor<SecretRow, StackSecretPayload>({

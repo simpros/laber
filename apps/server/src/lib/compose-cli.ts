@@ -7,10 +7,7 @@ import {
   removeContainer,
 } from "./docker-engine";
 
-/**
- * Raw compose spawn. Module-private: callers never touch exit codes
- * directly — `runComposeCommand` below is the single failure contract.
- */
+/** Raw compose spawn; `runComposeCommand` below is the single failure contract. */
 async function execCompose(options: {
   composePath: string;
   command: string[];
@@ -23,9 +20,7 @@ async function execCompose(options: {
   }
   args.push(...options.command);
 
-  // Stack env travels only via --env-file (see deployStack). The spawned
-  // process inherits process.env for the docker CLI itself; there is no
-  // second stack-env overlay here by design.
+  // Stack env travels only via --env-file; process.env is inherited for the docker CLI itself, with no second overlay.
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
@@ -75,12 +70,7 @@ async function execCompose(options: {
 }
 
 /**
- * Single failure contract: returns the command output on success, throws
- * `ActionFailedError` on a nonzero exit. Resource cleanup (secret files,
- * compensating `down`) belongs to the caller — deploy owns wipe + down in
- * its own catch — so this stays exit→throw only with no cleanup hook.
- * `runLoggedAction` maps the throw to the contextual failure message;
- * direct callers surface the message in their own warnings.
+ * Exit→throw only, with no cleanup hook: the caller owns secret wipe + compensating `down`.
  */
 export async function runComposeCommand(
   composePath: string,
@@ -105,13 +95,8 @@ export async function runComposeCommand(
 }
 
 /**
- * The one project teardown: bring down a compose project by name, not by
- * compose path. When the compose file still exists this is a regular
- * `compose down` (stops containers, removes project networks); when the
- * file is gone (dir removed out of band) containers are stopped/removed by
- * their `com.docker.compose.project` label instead. Either way the failure
- * contract is the same — throw `ActionFailedError`, never fail open — so
- * callers (stop, repo delete) never branch on file existence themselves.
+ * Project teardown by name: regular `compose down` while the file exists,
+ * container stop/remove by project label when it is gone. Never fails open.
  */
 export async function downProject(options: {
   projectName: string;

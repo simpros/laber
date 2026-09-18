@@ -18,14 +18,11 @@ export function StackComposeView({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
 
-  // The parent remounts per stack (`key={name}`); this only covers a
-  // background refetch while viewing. Never clobber an in-progress edit.
+  // Parent remounts per stack; this only guards a refetch while viewing.
   useEffect(() => {
     if (!editing) setDraft(content);
   }, [content, editing]);
 
-  // Query-layer wire + invalidation only; the view owns the edit-surface
-  // side effect (`setEditing(false)`) as the mutation's `onSuccess`.
   const saveMutation = useApiMutation({
     ...stackComposeSave(stackName),
     onSuccess: () => setEditing(false),
@@ -33,9 +30,7 @@ export function StackComposeView({
 
   function toggleEditing() {
     setDraft(content);
-    // Cancel-path clear without a new mutation: the one `reset()` that
-    // survives the notice-owned pending gate (the notice is unmounted with
-    // the edit surface on close, so this only matters when reopening).
+    // Cancel-path clear: no new mutation fires, so this is the one surviving `reset()`.
     saveMutation.reset();
     setEditing((v) => !v);
   }

@@ -4,12 +4,7 @@ import { getComposePath } from "./config";
 import { NotFoundError, ValidationError } from "./errors";
 import { withRepoLock } from "./repo-lock";
 
-/**
- * Stack domain context: the primary stack loader plus the stack-name guard.
- * Lives here (not in `config.ts`, which owns `DATA_DIR` / path builders /
- * `ConfigValue`) so mutations import stack context without pulling a
- * grab-bag "config" module for a domain concept.
- */
+/** Stack loader plus name guard, kept out of the path-builder module. */
 export async function getStackAndRepo(stackName: string) {
   const [stack] = await db
     .select()
@@ -36,18 +31,14 @@ export async function getStackAndRepo(stackName: string) {
   return { stack, repo, composePath };
 }
 
-/** The one stack-name guard. Lives here next to `getStackAndRepo`. */
 export function assertStackName(name: string): string {
   if (!name) throw new ValidationError("Stack name must not be empty");
   return name;
 }
 
 /**
- * The one lock choreography for stack-scoped mutations: sample the lock key
- * cheaply outside, then re-resolve identity + compose path *under* the lock
- * so a sync that deletes the row between the two reads 404s instead of
- * mutating an orphan project. Deploy, stop, and compose save are call sites,
- * not policy owners — sample + mutate share one mutex, one helper.
+ * Re-resolve identity + compose path *under* the lock, so a sync that deletes
+ * the row between the two reads 404s instead of mutating an orphan project.
  */
 export async function withLockedStack<T>(
   name: string,

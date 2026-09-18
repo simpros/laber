@@ -46,10 +46,8 @@ export async function listContainers(
 }
 
 /**
- * Named soft contract for read paths (detail, dashboard, overview): Docker
- * unreadable means "unknown", so an empty list. Commit gates
- * (sync/delete/teardown) must use `listContainers` and fail closed —
- * never this.
+ * Soft contract for read paths: Docker unreadable means "unknown" (empty).
+ * Commit gates must use `listContainers` and fail closed — never this.
  */
 export async function listContainersSoft(
   projectLabel?: string
@@ -152,9 +150,7 @@ export async function connectTraefikToNetwork(
     },
   });
 
-  // One discovery predicate: exact container name or the compose service
-  // label. Both describe the same Traefik instance; a rename touches
-  // `core-identity`, not two heuristics here.
+  // A rename touches `core-identity`, not the template and the engine in parallel.
   const traefik = containers.find(
     (c) =>
       c.Names.some((n) => n === `/${TRAEFIK_CONTAINER}`) ||
@@ -170,12 +166,10 @@ export async function connectTraefikToNetwork(
   await connectContainerToNetwork(traefik.Id, networkName);
 }
 
-/** Stop a single container by id. Thin dockerode wrapper (mockable). */
 export async function stopContainer(containerId: string): Promise<void> {
   await getDocker().getContainer(containerId).stop();
 }
 
-/** Remove a single container by id. Thin dockerode wrapper (mockable). */
 export async function removeContainer(containerId: string): Promise<void> {
   await getDocker().getContainer(containerId).remove();
 }

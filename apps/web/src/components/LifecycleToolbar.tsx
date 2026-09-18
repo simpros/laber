@@ -2,10 +2,8 @@ import { Button, type ButtonSize } from "@laber/ui";
 import type { LifecycleActionItem } from "@/lib/queries/actions";
 
 /**
- * One toolbar for every lifecycle button farm (Core + stack detail): a row
- * of action buttons over the existing `useLifecycleAction` shape. Pending
- * copy is per-action (`pendingAction === …`), so pages stop re-encoding the
- * `mutate` + label choreography with inconsistent busy strings.
+ * One toolbar for every lifecycle button farm; per-action pending copy so
+ * pages never re-encode label choreography.
  */
 export function LifecycleToolbar<TAction extends string>({
   actions,
@@ -20,7 +18,7 @@ export function LifecycleToolbar<TAction extends string>({
   isPending: boolean;
   onAction: (action: TAction) => void;
   size?: ButtonSize;
-  /** Extra disable reason beyond a running action (e.g. not configured). */
+  /** Extra disable reason beyond a running action. */
   disabled?: boolean;
 }) {
   return (

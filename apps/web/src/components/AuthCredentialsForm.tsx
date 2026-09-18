@@ -19,13 +19,9 @@ const COPY = {
 } as const;
 
 /**
- * The one credentials form for login and setup. The only difference is the
- * name field; submit state comes from react-form's own `isSubmitting`, so
- * there is no parallel `loading` register to drift (success unmounts via
- * navigation, failure resets `isSubmitting` by itself). `onSuccess` may be
- * async — the form awaits it, so the gate refresh in `enterApp` finishes
- * before submit state settles and its failures surface here instead of
- * being swallowed.
+ * The one credentials form for login and setup. Submit state is react-form's
+ * own `isSubmitting` (no parallel register); `onSuccess` is awaited so gate
+ * failures surface here instead of being swallowed.
  */
 export default function AuthCredentialsForm({
   mode,

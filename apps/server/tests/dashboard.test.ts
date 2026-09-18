@@ -12,9 +12,7 @@ beforeAll(async () => {
 
 describe("GET /api/dashboard", () => {
   it("returns stats, core state and recent logs", async () => {
-    // Test files share one DB and `recentLogs` is capped at 10 with
-    // second-precision timestamps (ties order arbitrarily), so start from
-    // an empty log table — no other test reads the global log list.
+    // Shared DB and capped log list, so start empty for a deterministic read.
     await db.delete(deploymentLogs);
     const [repo] = await db
       .insert(repositories)

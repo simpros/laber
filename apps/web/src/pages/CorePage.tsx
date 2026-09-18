@@ -45,8 +45,7 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
 
-// Init policy (masked + secrecy) lives in `maskedFromServer` — this only
-// attaches the key (core keys never demote, so only steady states occur).
+// Core keys never demote, so only steady states occur.
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
@@ -67,16 +66,10 @@ function coreKeyOf(e: Pick<FieldState, "key">): string {
 }
 
 /**
- * Mounted only once `QueryStatus` has the snapshot (parent renders it inside
- * the render-prop with `key="core"`), so fields init from props directly —
- * no init effect, no empty first paint. Save orchestration (payload,
- * mutation, optimistic fold) lives in the shared list hook; the server echo
- * converges non-dirty rows underneath — a background refetch never clobbers
- * in-progress edits.
+ * Fields init from props: the parent renders this under the `QueryStatus`
+ * gate (snapshot present), so no init effect and no empty first paint.
  */
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
-  // Server echo owns convergence through the shared hook: a background
-  // refetch rebuilds non-dirty rows, in-progress edits are never touched.
   const serverValues = useMemo(
     () => fieldStatesFor(snapshot.config),
     [snapshot.config],
@@ -91,9 +84,6 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
     init: () => fieldStatesFor(snapshot.config),
     syncValues: serverValues,
     keyOf: coreKeyOf,
-    // `valueForSave` keys off `hadValue`/`dirty` — untouched secrets send
-    // null (keep) — and never looks at secrecy, so secrets and plains save
-    // through one path with no branch.
     toPayload: (rows) => {
       const values: Partial<Record<CoreKey, string | null>> = {};
       for (const f of rows) {
@@ -102,13 +92,9 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
       return values;
     },
     save: coreConfigSave(),
-    // One fold for secrets and plains — the keep/reset decision lives in
-    // `markMixedSaved`, not here.
     fold: markMixedSaved,
   });
 
-  // Keyed like the catalog: the fixed key set addresses rows by key through
-  // the shared hook — no parallel by-key updater, no index Map in render.
   const byKey = useMemo(
     () => new Map(fields.map((f) => [f.key, f] as const)),
     [fields],
@@ -267,8 +253,7 @@ export default function CorePage() {
 
           <CoreConfigForm key="core" snapshot={data} />
 
-          {/* Deploy renders through the same toolbar path (catalog-owned
-           * copy), even though layout keeps it at the bottom. */}
+          {/* Deploy shares the toolbar path; layout keeps it at the bottom. */}
           <div className="-mt-4 flex justify-end">
             <LifecycleToolbar
               actions={[CORE_DEPLOY_ACTION]}
