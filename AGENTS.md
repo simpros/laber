@@ -54,3 +54,8 @@ Single-context convention: one `CONTEXT.md` + `docs/adr/` at the repo root (neit
 ### Comment style
 
 Comment hygiene contract (state the why only, 11 rules). See `docs/agents/comment-style.md`.
+
+### Pull requests
+
+Every PR body follows the `visual-pr` template — Why in one sentence, 1-3 special
+notes, and a structural Change outline. See `docs/agents/pull-requests.md`.
