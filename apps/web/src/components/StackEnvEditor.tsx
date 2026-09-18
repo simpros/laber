@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Button, Icon } from "@laber/ui";
 import {
-  markSaved,
+  markMixedSaved,
+  mergeServerEntries,
   setRowSecret,
   useMaskedEntries,
   valueForSave,
@@ -58,17 +60,32 @@ export default function StackEnvEditor({
     () => envVars.map(rowFor),
   );
 
+  // Server echo owns convergence: after save (or any refetch) a list with
+  // no in-progress edits is rebuilt from props. This heals a demoted row —
+  // local `""` becomes the server plaintext — instead of the save fold
+  // guessing at a literal it never held. Dirty rows are never touched, and
+  // key renames mark the row dirty so refetches cannot wipe or duplicate
+  // them while the user is editing.
+  useEffect(() => {
+    setEntries((prev) =>
+      prev.some((e) => e.dirty)
+        ? prev
+        : mergeServerEntries(
+            prev,
+            envVars.map(rowFor),
+            (e) => e.key,
+          ),
+    );
+  }, [envVars, setEntries]);
+
   const missingVars = detectedEnvVars.filter(
     (name) => !entries.some((e) => e.key === name),
   );
 
   const saveMutation = useSaveStackEnv(stackName, {
-    // Secrets clear back to the untouched snapshot; plain rows keep their
-    // local values (the refetch converges underneath).
-    onSaved: () =>
-      applySaved((entry) =>
-        entry.isSecret ? { ...entry, ...markSaved(entry) } : entry,
-      ),
+    // One fold for secrets and plains — the keep/reset decision lives in
+    // `markMixedSaved`; server echo (above) owns demote convergence.
+    onSaved: () => applySaved(markMixedSaved),
   });
 
   function handleSave(e: React.FormEvent) {
@@ -111,7 +128,9 @@ export default function StackEnvEditor({
             <div key={i} className="flex items-center gap-2">
               <input
                 value={entry.key}
-                onChange={(e) => update(i, { key: e.target.value })}
+                onChange={(e) =>
+                  update(i, { key: e.target.value, dirty: true })
+                }
                 placeholder="KEY"
                 className="w-48 font-mono text-xs"
               />

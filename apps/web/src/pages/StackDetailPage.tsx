@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { Alert, Button } from "@laber/ui";
+import { Button } from "@laber/ui";
 import { useActivity } from "@/lib/activity";
-import { toErrorMessage } from "@/lib/queries/actions";
 import {
   useStackAction,
   useStackDetail,
@@ -12,6 +11,7 @@ import StackEnvEditor from "@/components/StackEnvEditor";
 import StackSecretsEditor from "@/components/StackSecretsEditor";
 import StackComposeView from "@/components/StackComposeView";
 import StackDeploymentLogs from "@/components/StackDeploymentLogs";
+import MutationNotice from "@/components/MutationNotice";
 import QueryStatus from "@/components/QueryStatus";
 
 const tabs = [
@@ -122,23 +122,11 @@ export default function StackDetailPage({
         </div>
       </div>
 
-      {actionMutation.data && (
-        <Alert variant="success">
-          {actionMutation.data}{" "}
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="underline underline-offset-2"
-          >
-            View activity
-          </button>
-        </Alert>
-      )}
-      {actionMutation.isError && (
-        <Alert variant="error">
-          {toErrorMessage(actionMutation.error)}
-        </Alert>
-      )}
+      <MutationNotice
+        mutation={actionMutation}
+        errorFallback="Action failed"
+        onViewActivity={() => setOpen(true)}
+      />
 
       <div className="border-border flex gap-0 border-b">
         {tabs.map((t) => (

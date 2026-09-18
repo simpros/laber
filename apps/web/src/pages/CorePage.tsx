@@ -1,5 +1,4 @@
-import { useEffect, useRef } from "react";
-import { Card, CardHeader, Button, Alert } from "@laber/ui";
+import { Card, CardHeader, Button } from "@laber/ui";
 import { useActivity } from "@/lib/activity";
 import { statusColor } from "@/lib/utils";
 import {
@@ -9,7 +8,7 @@ import {
   type CoreKeyGroup,
 } from "@/lib/core-keys";
 import {
-  markSaved,
+  markMixedSaved,
   useMaskedEntries,
   valueForSave,
   type MaskedSecretState,
@@ -20,7 +19,6 @@ import {
   useSaveCoreConfig,
   type CoreAction,
 } from "@/lib/queries/core";
-import { toErrorMessage } from "@/lib/queries/actions";
 import SecretBadge from "@/components/SecretBadge";
 import MutationNotice from "@/components/MutationNotice";
 import QueryStatus from "@/components/QueryStatus";
@@ -31,79 +29,53 @@ type FieldState = MaskedSecretState & {
   secret: boolean;
 };
 
-export default function CorePage() {
-  const query = useCore();
-  const { setOpen } = useActivity();
-  // Same list-editor state as the stack secret editors: index-free here,
-  // rows are keyed by CORE_KEYS (stable order) instead.
+type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
+
+const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
+  id: id as CoreKeyGroup,
+  ...meta,
+  keys: CORE_KEYS.filter((k) => k.group === id),
+}));
+
+function fieldStatesFor(config: CoreData["config"]): FieldState[] {
+  return CORE_KEYS.map((keyDef) => {
+    const stored = config[keyDef.key];
+    return {
+      key: keyDef.key,
+      secret: keyDef.secret,
+      hadValue: stored?.hasValue ?? false,
+      value: keyDef.secret ? "" : (stored?.value ?? ""),
+      dirty: false,
+    };
+  });
+}
+
+/**
+ * Mounted only once `QueryStatus` has the snapshot (parent renders it inside
+ * the render-prop with `key="core"`), so fields init from props directly —
+ * no init effect, no empty first paint. After init the save fold owns the
+ * local snapshot, so a background refetch never clobbers in-progress edits.
+ */
+function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   const {
     entries: fields,
     setEntries: setFields,
     applySaved,
-  } = useMaskedEntries<FieldState>(() => []);
-  const initializedRef = useRef(false);
-
-  const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
-    id: id as CoreKeyGroup,
-    ...meta,
-    keys: CORE_KEYS.filter((k) => k.group === id),
-  }));
-
-  // Init once from the first server snapshot; after that the save handler
-  // owns the local snapshot (hadValue/dirty) so a background refetch can
-  // never clobber in-progress edits.
-  const snapshot = query.data;
-  useEffect(() => {
-    if (!snapshot || initializedRef.current) return;
-    initializedRef.current = true;
-    setFields(
-      CORE_KEYS.map((keyDef) => {
-        const stored = snapshot.config[keyDef.key];
-        return {
-          key: keyDef.key,
-          secret: keyDef.secret,
-          hadValue: stored?.hasValue ?? false,
-          value: keyDef.secret ? "" : (stored?.value ?? ""),
-          dirty: false,
-        };
-      }),
-    );
-  }, [snapshot, setFields]);
+  } = useMaskedEntries<FieldState>(() => fieldStatesFor(snapshot.config));
 
   const saveMutation = useSaveCoreConfig({
     // The server now holds what we sent: fold it into the local snapshot
-    // instead of waiting for the refetch. Secrets clear back to the
-    // untouched snapshot; plain values just lose their dirty flag.
-    onSaved: () =>
-      applySaved((f) =>
-        f.dirty
-          ? { ...f, ...(f.secret ? markSaved(f) : { dirty: false }) }
-          : f,
-      ),
+    // instead of waiting for the refetch. One fold for secrets and plains —
+    // the keep/reset decision lives in `markMixedSaved`, not here.
+    onSaved: () => applySaved(markMixedSaved),
   });
 
-  const actionMutation = useCoreAction();
-
-  const pendingAction = actionMutation.pendingAction;
-
-  function fieldFor(key: string): FieldState | undefined {
-    return fields.find((f) => f.key === key);
-  }
+  const byKey = new Map(fields.map((f) => [f.key, f]));
 
   function updateField(key: string, patch: Partial<FieldState>) {
     setFields((prev) =>
       prev.map((f) => (f.key === key ? { ...f, ...patch } : f)),
     );
-  }
-
-  function resetFeedback() {
-    saveMutation.reset();
-    actionMutation.reset();
-  }
-
-  function handleAction(action: CoreAction) {
-    resetFeedback();
-    actionMutation.mutate(action);
   }
 
   function handleSave(e: React.FormEvent) {
@@ -112,8 +84,127 @@ export default function CorePage() {
     for (const f of fields) {
       values[f.key] = f.secret ? valueForSave(f) : f.value;
     }
-    resetFeedback();
+    saveMutation.reset();
     saveMutation.mutate(values);
+  }
+
+  return (
+    <form onSubmit={handleSave}>
+      <div className="mb-6">
+        <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
+      </div>
+      <div className="space-y-6">
+        {groups.map((group) => (
+          <Card key={group.id}>
+            <CardHeader
+              title={group.label}
+              subtitle={
+                group.optional ? (
+                  <span className="text-text-muted text-xs font-normal">
+                    Optional
+                  </span>
+                ) : undefined
+              }
+            />
+            <div className="space-y-4 p-5">
+              {group.keys.map((keyDef) => {
+                const field = byKey.get(keyDef.key);
+                if (!field) return null;
+                return (
+                  <div
+                    key={keyDef.key}
+                    className="grid grid-cols-3 items-center gap-4"
+                  >
+                    <label
+                      htmlFor={keyDef.key}
+                      className="text-text-secondary text-sm font-medium"
+                    >
+                      {keyDef.label}
+                      {keyDef.secret ? <SecretBadge entry={field} /> : null}
+                    </label>
+                    <div className="col-span-2">
+                      {keyDef.secret ? (
+                        <MaskedSecretField
+                          id={keyDef.key}
+                          name={keyDef.key}
+                          entry={field}
+                          onInput={(value) =>
+                            updateField(keyDef.key, { value, dirty: true })
+                          }
+                          onUndo={() =>
+                            updateField(keyDef.key, { value: "", dirty: false })
+                          }
+                          onClear={() =>
+                            updateField(keyDef.key, { value: "", dirty: true })
+                          }
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <input
+                            id={keyDef.key}
+                            name={keyDef.key}
+                            type="text"
+                            value={field.value}
+                            onChange={(e) =>
+                              updateField(keyDef.key, {
+                                value: e.target.value,
+                                dirty: true,
+                              })
+                            }
+                            placeholder={keyDef.placeholder}
+                            className="w-full font-mono text-sm"
+                          />
+                          {field.dirty ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateField(keyDef.key, {
+                                  value:
+                                    snapshot.config[keyDef.key]?.value ?? "",
+                                  dirty: false,
+                                })
+                              }
+                              className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
+                              aria-label="Undo changes"
+                              title="Undo changes"
+                            >
+                              Undo
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button
+          variant="secondary"
+          type="submit"
+          disabled={saveMutation.isPending}
+        >
+          {saveMutation.isPending ? "Saving..." : "Save Configuration"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export default function CorePage() {
+  const query = useCore();
+  const { setOpen } = useActivity();
+
+  const actionMutation = useCoreAction();
+
+  const pendingAction = actionMutation.pendingAction;
+
+  function handleAction(action: CoreAction) {
+    actionMutation.reset();
+    actionMutation.mutate(action);
   }
 
   return (
@@ -129,26 +220,10 @@ export default function CorePage() {
           </div>
 
           <MutationNotice
-            mutation={saveMutation}
-            errorFallback="Save failed"
+            mutation={actionMutation}
+            errorFallback="Action failed"
+            onViewActivity={() => setOpen(true)}
           />
-          {actionMutation.data && (
-            <Alert variant="success">
-              {actionMutation.data}{" "}
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="underline underline-offset-2"
-              >
-                View activity
-              </button>
-            </Alert>
-          )}
-          {actionMutation.isError && (
-            <Alert variant="error">
-              {toErrorMessage(actionMutation.error)}
-            </Alert>
-          )}
 
           {data.coreServices.length > 0 && (
             <Card>
@@ -198,116 +273,7 @@ export default function CorePage() {
             </Card>
           )}
 
-          <form onSubmit={handleSave}>
-            <div className="space-y-6">
-              {groups.map((group) => (
-                <Card key={group.id}>
-                  <CardHeader
-                    title={group.label}
-                    subtitle={
-                      group.optional ? (
-                        <span className="text-text-muted text-xs font-normal">
-                          Optional
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                  <div className="space-y-4 p-5">
-                    {group.keys.map((keyDef) => {
-                      const field = fieldFor(keyDef.key);
-                      return (
-                        <div
-                          key={keyDef.key}
-                          className="grid grid-cols-3 items-center gap-4"
-                        >
-                          <label
-                            htmlFor={keyDef.key}
-                            className="text-text-secondary text-sm font-medium"
-                          >
-                            {keyDef.label}
-                            {keyDef.secret && field ? (
-                              <SecretBadge entry={field} />
-                            ) : null}
-                          </label>
-                          <div className="col-span-2">
-                            {keyDef.secret && field ? (
-                              <MaskedSecretField
-                                id={keyDef.key}
-                                name={keyDef.key}
-                                entry={field}
-                                onInput={(value) =>
-                                  updateField(keyDef.key, {
-                                    value,
-                                    dirty: true,
-                                  })
-                                }
-                                onUndo={() =>
-                                  updateField(keyDef.key, {
-                                    value: "",
-                                    dirty: false,
-                                  })
-                                }
-                                onClear={() =>
-                                  updateField(keyDef.key, {
-                                    value: "",
-                                    dirty: true,
-                                  })
-                                }
-                              />
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  id={keyDef.key}
-                                  name={keyDef.key}
-                                  type="text"
-                                  value={field?.value ?? ""}
-                                  onChange={(e) =>
-                                    field &&
-                                    updateField(keyDef.key, {
-                                      value: e.target.value,
-                                      dirty: true,
-                                    })
-                                  }
-                                  placeholder={keyDef.placeholder}
-                                  className="w-full font-mono text-sm"
-                                />
-                                {field?.dirty ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateField(keyDef.key, {
-                                        value:
-                                          data.config[keyDef.key]?.value ?? "",
-                                        dirty: false,
-                                      })
-                                    }
-                                    className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
-                                    aria-label="Undo changes"
-                                    title="Undo changes"
-                                  >
-                                    Undo
-                                  </button>
-                                ) : null}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Card>
-              ))}
-            </div>
-            <div className="mt-4 flex justify-end">
-              <Button
-                variant="secondary"
-                type="submit"
-                disabled={saveMutation.isPending}
-              >
-                {saveMutation.isPending ? "Saving..." : "Save Configuration"}
-              </Button>
-            </div>
-          </form>
+          <CoreConfigForm key="core" snapshot={data} />
 
           <div className="-mt-4 flex justify-end">
             <Button
