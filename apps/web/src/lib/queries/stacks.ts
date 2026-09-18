@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
-import { queryKeys, useApiMutation, useLifecycleAction } from "./actions";
-import type { LifecycleActionItem } from "@/components/LifecycleToolbar";
+import { queryKeys, useLifecycleAction } from "./actions";
+import type { LifecycleActionItem } from "./actions";
 
 export function useStacks() {
   return useQuery({
@@ -132,12 +132,14 @@ export function stackSecretsSave(stackName: string) {
   };
 }
 
-export function useSaveStackCompose(
-  stackName: string,
-  onSaved: () => void,
-) {
-  return useApiMutation({
-    mutationFn: async (content: string) => {
+/**
+ * Query-layer half of the compose save: wire call + invalidation. The view
+ * wraps it in `useApiMutation` with its own `onSuccess` (`setEditing(false)`)
+ * — no UI callback injected into the query hook.
+ */
+export function stackComposeSave(stackName: string) {
+  return {
+    mutationFn: async (content: string): Promise<null> => {
       const res = await api.api
         .stacks({ name: stackName })
         .compose.put({ content });
@@ -145,6 +147,5 @@ export function useSaveStackCompose(
       return null;
     },
     invalidate: [queryKeys.stack(stackName)],
-    onSuccess: () => onSaved(),
-  });
+  };
 }

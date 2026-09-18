@@ -116,29 +116,33 @@ export default function StackDetailPage({
           services={data.services}
         />
       )}
-      {tab === "env" && (
+      {/* Stateful editors stay mounted across tab switches (hidden + inert
+        when inactive) so dirty env/secrets/compose drafts survive — tabs
+        switch visibility, never state lifetime. Stateless Services/Logs
+        above stay conditional. */}
+      <div hidden={tab !== "env"} inert={tab !== "env"}>
         <StackEnvEditor
           key={name}
           envVars={data.envVars}
           stackName={name}
           detectedEnvVars={data.detectedEnvVars}
         />
-      )}
-      {tab === "secrets" && (
+      </div>
+      <div hidden={tab !== "secrets"} inert={tab !== "secrets"}>
         <StackSecretsEditor
           key={name}
           secrets={data.secrets}
           stackName={name}
         />
-      )}
-      {tab === "compose" && (
+      </div>
+      <div hidden={tab !== "compose"} inert={tab !== "compose"}>
         <StackComposeView
           key={name}
           content={data.composeRaw}
           fileName={data.stack.composeFile}
           stackName={name}
         />
-      )}
+      </div>
       {tab === "logs" && <StackDeploymentLogs logs={data.logs} />}
         </div>
         );

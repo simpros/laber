@@ -28,6 +28,19 @@ export function toErrorMessage(
 }
 
 /**
+ * One lifecycle catalog item (Core + stack detail button farms). Owned by
+ * the query/domain layer next to the catalogs — the toolbar imports this
+ * type, never the reverse, so no data module reaches into components.
+ */
+export type LifecycleActionItem<TAction extends string> = {
+  action: TAction;
+  label: string;
+  /** Busy copy while this action is the pending one. */
+  pendingLabel: string;
+  variant?: "primary" | "secondary" | "danger";
+};
+
+/**
  * The one mutation skeleton in the SPA. `mutationFn` resolves to the success
  * message shown in the page (`null` = silent success); failures surface
  * through React Query's `error`/`isError`, so no hook owns a parallel result

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
 import type { CoreKey } from "@/lib/core-keys";
 import { queryKeys, useLifecycleAction } from "./actions";
-import type { LifecycleActionItem } from "@/components/LifecycleToolbar";
+import type { LifecycleActionItem } from "./actions";
 
 export function useCore() {
   return useQuery({

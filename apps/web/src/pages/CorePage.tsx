@@ -8,6 +8,7 @@ import {
   type CoreKeyGroup,
 } from "@/lib/core-keys";
 import {
+  chromeIsSecret,
   clearSecretEntry,
   markMixedSaved,
   maskedFromServer,
@@ -15,6 +16,7 @@ import {
   undoSecretEntry,
   valueForSave,
   type MaskedSecretState,
+  type Secrecy,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import {
@@ -33,7 +35,7 @@ import ConfigValueField from "@/components/ConfigValueField";
 
 type FieldState = MaskedSecretState & {
   key: CoreKey;
-  isSecret: boolean;
+  secrecy: Secrecy;
 };
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
@@ -44,7 +46,8 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
 
-// Init policy lives in `maskedFromServer` — this only attaches the key.
+// Init policy lives in `maskedFromServer` — this only attaches the key and
+// the one secrecy discriminant (core keys never demote, so no `demote-pending`).
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
@@ -55,12 +58,12 @@ function fieldStatesFor(config: CoreData["config"]): FieldState[] {
         hasValue: stored?.hasValue,
       }),
       key: keyDef.key,
-      isSecret: keyDef.secret,
+      secrecy: keyDef.secret ? "secret" : "plain",
     };
   });
 }
 
-// Module-level so `useMaskedEntries` sync identity never thrashes.
+// Module-level so the list-editor sync identity never thrashes.
 function coreKeyOf(e: Pick<FieldState, "key">): string {
   return e.key;
 }
@@ -82,8 +85,8 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   );
   const {
     entries: fields,
-    touch,
-    update,
+    touchByKey,
+    updateByKey,
     saveMutation,
     handleSave,
   } = useMaskedListEditor<FieldState, Partial<Record<CoreKey, string | null>>>({
@@ -106,10 +109,10 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
     fold: markMixedSaved,
   });
 
-  // Index-addressed like Env/Secrets: one list model, no parallel by-key
-  // `updateField` — the grouped render resolves indices once per render.
-  const indexByKey = useMemo(
-    () => new Map(fields.map((f, i) => [f.key, i] as const)),
+  // Keyed like the catalog: the fixed key set addresses rows by key through
+  // the shared hook — no parallel by-key updater, no index Map in render.
+  const byKey = useMemo(
+    () => new Map(fields.map((f) => [f.key, f] as const)),
     [fields],
   );
 
@@ -133,9 +136,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
             />
             <div className="space-y-4 p-5">
               {group.keys.map((keyDef) => {
-                const i = indexByKey.get(keyDef.key);
-                if (i === undefined) return null;
-                const field = fields[i];
+                const field = byKey.get(keyDef.key);
                 if (!field) return null;
                 return (
                   <div
@@ -147,20 +148,22 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                       className="text-text-secondary text-sm font-medium"
                     >
                       {keyDef.label}
-                      {field.isSecret ? <SecretBadge entry={field} /> : null}
+                      {chromeIsSecret(field) ? (
+                        <SecretBadge entry={field} />
+                      ) : null}
                     </label>
                     <div className="col-span-2">
                       <ConfigValueField
                         id={keyDef.key}
                         name={keyDef.key}
-                        isSecret={field.isSecret}
+                        isSecret={chromeIsSecret(field)}
                         entry={field}
                         placeholder={keyDef.placeholder}
-                        onInput={(value) => touch(i, value)}
+                        onInput={(value) => touchByKey(keyDef.key, value)}
                         onUndo={() =>
-                          update(
-                            i,
-                            field.isSecret
+                          updateByKey(
+                            keyDef.key,
+                            chromeIsSecret(field)
                               ? undoSecretEntry(field)
                               : undoPlainEntry(
                                   field,
@@ -169,8 +172,12 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                           )
                         }
                         onClear={
-                          field.isSecret
-                            ? () => update(i, clearSecretEntry(field))
+                          chromeIsSecret(field)
+                            ? () =>
+                                updateByKey(
+                                  keyDef.key,
+                                  clearSecretEntry(field),
+                                )
                             : undefined
                         }
                       />

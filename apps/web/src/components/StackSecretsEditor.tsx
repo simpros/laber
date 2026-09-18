@@ -7,6 +7,7 @@ import {
   undoSecretEntry,
   valueForSave,
   type MaskedSecretState,
+  type Secrecy,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import {
@@ -28,9 +29,11 @@ export type SecretRow = MaskedSecretState & {
   name: string;
   filePath: string;
   services: string[];
+  /** Always-secret rows carry the steady state; never `demote-pending`. */
+  secrecy: Secrecy;
 };
 
-// Module-level so `useMaskedEntries` sync identity never thrashes.
+// Module-level so the list-editor sync identity never thrashes.
 function secretKeyOf(e: Pick<SecretRow, "name">): string {
   return e.name;
 }
@@ -44,6 +47,7 @@ export function rowForSecret(s: SecretEntry): SecretRow {
     name: s.name,
     filePath: s.filePath,
     services: s.services,
+    secrecy: "secret",
   };
 }
 

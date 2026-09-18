@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import {
+  chromeIsSecret,
   clearSecretEntry,
-  effectiveIsSecret,
   secretStatus,
   isUnset,
   valueForSave,
@@ -13,8 +13,9 @@ import {
   touchEntry,
   undoPlainEntry,
   undoSecretEntry,
-  type DemotableSecretState,
+  wireIsSecret,
   type MaskedSecretState,
+  type SecrecyState,
 } from "./masked-secret";
 
 describe("secretStatus", () => {
@@ -103,19 +104,17 @@ describe("touch / undo / clear transitions", () => {
 
   it("undoSecret reverts and disarms a pending demote", () => {
     expect(
-      undoSecretEntry<DemotableSecretState>({
+      undoSecretEntry<MaskedSecretState & SecrecyState>({
         hadValue: true,
         value: "",
         dirty: false,
-        isSecret: true,
-        demoteArmed: true,
+        secrecy: "demote-pending",
       }),
     ).toEqual({
       hadValue: true,
       value: "",
       dirty: false,
-      isSecret: true,
-      demoteArmed: false,
+      secrecy: "secret",
     });
   });
 
@@ -143,10 +142,9 @@ describe("setRowSecret", () => {
   type TestRow = {
     key: string;
     value: string;
-    isSecret: boolean;
+    secrecy: "plain" | "secret" | "demote-pending";
     hadValue: boolean;
     dirty: boolean;
-    demoteArmed?: boolean;
   };
   const fold = <T extends { hadValue: boolean; value: string; dirty: boolean }>(
     entry: T,
@@ -156,7 +154,7 @@ describe("setRowSecret", () => {
     const plain: TestRow = {
       key: "TOKEN",
       value: "carried-plaintext",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: false,
     };
@@ -174,7 +172,7 @@ describe("setRowSecret", () => {
     const plain: TestRow = {
       key: "TOKEN",
       value: "",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: false,
     };
@@ -183,50 +181,52 @@ describe("setRowSecret", () => {
     expect(secretStatus(fold(promoted))).toBe("unset");
   });
 
-  it("demote of an untouched secret arms instead of showing a blank plain", () => {
+  it("demote of an untouched secret pends instead of showing a blank plain", () => {
     const secret: TestRow = {
       key: "TOKEN",
       value: "",
-      isSecret: true,
+      secrecy: "secret",
       hadValue: true,
       dirty: false,
     };
     const demoted = setRowSecret(secret, false);
     // The save still sends keep (null), never ""…
     expect(valueForSave(demoted)).toBeNull();
-    // …but the chrome stays secret until the echo lands: no lying blank
-    // plain input, badge still "set", wire reads plain via the arm.
-    expect(demoted.isSecret).toBe(true);
-    expect(demoted.demoteArmed).toBe(true);
-    expect(effectiveIsSecret(demoted)).toBe(false);
+    // …but the one discriminant keeps both jobs honest: secret chrome until
+    // the echo lands, plain on the wire — no lying blank plain input, badge
+    // still "set".
+    expect(demoted.secrecy).toBe("demote-pending");
+    expect(chromeIsSecret(demoted)).toBe(true);
+    expect(wireIsSecret(demoted)).toBe(false);
     expect(secretStatus(demoted)).toBe("set");
   });
 
-  it("re-promoting an armed row disarms it", () => {
+  it("re-promoting a pending row disarms it", () => {
     const secret: TestRow = {
       key: "TOKEN",
       value: "",
-      isSecret: true,
+      secrecy: "secret",
       hadValue: true,
       dirty: false,
     };
     const demoted = setRowSecret(secret, false);
-    expect(demoted.demoteArmed).toBe(true);
+    expect(demoted.secrecy).toBe("demote-pending");
     const restored = setRowSecret(demoted, true);
-    expect(restored).toEqual({ ...secret, demoteArmed: false });
-    expect(effectiveIsSecret(restored)).toBe(true);
+    expect(restored).toEqual({ ...secret, secrecy: "secret" });
+    expect(chromeIsSecret(restored)).toBe(true);
+    expect(wireIsSecret(restored)).toBe(true);
   });
 
   it("demote of a row with nothing stored flips immediately", () => {
     const secret: TestRow = {
       key: "TOKEN",
       value: "",
-      isSecret: true,
+      secrecy: "secret",
       hadValue: false,
       dirty: false,
     };
     const demoted = setRowSecret(secret, false);
-    expect(demoted.isSecret).toBe(false);
+    expect(demoted.secrecy).toBe("plain");
     expect(valueForSave(demoted)).toBe("");
   });
 
@@ -234,12 +234,12 @@ describe("setRowSecret", () => {
     const secret: TestRow = {
       key: "TOKEN",
       value: "typed",
-      isSecret: true,
+      secrecy: "secret",
       hadValue: true,
       dirty: true,
     };
     const demoted = setRowSecret(secret, false);
-    expect(demoted.isSecret).toBe(false);
+    expect(demoted.secrecy).toBe("plain");
     expect(valueForSave(demoted)).toBe("typed");
   });
 });
@@ -247,7 +247,7 @@ describe("setRowSecret", () => {
 type EnvRow = {
   key: string;
   value: string;
-  isSecret: boolean;
+  secrecy: "plain" | "secret" | "demote-pending";
   hadValue: boolean;
   dirty: boolean;
 };
@@ -257,14 +257,14 @@ describe("markMixedSaved", () => {
     const entry: EnvRow = {
       key: "A",
       value: "new",
-      isSecret: true,
+      secrecy: "secret",
       hadValue: true,
       dirty: true,
     };
     expect(markMixedSaved(entry)).toEqual({
       key: "A",
       value: "",
-      isSecret: true,
+      secrecy: "secret",
       hadValue: true,
       dirty: false,
     });
@@ -274,14 +274,14 @@ describe("markMixedSaved", () => {
     const entry: EnvRow = {
       key: "A",
       value: "literal",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: true,
     };
     expect(markMixedSaved(entry)).toEqual({
       key: "A",
       value: "literal",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: false,
     });
@@ -291,14 +291,14 @@ describe("markMixedSaved", () => {
     const entry: EnvRow = {
       key: "ROOT_DOMAIN",
       value: "example.com",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: true,
     };
     expect(markMixedSaved(entry)).toEqual({
       key: "ROOT_DOMAIN",
       value: "example.com",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: false,
     });
@@ -310,29 +310,28 @@ describe("mergeServerEntries", () => {
 
   it("demote converges end to end: save keeps, echo heals the input", () => {
     // Untouched secret, user unchecks Secret without typing.
-    const demoted = setRowSecret(
-      {
-        key: "TOKEN",
-        value: "",
-        isSecret: true,
-        hadValue: true,
-        dirty: false,
-      },
-      false,
-    );
+    const untouched: EnvRow = {
+      key: "TOKEN",
+      value: "",
+      secrecy: "secret",
+      hadValue: true,
+      dirty: false,
+    };
+    const demoted = setRowSecret(untouched, false);
     // Wire still sends keep (null), never "".
     expect(valueForSave(demoted)).toBeNull();
-    // Post-save fold keeps the secret chrome (still armed — no blank plain
+    // Post-save fold keeps the secret chrome (still pending — no blank plain
     // lie)…
     const folded = markMixedSaved(demoted);
     expect(folded).toEqual({ ...demoted, dirty: false });
-    expect(folded.isSecret).toBe(true);
-    expect(effectiveIsSecret(folded)).toBe(false);
-    // …and the server echo (now plaintext) heals the row, disarming it.
+    expect(folded.secrecy).toBe("demote-pending");
+    expect(chromeIsSecret(folded)).toBe(true);
+    expect(wireIsSecret(folded)).toBe(false);
+    // …and the server echo (now plaintext) heals the row, clearing pending.
     const echo: EnvRow = {
       key: "TOKEN",
       value: "kept-plaintext",
-      isSecret: false,
+      secrecy: "plain",
       hadValue: false,
       dirty: false,
     };
@@ -347,7 +346,7 @@ describe("mergeServerEntries", () => {
       {
         key: "TOKEN",
         value: "",
-        isSecret: true,
+        secrecy: "secret",
         hadValue: true,
         dirty: false,
       },
@@ -355,15 +354,15 @@ describe("mergeServerEntries", () => {
     );
     const folded = markMixedSaved(demoted);
     const local: EnvRow[] = [
-      { key: "A", value: "typing", isSecret: false, hadValue: false, dirty: true },
+      { key: "A", value: "typing", secrecy: "plain", hadValue: false, dirty: true },
       folded,
     ];
     const server: EnvRow[] = [
-      { key: "A", value: "old", isSecret: false, hadValue: false, dirty: false },
+      { key: "A", value: "old", secrecy: "plain", hadValue: false, dirty: false },
       {
         key: "TOKEN",
         value: "kept-plaintext",
-        isSecret: false,
+        secrecy: "plain",
         hadValue: false,
         dirty: false,
       },
@@ -375,12 +374,12 @@ describe("mergeServerEntries", () => {
 
   it("never clobbers in-progress (dirty) rows", () => {
     const local: EnvRow[] = [
-      { key: "A", value: "typing", isSecret: false, hadValue: false, dirty: true },
-      { key: "B", value: "", isSecret: true, hadValue: true, dirty: false },
+      { key: "A", value: "typing", secrecy: "plain", hadValue: false, dirty: true },
+      { key: "B", value: "", secrecy: "secret", hadValue: true, dirty: false },
     ];
     const server: EnvRow[] = [
-      { key: "A", value: "old", isSecret: false, hadValue: false, dirty: false },
-      { key: "B", value: "", isSecret: true, hadValue: true, dirty: false },
+      { key: "A", value: "old", secrecy: "plain", hadValue: false, dirty: false },
+      { key: "B", value: "", secrecy: "secret", hadValue: true, dirty: false },
     ];
     const merged = mergeServerEntries(local, server, keyOf);
     expect(merged[0]).toEqual(local[0]);
@@ -389,11 +388,11 @@ describe("mergeServerEntries", () => {
 
   it("appends server-only keys", () => {
     const local: EnvRow[] = [
-      { key: "A", value: "x", isSecret: false, hadValue: false, dirty: false },
+      { key: "A", value: "x", secrecy: "plain", hadValue: false, dirty: false },
     ];
     const server: EnvRow[] = [
-      { key: "A", value: "x", isSecret: false, hadValue: false, dirty: false },
-      { key: "B", value: "y", isSecret: false, hadValue: false, dirty: false },
+      { key: "A", value: "x", secrecy: "plain", hadValue: false, dirty: false },
+      { key: "B", value: "y", secrecy: "plain", hadValue: false, dirty: false },
     ];
     expect(mergeServerEntries(local, server, keyOf)).toEqual(server);
   });

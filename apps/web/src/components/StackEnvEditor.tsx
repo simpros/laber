@@ -1,15 +1,17 @@
 import { useMemo } from "react";
 import { Button, Icon } from "@laber/ui";
 import {
+  chromeIsSecret,
   clearSecretEntry,
-  effectiveIsSecret,
   markMixedSaved,
   maskedFromServer,
   setRowSecret,
   undoPlainEntry,
   undoSecretEntry,
   valueForSave,
+  wireIsSecret,
   type MaskedSecretState,
+  type Secrecy,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import { stackEnvSave, type StackEnvPayload } from "@/lib/queries/stacks";
@@ -26,15 +28,17 @@ export type EnvEntry = {
 
 /**
  * One row model for both plain and secret vars: the shared masked-secret
- * state plus the row chrome. Secrecy is always known here (unlike
- * always-secret rows), so `isSecret` stays required and the save fold never
- * guesses. Init policy lives in `maskedFromServer` — this only attaches the
- * key.
+ * state plus the row chrome. Secrecy is the one discriminant
+ * (`plain`/`secret`/`demote-pending`) — the chrome and the wire each read
+ * it through `chromeIsSecret`/`wireIsSecret`, never a raw flag. `id` is the
+ * stable React identity across add/remove/rename; `key` is the editable
+ * variable name. Init policy lives in `maskedFromServer` — this only
+ * attaches the key.
  */
 export type EnvRow = MaskedSecretState & {
+  id: string;
   key: string;
-  isSecret: boolean;
-  demoteArmed?: boolean;
+  secrecy: Secrecy;
 };
 
 export function rowForEnv(entry: EnvEntry): EnvRow {
@@ -44,22 +48,27 @@ export function rowForEnv(entry: EnvEntry): EnvRow {
       value: entry.value,
       hasValue: entry.hasValue,
     }),
+    id: entry.key,
     key: entry.key,
-    isSecret: entry.isSecret,
+    secrecy: entry.isSecret ? "secret" : "plain",
   };
 }
 
+let blankRowSeq = 0;
+
 function blankRow(key = ""): EnvRow {
+  blankRowSeq += 1;
   return {
+    id: `new-${Date.now().toString(36)}-${blankRowSeq}`,
     key,
     value: "",
-    isSecret: false,
+    secrecy: "plain",
     hadValue: false,
     dirty: true,
   };
 }
 
-// Module-level so `useMaskedEntries` sync identity never thrashes.
+// Module-level so the list-editor sync identity never thrashes.
 function envKeyOf(e: Pick<EnvRow, "key">): string {
   return e.key;
 }
@@ -91,14 +100,15 @@ export default function StackEnvEditor({
     syncValues: serverValues,
     keyOf: envKeyOf,
     // `valueForSave` keys off `hadValue`/`dirty` — "the server still holds a
-    // masked value we never echoed → null (keep)" — and `effectiveIsSecret`
-    // keeps an armed demote on secret chrome while flipping the wire to
-    // plain. Both toggle directions save with no branch.
+    // masked value we never echoed → null (keep)" — and `wireIsSecret`
+    // reads the one discriminant, so a pending demote flips the wire to
+    // plain while the chrome stays secret. Both toggle directions save with
+    // no branch.
     toPayload: (rows) =>
       rows.map((entry) => ({
         key: entry.key,
         value: valueForSave(entry),
-        isSecret: effectiveIsSecret(entry),
+        isSecret: wireIsSecret(entry),
       })),
     save: stackEnvSave(stackName),
     // One fold for secrets and plains — the keep/reset decision lives in
@@ -131,13 +141,13 @@ export default function StackEnvEditor({
     setEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
-  /** Pure-model undo in one line: secrets revert (and disarm demote), plains
-   * restore the server literal, brand-new rows remove themselves instead of
-   * inventing a literal. */
+  /** Pure-model undo in one line: secret-chrome rows revert (disarming a
+   * pending demote), plain rows restore the server literal, brand-new rows
+   * remove themselves instead of inventing a literal. */
   function undoRow(index: number) {
     const entry = entries[index];
     if (!entry) return;
-    if (entry.isSecret) {
+    if (chromeIsSecret(entry)) {
       update(index, undoSecretEntry(entry));
       return;
     }
@@ -146,7 +156,9 @@ export default function StackEnvEditor({
       removeEnvVar(index);
       return;
     }
-    update(index, undoPlainEntry(entry, server.isSecret ? "" : server.value));
+    // Server snapshots carry the literal for plains and `""` for secrets
+    // (never echoed), so the snapshot value is the honest restore target.
+    update(index, undoPlainEntry(entry, server.value));
   }
 
   return (
@@ -155,7 +167,7 @@ export default function StackEnvEditor({
         {entries.map((entry, i) => {
           const isDetected = detectedEnvVars.includes(entry.key);
           return (
-            <div key={i} className="flex items-center gap-2">
+            <div key={entry.id} className="flex items-center gap-2">
               <input
                 value={entry.key}
                 onChange={(e) =>
@@ -166,7 +178,7 @@ export default function StackEnvEditor({
               />
               <div className="flex-1">
                 <ConfigValueField
-                  isSecret={entry.isSecret}
+                  isSecret={chromeIsSecret(entry)}
                   entry={entry}
                   inputClassName="w-full font-mono text-xs"
                   placeholder="value"
@@ -175,7 +187,7 @@ export default function StackEnvEditor({
                   onInput={(value) => touch(i, value)}
                   onUndo={() => undoRow(i)}
                   onClear={
-                    entry.isSecret
+                    chromeIsSecret(entry)
                       ? () => update(i, clearSecretEntry(entry))
                       : undefined
                   }
@@ -186,18 +198,18 @@ export default function StackEnvEditor({
                   detected
                 </span>
               )}
-              {entry.isSecret && <SecretBadge entry={entry} />}
+              {chromeIsSecret(entry) && <SecretBadge entry={entry} />}
               <label
                 className="text-text-muted flex items-center gap-1 text-xs"
                 title={
-                  entry.demoteArmed
-                    ? "Demote armed — saving flips this row to plain. Re-check to cancel."
+                  entry.secrecy === "demote-pending"
+                    ? "Demote pending — saving flips this row to plain. Re-check to cancel."
                     : "Masks the value in the UI and hides it from API responses. The actual value is still stored and passed to Docker on deploy."
                 }
               >
                 <input
                   type="checkbox"
-                  checked={effectiveIsSecret(entry)}
+                  checked={wireIsSecret(entry)}
                   onChange={(e) =>
                     update(i, setRowSecret(entry, e.target.checked))
                   }

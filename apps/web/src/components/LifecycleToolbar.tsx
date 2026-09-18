@@ -1,12 +1,5 @@
 import { Button, type ButtonSize } from "@laber/ui";
-
-export type LifecycleActionItem<TAction extends string> = {
-  action: TAction;
-  label: string;
-  /** Busy copy while this action is the pending one. */
-  pendingLabel: string;
-  variant?: "primary" | "secondary" | "danger";
-};
+import type { LifecycleActionItem } from "@/lib/queries/actions";
 
 /**
  * One toolbar for every lifecycle button farm (Core + stack detail): a row

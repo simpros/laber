@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@laber/ui";
-import { useSaveStackCompose } from "@/lib/queries/stacks";
+import { useApiMutation } from "@/lib/queries/actions";
+import { stackComposeSave } from "@/lib/queries/stacks";
 import MutationNotice from "@/components/MutationNotice";
 import { Icon } from "@laber/ui";
 
@@ -23,9 +24,12 @@ export function StackComposeView({
     if (!editing) setDraft(content);
   }, [content, editing]);
 
-  const saveMutation = useSaveStackCompose(stackName, () =>
-    setEditing(false),
-  );
+  // Query-layer wire + invalidation only; the view owns the edit-surface
+  // side effect (`setEditing(false)`) as the mutation's `onSuccess`.
+  const saveMutation = useApiMutation({
+    ...stackComposeSave(stackName),
+    onSuccess: () => setEditing(false),
+  });
 
   function toggleEditing() {
     setDraft(content);

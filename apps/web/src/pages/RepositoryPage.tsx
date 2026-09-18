@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Card, Button, Icon } from "@laber/ui";
 import { timeAgo } from "@/lib/utils";
 import {
-  useAddRepository,
+  addRepositorySave,
   useRemoveRepository,
   useRepositories,
   useSyncRepository,
 } from "@/lib/queries/repositories";
+import { useApiMutation } from "@/lib/queries/actions";
 import MutationNotice from "@/components/MutationNotice";
 import QueryStatus from "@/components/QueryStatus";
 
@@ -14,8 +15,11 @@ export default function RepositoryPage() {
   const query = useRepositories();
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const addMutation = useAddRepository({
-    onAdded: () => setShowAddForm(false),
+  // Query-layer wire + invalidation only; the page owns the form-surface
+  // side effect (`setShowAddForm(false)`) as the mutation's `onSuccess`.
+  const addMutation = useApiMutation({
+    ...addRepositorySave(),
+    onSuccess: () => setShowAddForm(false),
   });
   const syncMutation = useSyncRepository();
   const removeMutation = useRemoveRepository();
@@ -39,8 +43,8 @@ export default function RepositoryPage() {
   function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
     // Fire-and-forget: `MutationNotice` is the one error owner, and the form
-    // closes in `onAdded` on success only — awaiting here would surface the
-    // same failure twice (rejected submit + notice).
+    // closes in the mutation `onSuccess` on success only — awaiting here
+    // would surface the same failure twice (rejected submit + notice).
     addMutation.mutate({
       name: formValues.name,
       url: formValues.url,

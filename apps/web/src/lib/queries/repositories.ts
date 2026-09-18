@@ -17,9 +17,14 @@ export type AddRepositoryInput = {
   sshPrivateKey: string | null;
 };
 
-export function useAddRepository(opts: { onAdded: () => void }) {
-  return useApiMutation({
-    mutationFn: async (input: AddRepositoryInput) => {
+/**
+ * Query-layer half of the repository add: wire call + invalidation. The page
+ * wraps it in `useApiMutation` with its own `onSuccess`
+ * (`setShowAddForm(false)`) — no UI callback injected into the query hook.
+ */
+export function addRepositorySave() {
+  return {
+    mutationFn: async (input: AddRepositoryInput): Promise<string> => {
       const res = await api.api.repositories.post(input);
       const created = unwrap(res);
       return `Repository added. Discovered ${created.discovered} stack(s).`;
@@ -29,8 +34,7 @@ export function useAddRepository(opts: { onAdded: () => void }) {
       queryKeys.stacks,
       queryKeys.dashboard,
     ],
-    onSuccess: () => opts.onAdded(),
-  });
+  };
 }
 
 export function useSyncRepository() {
