@@ -20,7 +20,6 @@ async function requireSession({
   if (request.method === "OPTIONS") return;
   const user = await getSessionUser(request);
   if (!user) {
-    // Same behaviour as the SvelteKit hooks.server.ts guard.
     set.status = 401;
     return { error: "Unauthorized" };
   }
@@ -40,16 +39,12 @@ export function createApp() {
         return { error: error.message };
       }
       if (code === "VALIDATION") {
-        // Elysia defaults to 422; this API speaks 400 for malformed input.
         set.status = 400;
         return { error: "Invalid request" };
       }
     })
     .all("/api/auth/*", ({ request }) => auth.handler(request))
     .use(setupRoutes)
-    // No pathname allowlist: a public path mounts out here, never as a
-    // string branch in the guard. Elysia validates schemas before
-    // beforeHandle, so an unauthenticated malformed body still sees 400.
     .guard({ beforeHandle: requireSession }, (app) =>
       app
         .use(dashboardRoutes)

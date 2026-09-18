@@ -12,7 +12,6 @@ beforeAll(async () => {
 
 describe("GET /api/dashboard", () => {
   it("returns stats, core state and recent logs", async () => {
-    // Shared DB and capped log list, so start empty for a deterministic read.
     await db.delete(deploymentLogs);
     const [repo] = await db
       .insert(repositories)

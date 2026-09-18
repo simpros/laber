@@ -17,7 +17,6 @@ export type AddRepositoryInput = {
   sshPrivateKey: string | null;
 };
 
-/** Query-layer half of the repository add (wire + invalidation). */
 export function addRepositorySave() {
   return {
     mutationFn: async (input: AddRepositoryInput): Promise<string> => {
@@ -49,7 +48,6 @@ export function useSyncRepository() {
       }
       return `Synced. Found ${parts.join(", ")} stack(s).`;
     },
-    // Same dashboard coverage as add, so stats converge whichever command ran.
     invalidate: [
       queryKeys.repositories,
       queryKeys.stacks,
@@ -69,7 +67,6 @@ export function useRemoveRepository() {
       unwrap(res);
       return null;
     },
-    // Same dashboard coverage as add.
     invalidate: [
       queryKeys.repositories,
       queryKeys.stacks,

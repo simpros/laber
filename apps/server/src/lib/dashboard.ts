@@ -8,8 +8,6 @@ import { count, desc, eq } from "drizzle-orm";
 import { getCoreSnapshot } from "./core-stack";
 
 export async function getDashboard() {
-  // Core stats come from the one shared snapshot. `deployedStacks` counts
-  // `stacks.status` for display only — removal never reads it; the column stays while `apps/web` still reads it.
   const [stackCount, repoCount, deployedStacks, recentLogs, core] =
     await Promise.all([
       db.select({ count: count() }).from(stacks),

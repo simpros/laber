@@ -1,7 +1,3 @@
-/**
- * Transport-agnostic domain errors: only the HTTP adapter (`app.ts`) maps
- * each kind to a wire status — no numerics live here.
- */
 export type DomainErrorKind =
   | "not_found"
   | "conflict"
@@ -39,9 +35,6 @@ export class ValidationError extends DomainError {
   }
 }
 
-/**
- * The transcript already lives in the deployment log and activity stream, so the message stays short.
- */
 export class ActionFailedError extends DomainError {
   constructor(message: string) {
     super(message, "action_failed");

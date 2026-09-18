@@ -1,10 +1,6 @@
 import { MaskedSecretField } from "./MaskedSecretField";
 import type { MaskedSecretState } from "@/lib/masked-secret";
 
-/**
- * One value field for every config row: secrets use the shared masked field,
- * plains use the echoed literal. `onUndo` omitted = brand-new row, no Undo.
- */
 export function ConfigValueField({
   id,
   name,
@@ -24,7 +20,6 @@ export function ConfigValueField({
   entry: MaskedSecretState;
   placeholder?: string;
   inputClassName?: string;
-  /** Secret-only; plain rows use `placeholder`. */
   keepPlaceholder?: string;
   editPlaceholder?: string;
   onInput: (value: string) => void;

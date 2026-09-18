@@ -1,7 +1,3 @@
-/**
- * Server catalog of core config keys (storage key, typed prop, secrecy,
- * requiredness); presentation metadata lives with the SPA so no copy can drift.
- */
 export const CORE_KEYS = [
   { key: "ROOT_DOMAIN", prop: "rootDomain", secret: false, required: true },
   {

@@ -22,7 +22,6 @@ describe("session guard", () => {
   });
 
   it("returns 401 for unauthenticated POST/PUT/DELETE requests", async () => {
-    // Well-formed bodies, so the guard answers 401 with the unified { error } contract.
     const cases: Array<[string, string, unknown?]> = [
       ["POST", "/api/stacks/demo/deploy"],
       ["POST", "/api/stacks/demo/stop"],
@@ -54,7 +53,6 @@ describe("session guard", () => {
   });
 
   it("denies unauthenticated malformed requests without running handlers", async () => {
-    // Elysia validates schemas before guards, so a malformed body 400s instead of 401.
     const res = await app.handle(
       req("/api/repositories", {
         method: "POST",

@@ -4,8 +4,6 @@ import { join } from "path";
 import { mock } from "bun:test";
 import { dockerStub } from "./docker-stub";
 
-// Env vars and docker mocks must register before `../src/app` imports.
-// Run from this package dir: repo-root happy-dom globals shadow Response/Headers and break auth cookies.
 const dir = mkdtempSync(join(tmpdir(), "laber-server-test-"));
 process.env.DATA_DIR = join(dir, "data");
 process.env.DATABASE_PATH = join(dir, "data", "laber.db");

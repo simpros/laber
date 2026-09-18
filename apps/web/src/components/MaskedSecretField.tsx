@@ -1,7 +1,6 @@
 import { Icon } from "@laber/ui";
 import type { MaskedSecretState } from "@/lib/masked-secret";
 
-/** One secret input for every masked field; the keep/clear contract stays in the pure model. */
 export function MaskedSecretField({
   id,
   name,
@@ -17,9 +16,7 @@ export function MaskedSecretField({
   name?: string;
   entry: MaskedSecretState;
   onInput: (value: string) => void;
-  /** Omit to hide Undo. */
   onUndo?: () => void;
-  /** Omit to hide Clear. */
   onClear?: () => void;
   type?: "password" | "text";
   keepPlaceholder?: string;

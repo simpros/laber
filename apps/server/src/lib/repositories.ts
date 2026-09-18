@@ -33,7 +33,6 @@ type RemoteTree = Pick<
   "url" | "branch" | "sshPrivateKey"
 >;
 
-/** Detail already streamed, so the throw maps to the contextual failure message at the edge. */
 function gitFailure(
   onOutput: (chunk: string) => void,
   e: unknown,
@@ -77,10 +76,7 @@ async function pullOrCloneRemoteTree(
   }
 }
 
-/**
- * A concurrent delete may have committed between lookup and lock: re-check
- * before probing/reconciling, or sync would insert stacks against a deleted repo (raw FK failure, not 404).
- */
+// Re-check under lock: a concurrent delete may have committed between lookup and lock.
 async function requireLiveRepo(id: string) {
   const [live] = await db
     .select()
@@ -91,7 +87,6 @@ async function requireLiveRepo(id: string) {
   return live;
 }
 
-/** Reconcile failures propagate: a deliberate `ConflictError` must not flatten into a 500. */
 function reconcileAndSummarizeTx(
   tx: StackTx,
   repoId: string,
@@ -111,10 +106,6 @@ function reconcileAndSummarizeTx(
   return { reconciled, summary };
 }
 
-/**
- * Shared lock → discover → clearance → tx door for register and sync: remote
- * I/O stays outside the lock, then discovery, probe, and commit share one lock and one transaction.
- */
 async function applyDiscoveredRepo(opts: {
   repoId: string;
   repoDir: string;
@@ -132,7 +123,6 @@ async function applyDiscoveredRepo(opts: {
 }> {
   return withRepoLock(opts.repoId, async () => {
     if (opts.expectRepo) await requireLiveRepo(opts.repoId);
-    // Re-sampled under the lock so probe set, reconcile input, and tx commit read the same tree.
     const discovered = await discoverStacks(opts.repoDir, opts.stacksPath);
     const names = new Set(discovered.map((s) => s.name));
     const existing = await db
@@ -166,7 +156,6 @@ export async function listRepositories() {
 }
 
 export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
-  // Clone before inserting the row, so a failed clone leaves no ghost repo.
   const repoId = nanoid();
   const repoDir = getRepoDir(repoId);
   const remote: RemoteTree = {
@@ -183,12 +172,10 @@ export async function cloneAndRegisterRepo(input: AddRepositoryInput) {
       title: `Cloning ${input.name}`,
       failureMessage: `Failed to clone repository ${input.name}`,
       run: async (onOutput) => {
-        // Long I/O outside the lock; the tx below commits the freshly discovered tree, never a stale pre-lock snapshot.
         onOutput(`Cloning ${input.url} (branch: ${input.branch})...\n`);
         await cloneRemoteTree(repoDir, remote, onOutput);
         onOutput("Clone complete. Discovering stacks...\n");
 
-        // Fresh id owns no rows, so nothing disappears and no clearance is needed.
         const applied = await applyDiscoveredRepo({
           repoId,
           repoDir,
@@ -237,14 +224,11 @@ export async function syncRepository(id: string) {
     title: `Syncing ${repo.name}`,
     failureMessage: `Failed to sync repository ${repo.name}`,
     run: async (onOutput) => {
-      // Re-sampled inside the lock so overlapping syncs cannot commit a stale set.
       onOutput(`Pulling latest changes from ${repo.url}...\n`);
       const repoDir = getRepoDir(repo.id);
       await pullOrCloneRemoteTree(repoDir, repo, onOutput);
       onOutput("Pull complete. Discovering stacks...\n");
 
-      // Probe and reconcile commit under one lock so a concurrent delete cannot
-      // interleave teardown or row delete between them; `lastSyncedAt` commits with the reconcile.
       const applied = await applyDiscoveredRepo({
         repoId: repo.id,
         repoDir,
@@ -252,7 +236,7 @@ export async function syncRepository(id: string) {
         onOutput,
         expectRepo: true,
         clearanceFor: (disappearing) =>
-          // Fail-closed Docker probe (`stacks.status` is not consulted); the sync tx cannot await Docker, so the probe mints the clearance reconcile requires.
+          // Fail-closed Docker probe minted outside the sync tx (which cannot await Docker); stacks.status is not consulted.
           RemovableClearance.clear(repo.id, disappearing),
         commitRepoRow: (tx) => {
           tx.update(repositories)
@@ -280,14 +264,12 @@ export async function deleteRepository(id: string) {
     .limit(1);
   if (!repo) throw new NotFoundError("Repository not found");
 
-  // `down` gates the row delete: every stack comes down first, fail-fast, and
-  // the lock nests inside the transcript so a sync probe→commit cannot interleave.
   const { value } = await runActivity<{ warnings: string[] }>({
     title: `Deleting repository ${repo.name}`,
     failureMessage: `Failed to delete repository ${repo.name}`,
     run: async (onOutput) =>
+      // Down gates the row delete; teardown uses downProject directly, never the locked runStackOp.
       withRepoLock(id, async () => {
-        // Re-read inside the lock: a sync may have changed the rows since the early 404.
         const live = await requireLiveRepo(id);
         const repoStacks = await db
           .select()
@@ -297,7 +279,6 @@ export async function deleteRepository(id: string) {
         for (const stack of repoStacks) {
           onOutput(`Bringing down ${stack.name}...\n`);
           try {
-            // Delete holds `withRepoLock`, so it uses the shared `downProject` directly — never the locked `runStackOp` (self-deadlock).
             await downProject(
               {
                 projectName: stack.name,

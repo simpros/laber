@@ -8,11 +8,6 @@ type QueryState<T> = {
   error: unknown;
 };
 
-/**
- * The one loading/failed gate: a failed refetch keeps the snapshot (plus
- * banner) so editor state survives a flaky invalidate; only a cold miss
- * replaces the page.
- */
 export function QueryStatus<T>({
   query,
   failedMessage,

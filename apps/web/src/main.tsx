@@ -7,7 +7,6 @@ import { queryClient } from "@/lib/query-client";
 import { router } from "@/router";
 import "@/app.css";
 
-// SSE sits behind the session guard, so `/login` and `/setup` open zero EventSources.
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

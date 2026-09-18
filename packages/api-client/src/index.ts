@@ -4,16 +4,7 @@ import type { App } from "@laber/server/api-type";
 export type ApiClient = Treaty.Create<App>;
 
 export type ApiClientOptions = {
-  /**
-   * Forward the incoming `cookie` header so the API sees the caller's
-   * session:
-   *
-   * ```ts
-   * createApiClient(url, { headers: { cookie: req.headers.get("cookie") ?? "" } })
-   * ```
-   */
   headers?: Treaty.Config["headers"];
-  /** Injectable fetch for tests. */
   fetcher?: Treaty.Config["fetcher"];
   onRequest?: Treaty.Config["onRequest"];
   onResponse?: Treaty.Config["onResponse"];

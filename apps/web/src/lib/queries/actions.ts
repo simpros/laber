@@ -6,7 +6,6 @@ import {
 } from "@tanstack/react-query";
 import { unwrap } from "@/lib/api";
 
-/** Single owner for every query key, so no mutation misses an invalidation. */
 export const queryKeys = {
   dashboard: ["dashboard"] as const,
   core: ["core"] as const,
@@ -22,7 +21,6 @@ export function toErrorMessage(
   return e instanceof Error ? e.message : fallback;
 }
 
-/** Owned by the query layer; the toolbar imports this type, never the reverse. */
 export type LifecycleActionItem<TAction extends string> = {
   action: TAction;
   label: string;
@@ -30,10 +28,6 @@ export type LifecycleActionItem<TAction extends string> = {
   variant?: "primary" | "secondary" | "danger";
 };
 
-/**
- * The one mutation skeleton (`null` = silent success). Every submit resets
- * first, so a retry never shows the old failure while pending.
- */
 export function useApiMutation<TData, TVariables>(opts: {
   mutationFn: (variables: TVariables) => Promise<TData>;
   invalidate?: readonly QueryKey[];
@@ -43,7 +37,6 @@ export function useApiMutation<TData, TVariables>(opts: {
   const mutation = useMutation({
     mutationFn: opts.mutationFn,
     onSuccess: (data, variables) => {
-      // Fold first so the local snapshot wins if the refetch lags.
       opts.onSuccess?.(data, variables);
       for (const queryKey of opts.invalidate ?? []) {
         void queryClient.invalidateQueries({ queryKey });
@@ -66,7 +59,6 @@ export function useApiMutation<TData, TVariables>(opts: {
 
 type EdenResult = { data: unknown; error: unknown };
 
-/** Throw-on-failure server contract: reaching `onSuccess` means the op ran. */
 export function useLifecycleAction<TAction extends string>(opts: {
   endpoints: Record<TAction, () => Promise<EdenResult>>;
   labels: Record<TAction, string>;

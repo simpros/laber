@@ -69,7 +69,6 @@ describe("PUT /api/core/config", () => {
     };
     expect(get.config.ROOT_DOMAIN.value).toBe("example.com");
     expect(get.config.ROOT_DOMAIN.hasValue).toBe(true);
-    // Secrets never leak; only hasValue is exposed.
     expect(get.config.CF_DNS_API_TOKEN.value).toBe("");
     expect(get.config.CF_DNS_API_TOKEN.hasValue).toBe(true);
     expect(get.config.ACME_EMAIL.hasValue).toBe(false);
@@ -133,7 +132,6 @@ describe("POST /api/core/deploy|stop|restart", () => {
       _projectName,
       _onOutput
     ) => ({
-      // One compose runner: answer by command to keep outputs distinguishable.
       output: command.includes("up") ? "core up" : "mocked",
     });
 
@@ -146,7 +144,6 @@ describe("POST /api/core/deploy|stop|restart", () => {
     };
     expect(deployBody.output).toContain("core up");
 
-    // 200 means the live file advanced too, not just containers up.
     const livePath = getCoreComposePath();
     expect(existsSync(livePath)).toBe(true);
     expect(readFileSync(livePath, "utf-8")).toContain("example.com");
@@ -177,7 +174,6 @@ describe("POST /api/core/deploy|stop|restart", () => {
       _projectName,
       onOutput
     ) => {
-      // Streamed detail is what the log records; the wire message stays short.
       onOutput?.("core blew up");
       throw new ActionFailedError("Compose up -d failed for laber-core");
     };
@@ -187,7 +183,6 @@ describe("POST /api/core/deploy|stop|restart", () => {
     );
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
-    // Wire message stays short; the full transcript lives in the log.
     expect(body.error).toContain("Deploying core services failed");
     expect(body.error).not.toContain("core blew up");
 

@@ -2,7 +2,6 @@ import { stringify } from "yaml";
 import type { CoreConfigShape } from "./core-keys";
 import { TRAEFIK_CONTAINER, TRAEFIK_SERVICE } from "./core-identity";
 
-/** Traefik compose-template construction; `core-stack.ts` keeps config + lifecycle + overview. */
 export function buildCoreCompose(
   config: CoreConfigShape
 ): Record<string, unknown> {

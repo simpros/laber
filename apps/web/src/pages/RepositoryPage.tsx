@@ -22,7 +22,6 @@ export default function RepositoryPage() {
   const syncMutation = useSyncRepository();
   const removeMutation = useRemoveRepository();
 
-  // The mutation owns async state, so `isPending` is the button state (no form library).
   const [formValues, setFormValues] = useState({
     name: "",
     url: "",
@@ -37,7 +36,6 @@ export default function RepositoryPage() {
 
   function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // `MutationNotice` owns errors; awaiting here would surface failures twice.
     addMutation.mutate({
       name: formValues.name,
       url: formValues.url,

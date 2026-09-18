@@ -188,14 +188,12 @@ describe("repositories", () => {
     expect(body.error).toMatch(/already registered/);
     expect(body.error).toContain("collision-demo");
 
-    // Failed register must be atomic: no repo row left behind.
     const ghosts = await db
       .select()
       .from(repositories)
       .where(eq(repositories.name, "collision-second"));
     expect(ghosts).toHaveLength(0);
 
-    // Stack was never deployed, so delete teardown is a no-op.
     const list = (await (
       await app.handle(req("/api/repositories", { headers: { cookie } }))
     ).json()) as {
@@ -265,7 +263,6 @@ describe("repositories", () => {
       .set({ status: "deployed" })
       .where(eq(stacks.id, repoStacks[0].id));
 
-    // Delete is down-first: `down` is the gate, not the status column.
     const downs: Array<{ projectName: string; composePath?: string }> = [];
     dockerStub.downProject = async (options) => {
       downs.push({
@@ -336,7 +333,6 @@ describe("repositories", () => {
       .select()
       .from(stacks)
       .where(eq(stacks.repositoryId, repo.id));
-    // Stale "stopped" column, but Docker still runs the project: hard `down` protects the containers.
     await db
       .update(stacks)
       .set({ status: "stopped" })
@@ -412,7 +408,6 @@ describe("repositories", () => {
       .set({ status: "deployed" })
       .where(eq(stacks.id, repoStacks[0].id));
 
-    // Gone from git with nothing running: the daemon decides, not the status column.
     rmSync(join(fixtureDir, "stacks", "guarded"), {
       recursive: true,
       force: true,
@@ -438,7 +433,6 @@ describe("repositories", () => {
     );
     expect(syncRes.status).toBe(200);
 
-    // A stale status alone never blocks removal.
     const remaining = await db
       .select()
       .from(stacks)
@@ -474,7 +468,6 @@ describe("repositories", () => {
       (r) => r.name === "opaque-fixture"
     )!;
 
-    // Default stub throws, so the gate must refuse instead of reporting empty.
     rmSync(join(fixtureDir, "stacks", "opaque"), {
       recursive: true,
       force: true,
@@ -623,7 +616,6 @@ describe("repositories", () => {
     );
     expect(delRes.status).toBe(500);
 
-    // Failed `down` aborts with no row or status change.
     const remaining = await db
       .select()
       .from(repositories)
@@ -666,7 +658,6 @@ describe("repositories", () => {
       .select()
       .from(stacks)
       .where(eq(stacks.repositoryId, repo.id));
-    // Unreadable daemon must refuse: a soft probe would read empty and orphan live containers.
     await db
       .update(stacks)
       .set({ status: "stopped" })
@@ -733,7 +724,6 @@ describe("repositories", () => {
     const repo = list.repositories.find(
       (r) => r.name === "ghost-fixture"
     )!;
-    // Fail closed: an unreadable daemon must not read as "no containers".
     rmSync(join(getRepoDir(repo.id), "stacks", "ghost"), {
       recursive: true,
       force: true,
@@ -793,7 +783,6 @@ describe("repositories", () => {
     const repo = list.repositories.find(
       (r) => r.name === "vanished-fixture"
     )!;
-    // Vanished but daemon reports empty, so label teardown clears the way.
     rmSync(join(getRepoDir(repo.id), "stacks", "vanished"), {
       recursive: true,
       force: true,

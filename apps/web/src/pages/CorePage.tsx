@@ -45,7 +45,6 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
 
-// Core keys never demote, so only steady states occur.
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
@@ -60,15 +59,10 @@ function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   });
 }
 
-// Module-level so the list-editor sync identity never thrashes.
 function coreKeyOf(e: Pick<FieldState, "key">): string {
   return e.key;
 }
 
-/**
- * Fields init from props: the parent renders this under the `QueryStatus`
- * gate (snapshot present), so no init effect and no empty first paint.
- */
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   const serverValues = useMemo(
     () => fieldStatesFor(snapshot.config),

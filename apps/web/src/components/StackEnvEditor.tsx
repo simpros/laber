@@ -26,10 +26,6 @@ export type EnvEntry = {
   hasValue: boolean;
 };
 
-/**
- * One row model for both plain and secret vars. `id` is the stable React
- * identity across add/remove/rename; `key` is the editable variable name.
- */
 export type EnvRow = MaskedSecretState & {
   id: string;
   key: string;
@@ -62,7 +58,6 @@ function blankRow(key = ""): EnvRow {
   };
 }
 
-// Module-level so the list-editor sync identity never thrashes.
 function envKeyOf(e: Pick<EnvRow, "key">): string {
   return e.key;
 }
@@ -76,7 +71,6 @@ export default function StackEnvEditor({
   stackName: string;
   detectedEnvVars?: string[];
 }) {
-  // Parent remounts per stack (`key={name}`), so prop-init is correct.
   const serverValues = useMemo(() => envVars.map(rowForEnv), [envVars]);
   const {
     entries,
@@ -89,8 +83,6 @@ export default function StackEnvEditor({
     init: () => envVars.map(rowForEnv),
     syncValues: serverValues,
     keyOf: envKeyOf,
-    // Untouched secret sends keep (`null`); pending demote flips the wire
-    // to plain while the chrome stays secret.
     toPayload: (rows) =>
       rows.map((entry) => ({
         key: entry.key,
@@ -126,7 +118,6 @@ export default function StackEnvEditor({
     setEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
-  /** Secret-chrome rows revert (disarming demote); new rows remove themselves. */
   function undoRow(index: number) {
     const entry = entries[index];
     if (!entry) return;
@@ -139,7 +130,6 @@ export default function StackEnvEditor({
       removeEnvVar(index);
       return;
     }
-    // Secrets are never echoed, so the snapshot literal is the restore target.
     update(index, undoPlainEntry(entry, server.value));
   }
 

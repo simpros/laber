@@ -71,7 +71,6 @@ export default defineConfig({
   ],
   webServer: [
     {
-      // Elysia API with a temp SQLite file.
       command: "bun run src/index.ts",
       cwd: join(__dirname, "../server"),
       url: `${API_URL}/api/setup/status`,
@@ -80,7 +79,6 @@ export default defineConfig({
       env: apiEnv,
     },
     {
-      // Built React SPA; /api/* proxies to the Elysia backend.
       command: "bun run preview",
       cwd: __dirname,
       url: BASE_URL,

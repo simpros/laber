@@ -20,20 +20,13 @@ type SecretFile = {
 
 type DeployOptions = {
   composePath: string;
-  /**
-   * The exact compose bytes Docker applies. `deployStack` freezes them to a
-   * sibling temp file and deletes it in `finally`: validated === applied, with no live-path mode.
-   */
+  // Exact bytes Docker applies, frozen to a temp snapshot: validated === applied.
   composeBytes: string;
-  /**
-   * Promote the applied bytes to the live path inside the same attempt (core
-   * deploy sets it; stack deploy leaves it off), so a failed write compensates instead of leaving success drift.
-   */
+  // Promote applied bytes to the live path in the same attempt; failures compensate instead of drifting.
   commitLive?: boolean;
   envVars: Record<string, string>;
   secretFiles?: SecretFile[];
   networkName?: string;
-  // Required: a failed attempt compensates via `downProject` by name.
   projectName: string;
   onOutput?: (chunk: string) => void;
 };
@@ -71,15 +64,12 @@ function removeSecretFiles(files: SecretFile[]): void {
     try {
       rmSync(filePath, { force: true });
     } catch {
-      // best-effort cleanup
+      // Cleanup must not mask the deploy error.
     }
   }
 }
 
-/**
- * Success means "`up -d` + Traefik attached"; any failure first wipes written
- * secrets and brings down started containers, so `"error"` never hides live state or secrets on disk.
- */
+// Success means up -d plus Traefik attached; failure wipes written secrets and downs started containers.
 export async function deployStack(
   options: DeployOptions
 ): Promise<{ output: string }> {
@@ -109,8 +99,6 @@ export async function deployStack(
       envArgs.push("--env-file", envFilePath);
     }
 
-    // Stack vars travel only via --env-file; the spawned process inherits
-    // process.env for the docker CLI itself, with no second stack-env overlay.
     const { output: base } = await runComposeCommand(
       composePath,
       [...envArgs, "up", "-d"],
@@ -121,8 +109,6 @@ export async function deployStack(
 
     let output = base;
 
-    // Traefik attach is part of the success contract, not a warning: a soft
-    // warning here would mark a stack live while ingress is broken.
     if (options.networkName) {
       try {
         await connectTraefikToNetwork(options.networkName);
@@ -137,10 +123,10 @@ export async function deployStack(
       }
     }
 
-    // Running containers mount the secret files, so they stay on success.
     if (options.commitLive) {
       writeFileSync(options.composePath, options.composeBytes, "utf-8");
     }
+    // Running containers mount the secret files, so they stay on success.
     secretsWritten = false;
     return { output };
   } catch (e) {
@@ -166,20 +152,19 @@ export async function deployStack(
       try {
         unlinkSync(envFilePath);
       } catch {
-        // ignore cleanup errors
+        // Cleanup must not mask the deploy error.
       }
     }
     if (snapshotPath) {
       try {
         rmSync(snapshotPath, { force: true });
       } catch {
-        // best-effort snapshot cleanup; the deploy outcome is what matters.
+        // Cleanup must not mask the deploy error.
       }
     }
   }
 }
 
-/** Logged-deploy shell for stack `deployStackByName` and `deployCore`. */
 export function runLoggedDeploy(options: {
   title: string;
   action: string;

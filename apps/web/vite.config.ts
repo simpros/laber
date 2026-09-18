@@ -8,9 +8,7 @@ const apiTarget = process.env.LABER_API_URL ?? "http://localhost:3001";
 export default defineConfig({
   plugins: [tailwindcss(), react(), tsconfigPaths()],
   build: {
-    // CI uploads `apps/web/build/` as the `web-build` artifact and the
-    // Dockerfile copies it too — keep Vite output on that path instead of
-    // the Vite default `dist/`.
+    // CI and the Dockerfile consume apps/web/build/, not the Vite default dist/.
     outDir: "build",
   },
   server: {
@@ -24,11 +22,7 @@ export default defineConfig({
   },
   preview: {
     port: 3000,
-    // Pin IPv4 loopback: the default `localhost` bind resolves to a single
-    // address family (observed ::1-only in CI), while HTTP clients pick
-    // their own family to try first — a refused first family with no
-    // fallback means the e2e readiness probe never connects even though the
-    // server is up. 127.0.0.1 is deterministic on every machine.
+    // Pin IPv4 loopback: CI resolves localhost to ::1-only.
     host: "127.0.0.1",
     proxy: {
       "/api": {

@@ -28,8 +28,6 @@ export const stacks = sqliteTable("stacks", {
   repositoryId: text("repository_id")
     .notNull()
     .references(() => repositories.id, { onDelete: "cascade" }),
-  // Unique because routes, lookups, and Docker `--project-name`
-  // key stacks by bare name.
   name: text("name").notNull().unique(),
   relativePath: text("relative_path").notNull(),
   composeFile: text("compose_file")
@@ -40,8 +38,6 @@ export const stacks = sqliteTable("stacks", {
   })
     .notNull()
     .default("discovered"),
-  // Legacy cache written by the SvelteKit tree; the server never reads
-  // it (deploy re-parses compose fresh). Drop with the SvelteKit tree.
   networkName: text("network_name"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

@@ -44,7 +44,6 @@ export function useStackAction(name: string) {
   });
 }
 
-/** Owned by the query layer next to `stackIsRunning`; deploy shows when stopped. */
 export function stackLifecycleActions(
   isRunning: boolean,
 ): LifecycleActionItem<StackAction>[] {
@@ -71,7 +70,6 @@ export function stackLifecycleActions(
   ];
 }
 
-/** One running rule for every consumer: any running container, else stack status. */
 export function stackIsRunning(detail: {
   containers: { state: string }[];
   stack: { status: string };
@@ -88,7 +86,6 @@ export type StackEnvPayload = Array<{
   isSecret: boolean;
 }>;
 
-/** Query-layer half of the env save (wire + invalidation); the editor owns the rest. */
 export function stackEnvSave(stackName: string) {
   return {
     mutationFn: async (entries: StackEnvPayload): Promise<null> => {
@@ -120,7 +117,6 @@ export function stackSecretsSave(stackName: string) {
   };
 }
 
-/** Query-layer half of the compose save (wire + invalidation). */
 export function stackComposeSave(stackName: string) {
   return {
     mutationFn: async (content: string): Promise<null> => {

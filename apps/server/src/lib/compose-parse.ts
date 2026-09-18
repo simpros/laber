@@ -4,10 +4,6 @@ import * as v from "valibot";
 import { parse } from "yaml";
 import { ValidationError } from "./errors";
 
-/**
- * The one compose schema + parse/load gate every path shares. Wrong *shapes*
- * fail loud for every consumer; skipped *values* inside a valid shape stay lenient in `compose-services.ts`.
- */
 const portLongSchema = v.object({
   target: v.union([v.string(), v.number()]),
   published: v.optional(v.union([v.string(), v.number()])),
@@ -63,13 +59,10 @@ export type SecretDefinition = {
   services: string[];
 };
 
-/** Module-private: production flows go through the gate, never around Valibot. */
 function extractSecrets(
   doc: ComposeDocument,
   composePath: string
 ): SecretDefinition[] {
-  // Service refs without a top-level entry must fail loud, not return [].
-  // Short-syntax names only (enforced by the schema above).
   const serviceMap = new Map<string, string[]>();
   for (const [svcName, svc] of Object.entries(doc.services)) {
     const refs = svc.secrets;
@@ -102,11 +95,9 @@ function extractSecrets(
   const out: SecretDefinition[] = [];
   for (const [name, def] of Object.entries(doc.secrets)) {
     const referenced = (serviceMap.get(name)?.length ?? 0) > 0;
-    // Explicit `external: true` secrets are managed outside compose: never written to files.
     if (def.external === true) continue;
     const file = def.file;
     if (typeof file !== "string" || file === "") {
-      // Referenced without a file would deploy secret-less: fail loud. Unreferenced file-less entries are skipped as inert.
       if (referenced) {
         throw new ValidationError(
           `Invalid compose file: secret "${name}" has no "file" (only file-based secrets or explicit "external: true" are supported)`
@@ -148,7 +139,6 @@ export function parseComposeDocument(
         "Invalid compose file: missing 'services' section"
       );
     }
-    // Name the offending paths instead of blaming a missing `services` section (which is present).
     const detail = result.issues
       .map((issue) => {
         const path = (issue.path ?? [])
@@ -170,7 +160,6 @@ export function parseComposeDocument(
   return { doc: result.output, secrets };
 }
 
-/** Read + validate the on-disk compose file through the one gate, so detail and deploy share the same contract. */
 export function loadComposeDocument(composePath: string): {
   raw: string;
   doc: ComposeDocument;
@@ -181,11 +170,6 @@ export function loadComposeDocument(composePath: string): {
   return { raw, doc, secrets };
 }
 
-/**
- * The one on-disk load policy: detail passes `{ missing: "empty" }`
- * (nothing on disk is valid empty UI state); deploy passes `{ missing:
- * "error" }` (nothing on disk is a loud `ValidationError`). New gate rules land here, not at call sites.
- */
 export function loadCompose(
   composePath: string,
   opts: { missing: "error"; errorPrefix?: string }

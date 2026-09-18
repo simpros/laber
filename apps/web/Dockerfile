@@ -4,7 +4,6 @@ FROM oven/bun:1.3.13-alpine AS base
 
 WORKDIR /app
 
-# ---- Prune monorepo ----
 FROM base AS prepare
 
 RUN bun add -g turbo@^2
@@ -12,21 +11,17 @@ RUN bun add -g turbo@^2
 COPY . .
 RUN turbo prune @laber/web --docker
 
-# ---- Install deps + build ----
 FROM base AS builder
 
-# Install dependencies (cached until lockfile/package.json changes)
 COPY --from=prepare /app/out/json/ .
 COPY --from=prepare /app/bun.lock ./bun.lock
 COPY --from=prepare /app/packages/typescript-config/package.json ./packages/typescript-config/package.json
 RUN bun install --frozen-lockfile
 
-# Build the project
 COPY --from=prepare /app/out/full/ .
 COPY --from=prepare /app/packages/typescript-config/ ./packages/typescript-config/
 RUN bun run build --filter=@laber/web
 
-# ---- Production runner ----
 FROM base AS runner
 
 ARG COMMIT_SHA
@@ -44,9 +39,6 @@ ENV DATABASE_PATH=/data/laber.db
 ENV DATA_DIR=/data
 
 COPY --from=builder --chown=app:app /app/apps/web/build ./
-# Deploy invariant: the image ships drizzle migrations from @laber/db.
-# Run `bun run db:generate` (once @laber/db has a schema) before building;
-# local/CI `bun run build` intentionally does NOT fabricate this directory.
 COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
 
 VOLUME /data
