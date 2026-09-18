@@ -27,13 +27,8 @@ export type EnvEntry = {
 };
 
 /**
- * One row model for both plain and secret vars: the shared masked-secret
- * state plus the row chrome. Secrecy is the one discriminant
- * (`plain`/`secret`/`demote-pending`) — the chrome and the wire each read
- * it through `chromeIsSecret`/`wireIsSecret`, never a raw flag. `id` is the
- * stable React identity across add/remove/rename; `key` is the editable
- * variable name. Init policy (masked + secrecy) lives in `maskedFromServer`
- * — this only attaches the row identity (`id`/`key`).
+ * One row model for both plain and secret vars. `id` is the stable React
+ * identity across add/remove/rename; `key` is the editable variable name.
  */
 export type EnvRow = MaskedSecretState & {
   id: string;
@@ -81,11 +76,7 @@ export default function StackEnvEditor({
   stackName: string;
   detectedEnvVars?: string[];
 }) {
-  // Owned by stack identity: the parent remounts per stack (`key={name}`),
-  // so initializing from props once is correct — no fingerprint dance.
-  // Save orchestration (payload, mutation, optimistic fold) lives in the
-  // shared list hook; the server echo converges non-dirty rows underneath —
-  // including an armed demote, which heals to the server plaintext.
+  // Parent remounts per stack (`key={name}`), so prop-init is correct.
   const serverValues = useMemo(() => envVars.map(rowForEnv), [envVars]);
   const {
     entries,
@@ -98,11 +89,8 @@ export default function StackEnvEditor({
     init: () => envVars.map(rowForEnv),
     syncValues: serverValues,
     keyOf: envKeyOf,
-    // `valueForSave` keys off `hadValue`/`dirty` — "the server still holds a
-    // masked value we never echoed → null (keep)" — and `wireIsSecret`
-    // reads the one discriminant, so a pending demote flips the wire to
-    // plain while the chrome stays secret. Both toggle directions save with
-    // no branch.
+    // Untouched secret sends keep (`null`); pending demote flips the wire
+    // to plain while the chrome stays secret.
     toPayload: (rows) =>
       rows.map((entry) => ({
         key: entry.key,
@@ -110,8 +98,6 @@ export default function StackEnvEditor({
         isSecret: wireIsSecret(entry),
       })),
     save: stackEnvSave(stackName),
-    // One fold for secrets and plains — the keep/reset decision lives in
-    // `markMixedSaved`, not here.
     fold: markMixedSaved,
   });
 
@@ -140,9 +126,7 @@ export default function StackEnvEditor({
     setEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
-  /** Pure-model undo in one line: secret-chrome rows revert (disarming a
-   * pending demote), plain rows restore the server literal, brand-new rows
-   * remove themselves instead of inventing a literal. */
+  /** Secret-chrome rows revert (disarming demote); new rows remove themselves. */
   function undoRow(index: number) {
     const entry = entries[index];
     if (!entry) return;
@@ -155,8 +139,7 @@ export default function StackEnvEditor({
       removeEnvVar(index);
       return;
     }
-    // Server snapshots carry the literal for plains and `""` for secrets
-    // (never echoed), so the snapshot value is the honest restore target.
+    // Secrets are never echoed, so the snapshot literal is the restore target.
     update(index, undoPlainEntry(entry, server.value));
   }
 

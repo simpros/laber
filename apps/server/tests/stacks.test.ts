@@ -172,8 +172,7 @@ describe("GET /api/stacks/:name", () => {
     );
     writeFileSync(composePath, "{unclosed: [", "utf-8");
 
-    // Detail and deploy share one parse: a file deploy would reject must
-    // not render as an empty stack here.
+    // Shares deploy's parse gate: invalid compose must 400, not render empty.
     const res = await app.handle(
       req("/api/stacks/invalid-compose-detail", { headers: { cookie } })
     );
@@ -223,8 +222,7 @@ describe("POST /api/stacks/:name/deploy", () => {
       projectName,
       onOutput
     ) => {
-      // Single env channel: stack vars travel via --env-file (there is no
-      // second process-env overlay on execCompose anymore).
+      // Stack vars travel via --env-file only.
       const envFlag = command.indexOf("--env-file");
       expect(envFlag).toBeGreaterThanOrEqual(0);
       const envContent = readFileSync(command[envFlag + 1], "utf-8");
@@ -298,8 +296,7 @@ describe("POST /api/stacks/:name/deploy", () => {
       _projectName,
       onOutput
     ) => {
-      // Operational failure is a throw, not a flag; the streamed detail is
-      // what the deployment log records.
+      // Failure is a throw; the streamed detail is what the log records.
       onOutput?.("boom");
       throw new ActionFailedError(
         "Compose up -d failed for failed-deploy"
@@ -311,8 +308,7 @@ describe("POST /api/stacks/:name/deploy", () => {
     );
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
-    // Short failure contract: the wire message stays short; the full
-    // transcript lives in the deployment log and activity stream.
+    // Wire message stays short; the full transcript lives in the log.
     expect(body.error).toContain("Deploying failed-deploy failed");
     expect(body.error).not.toContain("boom");
 
@@ -342,8 +338,7 @@ describe("POST /api/stacks/:name/deploy", () => {
     );
     expect(res.status).toBe(500);
 
-    // The failure transition is automatic: sync/delete gates trust this
-    // column, so a failed redeploy must not keep the old marker.
+    // Sync/delete gates trust status, so a failed redeploy must not keep the old marker.
     const [updated] = await db
       .select()
       .from(stacks)
@@ -376,12 +371,9 @@ describe("POST /api/stacks/:name/deploy", () => {
     const res = await app.handle(
       jsonReq("/api/stacks/traefik-deploy/deploy", "POST", {}, cookie)
     );
-    // Attach is part of the success contract: `up` succeeding while ingress
-    // is broken must not report success or mark the stack deployed.
+    // Attach is part of success: `up` with broken ingress must not report success.
     expect(res.status).toBe(500);
-    // Compensation: containers started by this attempt come back down via
-    // the same `downProject` teardown stop uses — no running containers
-    // behind an `"error"` status.
+    // Compensation: tear down via downProject so no containers run behind "error".
     expect(downCalls).toEqual(["traefik-deploy"]);
 
     const [updated] = await db
@@ -422,8 +414,7 @@ describe("POST /api/stacks/:name/deploy", () => {
       _projectName,
       _onOutput
     ) => {
-      // The shared CLI is exit→throw only: deploy's catch owns secret wipe,
-      // so a throw here must still leave no secret file behind.
+      // Shared CLI throws on exit; deploy's catch must still wipe secret files.
       throw new ActionFailedError("Compose up -d failed");
     };
 
@@ -492,17 +483,14 @@ describe("POST /api/stacks/:name/deploy", () => {
       )
     );
     expect(res.status).toBe(500);
-    // Post-`up` failure: the deploy catch (the one compensation site) must
-    // wipe the secrets *and* tear the project down.
+    // Post-`up` failure: the deploy catch must wipe secrets and tear the project down.
     expect(existsSync(join(composePath, "..", "mysecret.txt"))).toBe(false);
     expect(downCalls).toEqual(["traefik-secret-deploy"]);
   });
 
   it("rejects a duplicate stack name", async () => {
     const { repo } = await seedStack("dupe-name", BASIC_COMPOSE);
-    // Stack identity is the global name (routes, lookups, Docker project
-    // keys), so the table enforces uniqueness instead of `.limit(1)`-ing
-    // over duplicates.
+    // Stack name is the global identity (routes, Docker keys), so it must be unique.
     expect(() =>
       db
         .insert(stacks)
@@ -545,8 +533,7 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
   it("returns 500 when stopping fails", async () => {
     const { stack } = await seedStack("unstoppable", BASIC_COMPOSE);
     dockerStub.downProject = async (options) => {
-      // Operational failure is a throw, not a flag; the streamed detail is
-      // what the deployment log records.
+      // Failure is a throw; the streamed detail is what the log records.
       options.onOutput?.("down blew up");
       throw new ActionFailedError("Cannot bring down unstoppable");
     };
@@ -590,16 +577,14 @@ describe("POST /api/stacks/:name/stop|restart|pull", () => {
     );
     expect(res.status).toBe(500);
 
-    // Pull never touches `stacks.status`: containers keep running under the
-    // old deploy, so sync must still see "deployed" and refuse to
-    // reconcile the stack away.
+    // Pull never touches status: containers keep running, so sync still sees "deployed".
     const [updated] = await db
       .select()
       .from(stacks)
       .where(eq(stacks.id, stack.id));
     expect(updated.status).toBe("deployed");
 
-    // But the run is still attributed: stack detail's log list shows it.
+    // The run is still attributed in the log list.
     const logs = await db
       .select()
       .from(deploymentLogs)
@@ -820,8 +805,7 @@ describe("PUT /api/stacks/:name/compose", () => {
   it("rejects compose content whose secrets envelope deploy cannot parse", async () => {
     await seedStack("bad-secrets-save", BASIC_COMPOSE);
 
-    // Save and deploy share one envelope: a file deploy would 400 on must
-    // not save successfully here.
+    // Save and deploy share one envelope: a file deploy would 400 on must not save here.
     const res = await app.handle(
       jsonReq(
         "/api/stacks/bad-secrets-save/compose",

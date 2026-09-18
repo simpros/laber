@@ -14,10 +14,8 @@ export type CredentialValues = {
 };
 
 /**
- * The one place that wraps credential submits: normalizes better-auth's
- * `{ error }` union to an error string (`""` = ok) so the auth forms never
- * branch on the client shape themselves. No `callbackURL` — the SPA owns
- * routing through `enterApp`, so better-auth must not navigate on its own.
+ * The one credential-submit wrapper: normalizes better-auth's `{ error }`
+ * union to a string (`""` = ok). Never navigates; the SPA owns routing.
  */
 export async function submitCredentials(
   mode: "login" | "setup",
@@ -39,10 +37,8 @@ export async function submitCredentials(
 }
 
 /**
- * The one atomic handoff into the app shell: refresh the router gate
- * (session + setup probes) and only then navigate to `/`, so a cached
- * logged-out verdict can't bounce us back and no second navigation owner
- * races us.
+ * Atomic handoff into the app shell: refresh the gate, then navigate, so a
+ * cached logged-out verdict can't bounce us back.
  */
 export async function enterApp(router: {
   invalidate: () => Promise<unknown>;
@@ -53,10 +49,8 @@ export async function enterApp(router: {
 }
 
 /**
- * The inverse of `enterApp`: clear the session's query cache, refresh the
- * gate, then leave for `/login` — so stale dashboard/stack data can never
- * survive into the next session and navigation has one owner. Call only
- * after the session is actually destroyed (`signOut`).
+ * Inverse of `enterApp`: clear the cache, refresh the gate, then leave, so
+ * stale data can never survive into the next session. Call only after `signOut`.
  */
 export async function leaveApp(
   router: {

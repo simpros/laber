@@ -21,11 +21,7 @@ function sseHeaders(): Record<string, string> {
 }
 
 /**
- * One SSE response constructor. `start` wires the producer; `cleanup`
- * releases everything a disconnect would otherwise leak (intervals,
- * subscriptions, docker readers) — `ReadableStream.cancel()` runs it on
- * normal client disconnect, and producers defensively clean up when
- * `enqueue` throws on an already-closed stream.
+ * `cleanup` runs on client disconnect; producers also clean up when `enqueue` throws on a closed stream.
  */
 export function sseResponse(
   start: (

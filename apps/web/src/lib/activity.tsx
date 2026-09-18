@@ -68,10 +68,8 @@ function isActivity(value: unknown): value is Activity {
 }
 
 /**
- * Narrow the wire before it touches domain state: the SSE stream is `any`
- * JSON, so an unknown `type` must be ignored loudly, never applied. (A wrong
- * `type` falling through to the finish arm would patch rows with `undefined`
- * fields and stall the panel while a deploy runs.)
+ * The SSE stream is `any` JSON: unknown shapes are ignored loudly, never
+ * applied (a wrong `type` on the finish path would stall the panel).
  */
 function isActivityEvent(value: unknown): value is ActivityEvent {
   if (!isRecord(value)) return false;
@@ -113,8 +111,7 @@ function applyEvent(prev: Activity[], event: ActivityEvent): Activity[] {
           : a,
       );
     default: {
-      // Exhaustive: a new event variant fails to compile here until it gets
-      // its own arm above — it can never silently ride the finish path.
+      // A new variant fails to compile here until it gets its own arm above.
       const _exhaustive: never = event;
       void _exhaustive;
       return prev;
@@ -138,8 +135,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       try {
         parsed = JSON.parse(raw.data);
       } catch {
-        // Malformed frames mean a server/stream bug: silent stalls look
-        // like idle deploys, so say so loudly instead of swallowing.
+        // Malformed frames signal a server/stream bug; never swallow silently.
         console.warn("[activity] ignoring malformed frame", raw.data);
         return;
       }

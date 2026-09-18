@@ -19,7 +19,6 @@ export function useStackDetail(name: string) {
 
 export type StackAction = "deploy" | "stop" | "restart" | "pull";
 
-/** Action → endpoint table; the table is the discriminator, no switch. */
 function stackEndpoints(name: string) {
   const stack = api.api.stacks({ name });
   return {
@@ -45,11 +44,7 @@ export function useStackAction(name: string) {
   });
 }
 
-/**
- * The stack lifecycle catalog: the action list the detail page renders,
- * owned by the query layer next to `stackIsRunning` — no inline spreads or
- * casts in the page. Deploy shows when stopped; restart/stop when running.
- */
+/** Owned by the query layer next to `stackIsRunning`; deploy shows when stopped. */
 export function stackLifecycleActions(
   isRunning: boolean,
 ): LifecycleActionItem<StackAction>[] {
@@ -76,8 +71,7 @@ export function stackLifecycleActions(
   ];
 }
 
-/** Render-local `isRunning` used to be recomputed in the page; the query
- * layer owns it so every consumer reads one rule. */
+/** One running rule for every consumer: any running container, else stack status. */
 export function stackIsRunning(detail: {
   containers: { state: string }[];
   stack: { status: string };
@@ -94,12 +88,7 @@ export type StackEnvPayload = Array<{
   isSecret: boolean;
 }>;
 
-/**
- * Query-layer half of the env save: wire call + invalidation. The editor
- * passes this into `useMaskedListEditor`, which owns entries, payload, and
- * the post-save fold — no `useSave*` hook with an optional `onSaved` every
- * caller must remember.
- */
+/** Query-layer half of the env save (wire + invalidation); the editor owns the rest. */
 export function stackEnvSave(stackName: string) {
   return {
     mutationFn: async (entries: StackEnvPayload): Promise<null> => {
@@ -118,7 +107,6 @@ export type StackSecretPayload = Array<{
   value: string | null;
 }>;
 
-/** Query-layer half of the secrets save; see `stackEnvSave`. */
 export function stackSecretsSave(stackName: string) {
   return {
     mutationFn: async (entries: StackSecretPayload): Promise<null> => {
@@ -132,11 +120,7 @@ export function stackSecretsSave(stackName: string) {
   };
 }
 
-/**
- * Query-layer half of the compose save: wire call + invalidation. The view
- * wraps it in `useApiMutation` with its own `onSuccess` (`setEditing(false)`)
- * — no UI callback injected into the query hook.
- */
+/** Query-layer half of the compose save (wire + invalidation). */
 export function stackComposeSave(stackName: string) {
   return {
     mutationFn: async (content: string): Promise<null> => {

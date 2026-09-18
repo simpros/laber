@@ -58,12 +58,8 @@ export async function pullRepo(
 }
 
 /**
- * Filesystem discovery only: which stack directories exist and which compose
- * file each one uses. Deliberately no compose parsing here — deploy re-parses
- * the compose file fresh (the only correctness-critical consumer), so a
- * cached network name would be a second source of truth deploy refuses to
- * trust. The `network_name` column still exists for the frozen SvelteKit
- * tree; this server neither reads nor writes it.
+ * Filesystem discovery only — no compose parsing (deploy re-parses fresh, so
+ * a cached network name would be a second source of truth this server refuses to trust).
  */
 export async function discoverStacks(
   repoDir: string,

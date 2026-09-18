@@ -1,11 +1,8 @@
 import type { ComposeDocument, ComposeService } from "./compose-parse";
 
 /**
- * Compose service read-model: pure projections off the parsed document for
- * the detail UI (services, env names, networks). Fail policy lives at the
- * parse gate (`compose-parse.ts`); skipped *values* inside a valid shape
- * (a non-string env entry, a non-string label value) stay lenient here —
- * they are inert data, not a broken document.
+ * Pure projections off the parsed document for the detail UI. Fail policy
+ * lives at the parse gate; skipped values inside a valid shape stay lenient (inert data, not a broken document).
  */
 
 export type ServiceInfo = {
@@ -47,8 +44,7 @@ function parsePorts(
   if (!ports) return [];
   const out: Array<{ host?: number; container: number }> = [];
   for (const entry of ports) {
-    // Long-form `ports:` objects ({ target, published }) have no short
-    // string to split: read the fields directly instead of String(entry).
+    // Long-form `ports:` objects have no short string to split: read the fields directly.
     if (typeof entry === "object") {
       const target = Number(entry.target);
       if (!Number.isFinite(target)) continue;
@@ -154,9 +150,7 @@ export function extractAllEnvVarNames(doc: ComposeDocument): string[] {
 export function extractNetworkName(doc: ComposeDocument): string | undefined {
   if (!doc.networks) return undefined;
 
-  // `default` wins over other external networks: check it first, then the
-  // rest in document order. (A single loop over all values cannot prefer
-  // `default` — whichever external net comes first would win.)
+  // `default` wins over other external networks, so it is checked first.
   const { default: defaultNet, ...rest } = doc.networks;
   const ordered = [
     ...(defaultNet ? [defaultNet] : []),

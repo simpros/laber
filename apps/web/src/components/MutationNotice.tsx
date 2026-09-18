@@ -8,21 +8,14 @@ type NoticeMutation = {
   isPending: boolean;
   isError: boolean;
   isSuccess: boolean;
-  // Optional because React Query's idle variant omits the clocks; an idle
-  // mutation is never `isSuccess`/`isError`, so it still renders nothing.
+  // Idle omits the clocks but never reaches terminal state, so still renders nothing.
   dataUpdatedAt?: number;
   errorUpdatedAt?: number;
 };
 
 export type { NoticeMutation };
 
-/**
- * Pending hides the notice. Mutations clear their own terminal state when
- * a new submit starts (`useApiMutation` resets on `mutate`), so without
- * this gate a retry shows the old failure for the whole request. Pages
- * never `reset()` before firing; the notice owns it. (`reset()` survives
- * only where cancel must clear a notice without a new mutation.)
- */
+/** Pending hides the notice, so a retry never shows the old failure mid-flight. */
 export function shouldHideNotice(
   mutation: Pick<NoticeMutation, "isPending">,
 ): boolean {
@@ -65,12 +58,7 @@ function NoticeBody({
   return null;
 }
 
-/**
- * Activity-linked notice: the only component that touches the SSE module.
- * Split out so default notices stay presentational — lifecycle surfaces
- * pass `linkActivity` instead of importing `useActivity` for a one-liner
- * callback.
- */
+/** Split out so default notices stay presentational (no activity import in pages). */
 function LinkedNotice({
   mutation,
   errorFallback,
@@ -89,13 +77,9 @@ function LinkedNotice({
 }
 
 /**
- * The one mutation notice: success copy comes from `mutation.data` (hooks
- * resolve to their display message, `null` = silent success), failures from
- * `mutation.error`. One mutation per notice — multi-mutation surfaces render
- * one small notice per action instead of a latest-settled group, so no
- * sibling choreography and no union props. Lifecycle ops (deploy/stop/
- * restart) render through this too — `linkActivity` (or `onViewActivity`)
- * adds the Activity pointer instead of a second hand-rolled Alert.
+ * The one mutation notice: success copy from `mutation.data` (`null` =
+ * silent success). One mutation per notice, so a stale failure can never
+ * hide behind a sibling's success.
  */
 export function MutationNotice({
   mutation,
@@ -107,7 +91,7 @@ export function MutationNotice({
   errorFallback: string;
   /** Explicit opener; wins over `linkActivity` when both are passed. */
   onViewActivity?: () => void;
-  /** Wire the Activity pointer without the page importing the activity module. */
+  /** Wire the Activity pointer without importing the activity module. */
   linkActivity?: boolean;
 }) {
   if (onViewActivity) {

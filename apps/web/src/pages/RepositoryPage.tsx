@@ -15,8 +15,6 @@ export default function RepositoryPage() {
   const query = useRepositories();
   const [showAddForm, setShowAddForm] = useState(false);
 
-  // Query-layer wire + invalidation only; the page owns the form-surface
-  // side effect (`setShowAddForm(false)`) as the mutation's `onSuccess`.
   const addMutation = useApiMutation({
     ...addRepositorySave(),
     onSuccess: () => setShowAddForm(false),
@@ -24,10 +22,7 @@ export default function RepositoryPage() {
   const syncMutation = useSyncRepository();
   const removeMutation = useRemoveRepository();
 
-  // Plain controlled inputs: the only async owner is the mutation, so
-  // `isPending` is the button state — no form library, no second pending
-  // channel (react-form stays on `AuthCredentialsForm`, which needs
-  // `isSubmitting` for the `enterApp` gate handoff).
+  // The mutation owns async state, so `isPending` is the button state (no form library).
   const [formValues, setFormValues] = useState({
     name: "",
     url: "",
@@ -42,9 +37,7 @@ export default function RepositoryPage() {
 
   function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Fire-and-forget: `MutationNotice` is the one error owner, and the form
-    // closes in the mutation `onSuccess` on success only — awaiting here
-    // would surface the same failure twice (rejected submit + notice).
+    // `MutationNotice` owns errors; awaiting here would surface failures twice.
     addMutation.mutate({
       name: formValues.name,
       url: formValues.url,
@@ -82,9 +75,7 @@ export default function RepositoryPage() {
         )}
       </div>
 
-      {/* One small notice per action: each mutation resets its own terminal
-       * state on submit, so no sibling choreography and no latest-settled
-       * group — a stale Add failure can never hide behind a Sync success. */}
+      {/* One notice per action, so a stale failure can't hide behind a sibling's success. */}
       <MutationNotice
         mutation={addMutation}
         errorFallback="Failed to add repository"

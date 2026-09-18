@@ -20,7 +20,6 @@ describe("GET /api/activity/stream", () => {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let text = "";
-    // The server sends ": connected" immediately on subscribe.
     while (!text.includes("connected")) {
       const { done, value } = await reader.read();
       if (done) break;

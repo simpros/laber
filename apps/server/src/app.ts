@@ -30,8 +30,6 @@ export function createApp() {
   const app = new Elysia()
     .onError(({ code, error, set }) => {
       if (error instanceof DomainError) {
-        // The single kind → status map. Libs only carry the kind; the
-        // adapter owns the wire codes.
         const statusByKind: Record<DomainErrorKind, number> = {
           not_found: 404,
           conflict: 409,
@@ -42,21 +40,16 @@ export function createApp() {
         return { error: error.message };
       }
       if (code === "VALIDATION") {
-        // Elysia validates route schemas with 422 by default; this API
-        // speaks 400 for malformed input (SvelteKit contract).
+        // Elysia defaults to 422; this API speaks 400 for malformed input.
         set.status = 400;
         return { error: "Invalid request" };
       }
     })
     .all("/api/auth/*", ({ request }) => auth.handler(request))
-    // Public SPA probes live outside the session guard. Everything else
-    // under /api/* requires a session.
     .use(setupRoutes)
-    // Auth lives outside the guard; everything under it requires a session.
-    // No pathname allowlist: adding a public path means mounting it out here,
-    // not growing another string branch. Note Elysia validates route schemas
-    // before beforeHandle hooks, so an unauthenticated request with a
-    // malformed body sees 400 — access is still denied either way.
+    // No pathname allowlist: a public path mounts out here, never as a
+    // string branch in the guard. Elysia validates schemas before
+    // beforeHandle, so an unauthenticated malformed body still sees 400.
     .guard({ beforeHandle: requireSession }, (app) =>
       app
         .use(dashboardRoutes)

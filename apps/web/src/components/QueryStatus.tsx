@@ -9,15 +9,9 @@ type QueryState<T> = {
 };
 
 /**
- * The one loading/failed gate for every resource page. Render-prop narrows
- * `data`, so pages never repeat the Loading… / Failed-to-load block and
- * never reach for a cast after the gate.
- *
- * Cold load and background refetch are different products: a refetch that
- * fails while a snapshot is on screen keeps the page (with a banner) so
- * in-progress editor state survives a flaky invalidate. Only a cold miss —
- * pending with nothing to show, or settled with no data — replaces the
- * page.
+ * The one loading/failed gate: a failed refetch keeps the snapshot (plus
+ * banner) so editor state survives a flaky invalidate; only a cold miss
+ * replaces the page.
  */
 export function QueryStatus<T>({
   query,

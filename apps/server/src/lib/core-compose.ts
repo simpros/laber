@@ -2,11 +2,7 @@ import { stringify } from "yaml";
 import type { CoreConfigShape } from "./core-keys";
 import { TRAEFIK_CONTAINER, TRAEFIK_SERVICE } from "./core-identity";
 
-/**
- * Traefik compose-template construction for the core stack. This file owns
- * the YAML-as-JS blob; `core-stack.ts` keeps config + lifecycle + overview
- * so a template tweak never collides with a config-merge fix.
- */
+/** Traefik compose-template construction; `core-stack.ts` keeps config + lifecycle + overview. */
 export function buildCoreCompose(
   config: CoreConfigShape
 ): Record<string, unknown> {
@@ -17,9 +13,6 @@ export function buildCoreCompose(
   const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
 
-  // The Traefik service key is the centralized `TRAEFIK_SERVICE`: discovery
-  // in `docker-engine` matches on it, so a rename touches `core-identity`,
-  // not the template and the engine in parallel.
   const services: Record<string, unknown> = {
     [TRAEFIK_SERVICE]: {
       image: "traefik:v3",

@@ -113,8 +113,7 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
   });
 
   it("rejects long-form service secret references", () => {
-    // Long-form shapes fail at the parse gate (schema), not in the
-    // extractor: there are no unparsed production callers.
+    // Long-form shapes fail at the parse gate, not in the extractor.
     const content = [
       "services:",
       "  web:",
@@ -126,15 +125,14 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
       "    file: ./secrets/db_password.txt",
       "",
     ].join("\n");
-    // Skipping these would deploy without files the compose file intended.
+    // Skipping would deploy without files the compose file intended.
     expect(() => parseComposeDocument(content, COMPOSE_PATH)).toThrow(
       ValidationError
     );
   });
 
   it("rejects non-list service secrets sections", () => {
-    // Bypasses nothing: the parse gate owns shape validation — a bare
-    // string where a list belongs is a schema failure.
+    // Shape validation lives at the parse gate.
     const content = [
       "services:",
       "  web:",
@@ -270,7 +268,6 @@ describe("parseComposeDocument", () => {
         "services:\n  web:\n    image: nginx:latest\nsecrets: not-a-map\n"
       )
     ).toThrow("Invalid compose file: secrets:");
-    // The missing-services case keeps its dedicated message.
     expect(() => parseComposeDocument("version: '3'\n")).toThrow(
       "missing 'services' section"
     );

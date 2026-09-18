@@ -12,14 +12,9 @@ export async function saveComposeContent(name: string, content: string) {
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
-  // Compose writes take the same per-repo mutex as deploy/stop/sync/delete
-  // so live-file writes serialize with the removable-mutation holders: the
-  // lock is about ordering with the probe/readers, not about validated-vs-
-  // applied bytes — deploy freezes the bytes it applies to its own snapshot,
-  // so save and deploy are independent attempts either way.
+  // Live-file writes serialize with the removable-mutation holders under the same mutex.
   return withLockedStack(name, async ({ composePath }) => {
-    // The one compose gate (envelope + secret refs): save accepts exactly
-    // what deploy/detail accept, so a saved file can never 400 on read/deploy.
+    // Save accepts exactly what deploy/detail accept, so a saved file never 400s on read/deploy.
     parseComposeDocument(content, composePath);
 
     mkdirSync(dirname(composePath), { recursive: true });
@@ -29,11 +24,7 @@ export async function saveComposeContent(name: string, content: string) {
   });
 }
 
-/**
- * Shared replace-all for nullable keyed rows (stack env vars, stack secrets):
- * `null` means "leave unchanged" (keep the stored value, default ""),
- * anything else replaces the whole set in one transaction.
- */
+/** `null` means "leave unchanged", anything else replaces the whole set. */
 export function replaceNullableKeyedRows(
   existingByKey: Map<string, string>,
   entries: Array<{ key: string; value: ConfigValue }>
@@ -56,13 +47,8 @@ export type SecretEntry = {
 };
 
 /**
- * One replace-all for the nullable keyed-bag tables (stack env vars, stack
- * secrets): `null` means "leave unchanged" (keep the stored value, default
- * ""), anything else replaces the whole set. The snapshot read and the
- * delete+insert share one transaction, so concurrent PUTs merge against
- * committed state instead of clobbering each other's keys. Each table is
- * ~5 lines of column mapping; the load → merge → delete+insert shell lives
- * here exactly once.
+ * Snapshot read and delete+insert share one transaction, so concurrent PUTs
+ * merge against committed state instead of clobbering each other.
  */
 async function replaceStackKeyedBag(options: {
   name: string;

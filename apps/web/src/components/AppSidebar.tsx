@@ -8,7 +8,6 @@ import { useActivity } from "@/lib/activity";
 
 type NavIconName = "grid" | "layers" | "cpu" | "settings";
 
-/** Icon map; the lookup is the discriminator, no if-ladder. */
 const NAV_ICONS: Record<NavIconName, ReactNode> = {
   grid: (
     <>
@@ -83,13 +82,11 @@ function NavLink({
   );
 }
 
-/** Sidebar entry point for the activity stream (badge = running work). */
 export function ActivityLauncher({
   onNavigate,
   iconOnly,
 }: {
   onNavigate?: () => void;
-  /** Compact header variant: icon button with the running badge. */
   iconOnly?: boolean;
 }) {
   const { hasRunning, setOpen } = useActivity();
@@ -133,7 +130,6 @@ export function ActivityLauncher({
   );
 }
 
-/** Full sidebar chrome (desktop + mobile drawer render this one module). */
 export default function AppSidebar({
   onNavigate,
 }: {
@@ -145,9 +141,7 @@ export default function AppSidebar({
   const queryClient = useQueryClient();
   const user = session?.user;
 
-  // The inverse of `enterApp`: destroy the session, then hand the whole
-  // exit (cache clear + gate refresh + navigation) to `leaveApp` — one
-  // call, no `fetchOptions.onSuccess` navigation branch.
+  // Destroy the session, then `leaveApp` owns the whole exit.
   async function handleSignOut() {
     await signOut();
     await leaveApp(router, queryClient);

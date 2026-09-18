@@ -1,10 +1,8 @@
 /**
  * One masked-secret field model for every secret input in the SPA.
  *
- * Contract: the server never sends secret values back, so an empty input
- * means "keep the stored value" — unless the field was touched, in which
- * case empty means "clear". `hadValue` is the server's `hasValue` snapshot;
- * `dirty` flips on the first user edit (or programmatic clear).
+ * The server never echoes secret values: empty input keeps the stored value
+ * unless touched, when empty clears. `hadValue` is the server snapshot.
  */
 export type MaskedSecretState = {
   hadValue: boolean;
@@ -13,14 +11,9 @@ export type MaskedSecretState = {
 };
 
 /**
- * One secrecy discriminant for every secret row in the SPA — a single flag
- * with three states instead of a dual-flag protocol. `plain` and `secret`
- * are steady states; `demote-pending` is the transient "user unchecked
- * Secret on an untouched secret, save flips it to plain but the server echo
- * hasn't landed yet" state. Two readers derive the two jobs from it, so no
- * call site can wire chrome to the save bit by accident:
- * - `chromeIsSecret` owns the input chrome (badge, placeholder, undo path);
- * - `wireIsSecret` owns the save wire and the checkbox.
+ * One secrecy discriminant for every secret row: `plain`/`secret` are steady,
+ * `demote-pending` is an untouched secret unchecked but not yet echoed back
+ * as plain. Chrome and wire read it separately so neither can cross-wire.
  */
 export type Secrecy = "plain" | "secret" | "demote-pending";
 
@@ -28,7 +21,7 @@ export type SecrecyState = {
   secrecy: Secrecy;
 };
 
-/** Input chrome stays secret through a pending demote (no blank-plain lie). */
+/** Chrome stays secret through a pending demote (never a blank-plain lie). */
 export function chromeIsSecret(row: SecrecyState): boolean {
   return row.secrecy !== "plain";
 }
@@ -46,12 +39,8 @@ export function secretStatus(entry: MaskedSecretState): SecretStatus {
 }
 
 /**
- * Server snapshot → local row, the one init policy every list editor shares:
- * secrets blank out (the server never echoes values) with `hadValue` from
- * the server; plain rows carry their literal. Returns the full masked +
- * secrecy state (steady `secret`/`plain` only — never `demote-pending`),
- * so callers only attach identity fields (key/name/…) on top and a missing
- * discriminant is a type error, not a runtime chrome/wire bug.
+ * Server snapshot → local row. Secrets blank (never echoed); only steady
+ * states returned, so a missing discriminant fails at compile time.
  */
 export function maskedFromServer({
   isSecret,
@@ -67,7 +56,6 @@ export function maskedFromServer({
     : { value: value ?? "", hadValue: false, dirty: false, secrecy: "plain" };
 }
 
-/** User typed: set the value and mark the row in progress. */
 export function touchEntry<T extends MaskedSecretState>(
   entry: T,
   value: string,
@@ -75,11 +63,7 @@ export function touchEntry<T extends MaskedSecretState>(
   return { ...entry, value, dirty: true };
 }
 
-/**
- * Revert a secret row to the untouched snapshot. A pending demote disarms
- * back to `secret` — undo means "back to what the server holds," not "keep
- * the flip."
- */
+/** Undo means back to what the server holds, so a pending demote disarms. */
 export function undoSecretEntry<T extends MaskedSecretState & SecrecyState>(
   entry: T,
 ): T {
@@ -91,7 +75,6 @@ export function undoSecretEntry<T extends MaskedSecretState & SecrecyState>(
   };
 }
 
-/** Restore a plain row to the server literal. */
 export function undoPlainEntry<T extends MaskedSecretState>(
   entry: T,
   serverValue: string,
@@ -99,7 +82,7 @@ export function undoPlainEntry<T extends MaskedSecretState>(
   return { ...entry, value: serverValue, dirty: false };
 }
 
-/** Mark the stored secret cleared (empty + dirty, so save sends `""`). */
+/** Empty + dirty, so save sends `""` (clear). */
 export function clearSecretEntry<T extends MaskedSecretState>(entry: T): T {
   return { ...entry, value: "", dirty: true };
 }
@@ -109,18 +92,12 @@ export function isUnset(entry: MaskedSecretState): boolean {
   return entry.dirty ? entry.value === "" : !entry.hadValue;
 }
 
-/**
- * Wire value for save: untouched secrets send `null` (keep), everything
- * else sends the literal input (`""` clears).
- */
+/** Untouched secrets send `null` (keep); everything else sends the literal. */
 export function valueForSave(entry: MaskedSecretState): string | null {
   return !entry.dirty && entry.hadValue ? null : entry.value;
 }
 
-/**
- * Local state after a successful save: the server now holds what we sent,
- * so secret inputs clear back to the untouched snapshot.
- */
+/** After save the server holds what we sent, so secrets reset to untouched. */
 export function markSaved(entry: MaskedSecretState): MaskedSecretState {
   return {
     hadValue: entry.dirty ? entry.value !== "" : entry.hadValue,
@@ -130,20 +107,9 @@ export function markSaved(entry: MaskedSecretState): MaskedSecretState {
 }
 
 /**
- * Env secrecy toggle as a transition over the one discriminant, not a
- * save-time branch.
- *
- * Promoting a plain row that already carries a value marks it dirty, so
- * `valueForSave` sends the carried plaintext and `markSaved` converges to
- * `hadValue: true` — otherwise the badge would say "unset" while the server
- * holds the secret. Re-promoting a pending row just disarms it.
- *
- * Demoting an untouched secret moves to `demote-pending` instead of
- * flipping to `plain`: we hold no plaintext to show, so the chrome stays
- * secret and the save sends keep (`null`) + plain-flip — never a lying
- * blank plain input. The server echo (plaintext) then heals the row through
- * `mergeServerEntries`. Demoting a row the user already touched flips
- * immediately to `plain`: the typed value is right there to send and show.
+ * Promote marks a value-carrying plain row dirty so the plaintext is sent
+ * (badge converges to set); demote pends on untouched secrets (secret
+ * chrome, keep + plain-flip on the wire) and flips at once when typed.
  */
 export function setRowSecret<T extends MaskedSecretState & SecrecyState>(
   row: T,
@@ -162,13 +128,7 @@ export function setRowSecret<T extends MaskedSecretState & SecrecyState>(
   return { ...row, secrecy: "plain" };
 }
 
-/**
- * Post-save fold for editors that mix secret and plain rows (stack env,
- * core config): secret-chrome rows clear back to the untouched snapshot,
- * plain rows keep their literals and only lose the dirty flag. The
- * keep/reset decision reads `chromeIsSecret` here, so editors never branch
- * on secrecy in their save handlers.
- */
+/** Keep/reset reads `chromeIsSecret`, so editors never branch on secrecy. */
 export function markMixedSaved<T extends MaskedSecretState & SecrecyState>(
   entry: T,
 ): T {
@@ -178,14 +138,8 @@ export function markMixedSaved<T extends MaskedSecretState & SecrecyState>(
 }
 
 /**
- * Server-echo convergence for prop-initialized lists: non-dirty rows are
- * rebuilt from the latest server snapshot, in-progress (dirty) rows are
- * never touched. A `demote-pending` row is merge-preserved intent: it
- * survives a still-secret echo (pre-save refetch from Deploy/Pull/focus —
- * the server hasn't flipped yet) and heals only when the echo arrives as
- * `plain` (post-save). Without this, any invalidate before save would
- * clobber the pending demote back to `secret` and the third state would
- * disagree with the sync policy that is supposed to heal it.
+ * Non-dirty rows absorb the snapshot, dirty rows are never touched. Pending
+ * intent survives a still-secret echo (pre-save refetch) and heals on plain.
  */
 export function mergeServerEntries<T extends MaskedSecretState & SecrecyState>(
   local: T[],
@@ -199,9 +153,8 @@ export function mergeServerEntries<T extends MaskedSecretState & SecrecyState>(
     if (entry.secrecy === "demote-pending") {
       const echoed = serverByKey.get(keyOf(entry));
       if (!echoed) return entry;
-      // Still secret on the server → keep the pending intent.
+      // Still secret on the server → the flip hasn't landed yet.
       if (echoed.secrecy === "secret") return entry;
-      // Plain echo → heal to the server plaintext.
       return echoed;
     }
     return serverByKey.get(keyOf(entry)) ?? entry;

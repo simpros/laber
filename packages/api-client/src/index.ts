@@ -5,15 +5,15 @@ export type ApiClient = Treaty.Create<App>;
 
 export type ApiClientOptions = {
   /**
-   * Extra headers sent with every request. Use this to forward the
-   * incoming `cookie` header so the API sees the caller's session:
+   * Forward the incoming `cookie` header so the API sees the caller's
+   * session:
    *
    * ```ts
    * createApiClient(url, { headers: { cookie: req.headers.get("cookie") ?? "" } })
    * ```
    */
   headers?: Treaty.Config["headers"];
-  /** Override the fetch implementation (useful for tests). */
+  /** Injectable fetch for tests. */
   fetcher?: Treaty.Config["fetcher"];
   onRequest?: Treaty.Config["onRequest"];
   onResponse?: Treaty.Config["onResponse"];

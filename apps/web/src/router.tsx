@@ -18,13 +18,7 @@ import RepositoryPage from "@/pages/RepositoryPage";
 import LoginPage from "@/pages/LoginPage";
 import SetupPage from "@/pages/SetupPage";
 
-/**
- * Setup probe for the route guards, over the same Eden client as every
- * other resource — one HTTP path, not a parallel hand-rolled fetch stack.
- * Fail-closed: any transport or shape failure throws, so the router renders
- * the error UI with a retry instead of inventing `needsSetup: false` and
- * misrouting to /login on a fresh DB.
- */
+/** Fail-closed probe: any failure throws to the retry UI, never misroutes. */
 async function fetchSetupStatus(): Promise<{ needsSetup: boolean }> {
   let status: { needsSetup: boolean };
   try {
@@ -41,10 +35,7 @@ async function fetchSetupStatus(): Promise<{ needsSetup: boolean }> {
   return status;
 }
 
-/**
- * Fail-closed like the setup probe: a transport blip must surface the retry
- * UI, not silently masquerade as logged-out and bounce to /login.
- */
+/** Fail-closed: a transport blip surfaces retry, never a fake logged-out bounce. */
 async function getSessionUser() {
   try {
     const { data } = await authClient.getSession({
@@ -59,7 +50,6 @@ async function getSessionUser() {
   }
 }
 
-/** One redirect matrix for the three guards: probe + session together. */
 async function loadGate() {
   const [{ needsSetup }, user] = await Promise.all([
     fetchSetupStatus(),
@@ -70,11 +60,7 @@ async function loadGate() {
 
 type GateKind = "login" | "setup" | "app";
 
-/**
- * The redirect matrix each route guard encodes: given the gate probe, the
- * target the route must bounce to, or `null` to stay. One table instead of
- * three hand-rolled `if` ladders.
- */
+/** One table instead of three hand-rolled `if` ladders. */
 function gateRedirect(
   kind: GateKind,
   gate: { needsSetup: boolean; user: unknown },
@@ -144,9 +130,7 @@ const appRoute = createRoute({
     const target = gateRedirect("app", await loadGate());
     if (target) throw redirect({ to: target });
   },
-  // The SSE stream sits behind the session guard: the provider mounts here,
-  // not at the SPA root — `/login` and `/setup` open zero EventSource
-  // traffic. (Svelte connected from the authenticated layout; same rule.)
+  // SSE mounts behind the session guard, so unauthenticated routes open zero EventSources.
   component: () => (
     <ActivityProvider>
       <Layout>
@@ -186,11 +170,7 @@ export const stackDetailRoute = createRoute({
   component: StackDetailRouteComponent,
 });
 
-/**
- * One-line wrapper: reads params/search from the route and passes them as
- * plain props, so the page module never imports this router module back
- * (no module cycle — the dependency stays router → page).
- */
+/** Props cross the router → page boundary, so this module never imports back. */
 function StackDetailRouteComponent() {
   const { name } = stackDetailRoute.useParams();
   const { tab } = stackDetailRoute.useSearch();

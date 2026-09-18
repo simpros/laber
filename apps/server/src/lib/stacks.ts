@@ -50,15 +50,10 @@ export async function listStacks() {
 }
 
 /**
- * Compose read for detail: missing file → empty defaults (nothing to show);
- * present-but-invalid → loud `ValidationError`, the same gate deploy
- * enforces, so the UI looks broken instead of empty. The missing-vs-invalid
- * branch lives in `loadCompose` — detail is a call site, not a policy owner.
+ * Missing file → empty defaults; present-but-invalid → loud `ValidationError`
+ * (the same gate deploy enforces, so the UI looks broken instead of empty).
  */
 function loadComposeForDetail(composePath: string, repoId: string) {
-  // Single disk read through the one compose gate (envelope + secret
-  // refs): a present-but-invalid file throws `ValidationError`, the same
-  // gate deploy and save enforce, so the UI looks broken instead of empty.
   const loaded = loadCompose(composePath, { missing: "empty" });
   if (!loaded.doc) {
     return {
@@ -81,13 +76,10 @@ function loadComposeForDetail(composePath: string, repoId: string) {
 }
 
 export async function getStackDetail(name: string) {
-  // One context loader for reads and mutations: a stack whose repo row is
-  // gone is corrupt, not "empty" — detail 404s like deploy/stop do.
+  // A stack whose repo row is gone is corrupt, not "empty": 404 like deploy/stop do.
   const { stack, repo, composePath } = await getStackAndRepo(name);
 
-  // Independent reads, fetched together: env, secrets, logs, Docker state.
-  // Container state is the soft contract: an unreadable daemon reads as
-  // "unknown" (empty), never a 500 on a read path.
+  // An unreadable daemon reads as "unknown" (empty), never a 500 on a read path.
   const [envVars, secrets, logs, containers] = await Promise.all([
     db
       .select()
