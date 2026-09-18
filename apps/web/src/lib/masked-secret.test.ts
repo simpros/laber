@@ -1,12 +1,20 @@
 import { describe, it, expect } from "bun:test";
 import {
+  clearSecretEntry,
+  effectiveIsSecret,
   secretStatus,
   isUnset,
   valueForSave,
   markSaved,
   markMixedSaved,
+  maskedFromServer,
   mergeServerEntries,
   setRowSecret,
+  touchEntry,
+  undoPlainEntry,
+  undoSecretEntry,
+  type DemotableSecretState,
+  type MaskedSecretState,
 } from "./masked-secret";
 
 describe("secretStatus", () => {
@@ -64,13 +72,88 @@ describe("isUnset / markSaved", () => {
   });
 });
 
+describe("maskedFromServer", () => {
+  it("blanks secrets with hadValue, carries plain literals", () => {
+    expect(
+      maskedFromServer({ isSecret: true, hasValue: true }),
+    ).toEqual({ value: "", hadValue: true, dirty: false });
+    expect(
+      maskedFromServer({ isSecret: true, hasValue: false }),
+    ).toEqual({ value: "", hadValue: false, dirty: false });
+    expect(
+      maskedFromServer({ isSecret: false, value: "example.com" }),
+    ).toEqual({ value: "example.com", hadValue: false, dirty: false });
+    expect(maskedFromServer({ isSecret: false })).toEqual({
+      value: "",
+      hadValue: false,
+      dirty: false,
+    });
+  });
+});
+
+describe("touch / undo / clear transitions", () => {
+  it("touch sets the value and marks the row dirty", () => {
+    expect(
+      touchEntry<MaskedSecretState>(
+        { hadValue: true, value: "", dirty: false },
+        "new",
+      ),
+    ).toEqual({ hadValue: true, value: "new", dirty: true });
+  });
+
+  it("undoSecret reverts and disarms a pending demote", () => {
+    expect(
+      undoSecretEntry<DemotableSecretState>({
+        hadValue: true,
+        value: "",
+        dirty: false,
+        isSecret: true,
+        demoteArmed: true,
+      }),
+    ).toEqual({
+      hadValue: true,
+      value: "",
+      dirty: false,
+      isSecret: true,
+      demoteArmed: false,
+    });
+  });
+
+  it("undoPlain restores the server literal", () => {
+    expect(
+      undoPlainEntry<MaskedSecretState>(
+        { hadValue: false, value: "typing", dirty: true },
+        "example.com",
+      ),
+    ).toEqual({ hadValue: false, value: "example.com", dirty: false });
+  });
+
+  it("clear marks the stored secret cleared", () => {
+    expect(
+      clearSecretEntry<MaskedSecretState>({
+        hadValue: true,
+        value: "",
+        dirty: false,
+      }),
+    ).toEqual({ hadValue: true, value: "", dirty: true });
+  });
+});
+
 describe("setRowSecret", () => {
+  type TestRow = {
+    key: string;
+    value: string;
+    isSecret: boolean;
+    hadValue: boolean;
+    dirty: boolean;
+    demoteArmed?: boolean;
+  };
   const fold = <T extends { hadValue: boolean; value: string; dirty: boolean }>(
     entry: T,
   ) => ({ ...entry, ...markSaved(entry) });
 
   it("promote-to-secret converges through save (badge says set)", () => {
-    const plain = {
+    const plain: TestRow = {
       key: "TOKEN",
       value: "carried-plaintext",
       isSecret: false,
@@ -88,7 +171,7 @@ describe("setRowSecret", () => {
   });
 
   it("promote of an empty plain row stays unset", () => {
-    const plain = {
+    const plain: TestRow = {
       key: "TOKEN",
       value: "",
       isSecret: false,
@@ -100,8 +183,8 @@ describe("setRowSecret", () => {
     expect(secretStatus(fold(promoted))).toBe("unset");
   });
 
-  it("demote of an untouched secret keeps (null) instead of clearing", () => {
-    const secret = {
+  it("demote of an untouched secret arms instead of showing a blank plain", () => {
+    const secret: TestRow = {
       key: "TOKEN",
       value: "",
       isSecret: true,
@@ -109,11 +192,46 @@ describe("setRowSecret", () => {
       dirty: false,
     };
     const demoted = setRowSecret(secret, false);
+    // The save still sends keep (null), never ""…
     expect(valueForSave(demoted)).toBeNull();
+    // …but the chrome stays secret until the echo lands: no lying blank
+    // plain input, badge still "set", wire reads plain via the arm.
+    expect(demoted.isSecret).toBe(true);
+    expect(demoted.demoteArmed).toBe(true);
+    expect(effectiveIsSecret(demoted)).toBe(false);
+    expect(secretStatus(demoted)).toBe("set");
+  });
+
+  it("re-promoting an armed row disarms it", () => {
+    const secret: TestRow = {
+      key: "TOKEN",
+      value: "",
+      isSecret: true,
+      hadValue: true,
+      dirty: false,
+    };
+    const demoted = setRowSecret(secret, false);
+    expect(demoted.demoteArmed).toBe(true);
+    const restored = setRowSecret(demoted, true);
+    expect(restored).toEqual({ ...secret, demoteArmed: false });
+    expect(effectiveIsSecret(restored)).toBe(true);
+  });
+
+  it("demote of a row with nothing stored flips immediately", () => {
+    const secret: TestRow = {
+      key: "TOKEN",
+      value: "",
+      isSecret: true,
+      hadValue: false,
+      dirty: false,
+    };
+    const demoted = setRowSecret(secret, false);
+    expect(demoted.isSecret).toBe(false);
+    expect(valueForSave(demoted)).toBe("");
   });
 
   it("demote of a typed secret sends the typed value as plain", () => {
-    const secret = {
+    const secret: TestRow = {
       key: "TOKEN",
       value: "typed",
       isSecret: true,
@@ -121,6 +239,7 @@ describe("setRowSecret", () => {
       dirty: true,
     };
     const demoted = setRowSecret(secret, false);
+    expect(demoted.isSecret).toBe(false);
     expect(valueForSave(demoted)).toBe("typed");
   });
 });
@@ -203,10 +322,13 @@ describe("mergeServerEntries", () => {
     );
     // Wire still sends keep (null), never "".
     expect(valueForSave(demoted)).toBeNull();
-    // Post-save fold leaves the clean plain row alone…
+    // Post-save fold keeps the secret chrome (still armed — no blank plain
+    // lie)…
     const folded = markMixedSaved(demoted);
     expect(folded).toEqual({ ...demoted, dirty: false });
-    // …and the server echo (now plaintext) heals the blank input.
+    expect(folded.isSecret).toBe(true);
+    expect(effectiveIsSecret(folded)).toBe(false);
+    // …and the server echo (now plaintext) heals the row, disarming it.
     const echo: EnvRow = {
       key: "TOKEN",
       value: "kept-plaintext",

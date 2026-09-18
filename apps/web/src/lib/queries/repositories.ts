@@ -17,7 +17,7 @@ export type AddRepositoryInput = {
   sshPrivateKey: string | null;
 };
 
-export function useAddRepository(opts?: { onAdded?: () => void }) {
+export function useAddRepository(opts: { onAdded: () => void }) {
   return useApiMutation({
     mutationFn: async (input: AddRepositoryInput) => {
       const res = await api.api.repositories.post(input);
@@ -29,7 +29,7 @@ export function useAddRepository(opts?: { onAdded?: () => void }) {
       queryKeys.stacks,
       queryKeys.dashboard,
     ],
-    onSuccess: () => opts?.onAdded?.(),
+    onSuccess: () => opts.onAdded(),
   });
 }
 
@@ -49,7 +49,13 @@ export function useSyncRepository() {
       }
       return `Synced. Found ${parts.join(", ")} stack(s).`;
     },
-    invalidate: [queryKeys.repositories, queryKeys.stacks],
+    // Same dashboard coverage as add: repo/stack stats must converge no
+    // matter which repo command ran — one policy, not per-author memory.
+    invalidate: [
+      queryKeys.repositories,
+      queryKeys.stacks,
+      queryKeys.dashboard,
+    ],
   });
   return {
     ...mutation,
@@ -64,6 +70,11 @@ export function useRemoveRepository() {
       unwrap(res);
       return null;
     },
-    invalidate: [queryKeys.repositories, queryKeys.stacks],
+    // Same dashboard coverage as add; see `useSyncRepository`.
+    invalidate: [
+      queryKeys.repositories,
+      queryKeys.stacks,
+      queryKeys.dashboard,
+    ],
   });
 }

@@ -8,15 +8,21 @@ import {
   type CoreKeyGroup,
 } from "@/lib/core-keys";
 import {
+  clearSecretEntry,
   markMixedSaved,
-  useMaskedEntries,
+  maskedFromServer,
+  undoPlainEntry,
+  undoSecretEntry,
   valueForSave,
   type MaskedSecretState,
 } from "@/lib/masked-secret";
+import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import {
+  CORE_DEPLOY_ACTION,
+  CORE_STATUS_ACTIONS,
+  coreConfigSave,
   useCore,
   useCoreAction,
-  useSaveCoreConfig,
   type CoreAction,
 } from "@/lib/queries/core";
 import SecretBadge from "@/components/SecretBadge";
@@ -38,18 +44,18 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
 
+// Init policy lives in `maskedFromServer` — this only attaches the key.
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
-    const isSecret = keyDef.secret;
     return {
+      ...maskedFromServer({
+        isSecret: keyDef.secret,
+        value: stored?.value,
+        hasValue: stored?.hasValue,
+      }),
       key: keyDef.key,
-      isSecret,
-      // `hadValue` is only meaningful for secrets (the server never echoes
-      // secret values); plain rows always carry their literal value.
-      hadValue: isSecret && (stored?.hasValue ?? false),
-      value: isSecret ? "" : (stored?.value ?? ""),
-      dirty: false,
+      isSecret: keyDef.secret,
     };
   });
 }
@@ -62,9 +68,9 @@ function coreKeyOf(e: Pick<FieldState, "key">): string {
 /**
  * Mounted only once `QueryStatus` has the snapshot (parent renders it inside
  * the render-prop with `key="core"`), so fields init from props directly —
- * no init effect, no empty first paint. Two halves of one policy: the save
- * fold owns the optimistic snapshot, and the shared hook merges the server
- * echo into non-dirty rows underneath — a background refetch never clobbers
+ * no init effect, no empty first paint. Save orchestration (payload,
+ * mutation, optimistic fold) lives in the shared list hook; the server echo
+ * converges non-dirty rows underneath — a background refetch never clobbers
  * in-progress edits.
  */
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
@@ -76,39 +82,36 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   );
   const {
     entries: fields,
-    setEntries: setFields,
-    applySaved,
-  } = useMaskedEntries<FieldState>(() => fieldStatesFor(snapshot.config), {
-    values: serverValues,
+    touch,
+    update,
+    saveMutation,
+    handleSave,
+  } = useMaskedListEditor<FieldState, Partial<Record<CoreKey, string | null>>>({
+    init: () => fieldStatesFor(snapshot.config),
+    syncValues: serverValues,
     keyOf: coreKeyOf,
+    // `valueForSave` keys off `hadValue`/`dirty` — untouched secrets send
+    // null (keep) — and never looks at secrecy, so secrets and plains save
+    // through one path with no branch.
+    toPayload: (rows) => {
+      const values: Partial<Record<CoreKey, string | null>> = {};
+      for (const f of rows) {
+        values[f.key] = valueForSave(f);
+      }
+      return values;
+    },
+    save: coreConfigSave(),
+    // One fold for secrets and plains — the keep/reset decision lives in
+    // `markMixedSaved`, not here.
+    fold: markMixedSaved,
   });
 
-  const saveMutation = useSaveCoreConfig({
-    // The server now holds what we sent: fold it into the local snapshot
-    // instead of waiting for the refetch. One fold for secrets and plains —
-    // the keep/reset decision lives in `markMixedSaved`, not here.
-    onSaved: () => applySaved(markMixedSaved),
-  });
-
-  const byKey = new Map(fields.map((f) => [f.key, f]));
-
-  function updateField(key: string, patch: Partial<FieldState>) {
-    setFields((prev) =>
-      prev.map((f) => (f.key === key ? { ...f, ...patch } : f)),
-    );
-  }
-
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    const values: Partial<Record<CoreKey, string | null>> = {};
-    for (const f of fields) {
-      // `valueForSave` keys off `hadValue`/`dirty` — untouched secrets send
-      // null (keep) — and never looks at secrecy, so secrets and plains save
-      // through one path with no branch.
-      values[f.key] = valueForSave(f);
-    }
-    saveMutation.mutate(values);
-  }
+  // Index-addressed like Env/Secrets: one list model, no parallel by-key
+  // `updateField` — the grouped render resolves indices once per render.
+  const indexByKey = useMemo(
+    () => new Map(fields.map((f, i) => [f.key, i] as const)),
+    [fields],
+  );
 
   return (
     <form onSubmit={handleSave}>
@@ -130,7 +133,9 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
             />
             <div className="space-y-4 p-5">
               {group.keys.map((keyDef) => {
-                const field = byKey.get(keyDef.key);
+                const i = indexByKey.get(keyDef.key);
+                if (i === undefined) return null;
+                const field = fields[i];
                 if (!field) return null;
                 return (
                   <div
@@ -151,28 +156,21 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                         isSecret={field.isSecret}
                         entry={field}
                         placeholder={keyDef.placeholder}
-                        onInput={(value) =>
-                          updateField(keyDef.key, { value, dirty: true })
-                        }
+                        onInput={(value) => touch(i, value)}
                         onUndo={() =>
-                          updateField(
-                            keyDef.key,
+                          update(
+                            i,
                             field.isSecret
-                              ? { value: "", dirty: false }
-                              : {
-                                  value:
-                                    snapshot.config[keyDef.key]?.value ?? "",
-                                  dirty: false,
-                                },
+                              ? undoSecretEntry(field)
+                              : undoPlainEntry(
+                                  field,
+                                  snapshot.config[keyDef.key]?.value ?? "",
+                                ),
                           )
                         }
                         onClear={
                           field.isSecret
-                            ? () =>
-                                updateField(keyDef.key, {
-                                  value: "",
-                                  dirty: true,
-                                })
+                            ? () => update(i, clearSecretEntry(field))
                             : undefined
                         }
                       />
@@ -232,19 +230,7 @@ export default function CorePage() {
                 title="Status"
                 actions={
                   <LifecycleToolbar
-                    actions={[
-                      {
-                        action: "restart",
-                        label: "Restart",
-                        pendingLabel: "Restarting...",
-                      },
-                      {
-                        action: "stop",
-                        label: "Stop",
-                        pendingLabel: "Stopping...",
-                        variant: "danger",
-                      },
-                    ]}
+                    actions={CORE_STATUS_ACTIONS}
                     pendingAction={pendingAction}
                     isPending={actionMutation.isPending}
                     onAction={handleAction}
@@ -276,16 +262,17 @@ export default function CorePage() {
 
           <CoreConfigForm key="core" snapshot={data} />
 
+          {/* Deploy renders through the same toolbar path (catalog-owned
+           * copy), even though layout keeps it at the bottom. */}
           <div className="-mt-4 flex justify-end">
-            <Button
-              variant="primary"
-              disabled={actionMutation.isPending || !data.isConfigured}
-              onClick={() => handleAction("deploy")}
-            >
-              {pendingAction === "deploy"
-                ? "Deploying..."
-                : "Deploy Core Stack"}
-            </Button>
+            <LifecycleToolbar
+              actions={[CORE_DEPLOY_ACTION]}
+              pendingAction={pendingAction}
+              isPending={actionMutation.isPending}
+              disabled={!data.isConfigured}
+              onAction={handleAction}
+              size="md"
+            />
           </div>
         </div>
       )}

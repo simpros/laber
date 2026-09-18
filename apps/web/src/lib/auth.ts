@@ -51,3 +51,21 @@ export async function enterApp(router: {
   await router.invalidate();
   await router.navigate({ to: "/" });
 }
+
+/**
+ * The inverse of `enterApp`: clear the session's query cache, refresh the
+ * gate, then leave for `/login` — so stale dashboard/stack data can never
+ * survive into the next session and navigation has one owner. Call only
+ * after the session is actually destroyed (`signOut`).
+ */
+export async function leaveApp(
+  router: {
+    invalidate: () => Promise<unknown>;
+    navigate: (opts: { to: string }) => Promise<unknown> | unknown;
+  },
+  queryClient: { clear: () => void },
+): Promise<void> {
+  queryClient.clear();
+  await router.invalidate();
+  await router.navigate({ to: "/login" });
+}

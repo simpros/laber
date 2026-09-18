@@ -23,9 +23,9 @@ export function StackComposeView({
     if (!editing) setDraft(content);
   }, [content, editing]);
 
-  const saveMutation = useSaveStackCompose(stackName, {
-    onSaved: () => setEditing(false),
-  });
+  const saveMutation = useSaveStackCompose(stackName, () =>
+    setEditing(false),
+  );
 
   function toggleEditing() {
     setDraft(content);

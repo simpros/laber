@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@laber/ui";
-import { signOut, useSession } from "@/lib/auth";
+import { leaveApp, signOut, useSession } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { useActivity } from "@/lib/activity";
 
@@ -140,17 +141,16 @@ export default function AppSidebar({
 }) {
   const { theme, toggle } = useTheme();
   const { data: session } = useSession();
-  const navigate = useNavigate();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const user = session?.user;
 
+  // The inverse of `enterApp`: destroy the session, then hand the whole
+  // exit (cache clear + gate refresh + navigation) to `leaveApp` — one
+  // call, no `fetchOptions.onSuccess` navigation branch.
   async function handleSignOut() {
-    await signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          navigate({ to: "/login" });
-        },
-      },
-    });
+    await signOut();
+    await leaveApp(router, queryClient);
   }
 
   return (

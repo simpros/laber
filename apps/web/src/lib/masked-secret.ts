@@ -14,11 +14,86 @@ export type MaskedSecretState = {
   dirty: boolean;
 };
 
+/**
+ * A secret row that can also flip secrecy (stack env): `isSecret` owns the
+ * chrome, `demoteArmed` marks a demote that is waiting for the server echo.
+ * Both stay optional so always-secret rows (stack secrets) share the same
+ * transitions without carrying flags they never read.
+ */
+export type DemotableSecretState = MaskedSecretState & {
+  isSecret?: boolean;
+  /**
+   * Demote armed on an untouched secret: the save flips the row to plain
+   * (keep, via `null`) but the chrome stays secret until the refetch echoes
+   * the plaintext — so the UI never shows a lying blank plain input that a
+   * user could "fill in" and overwrite the kept value with.
+   */
+  demoteArmed?: boolean;
+};
+
 export type SecretStatus = "set" | "unset" | "modified" | "will-clear";
 
 export function secretStatus(entry: MaskedSecretState): SecretStatus {
   if (entry.dirty) return entry.value === "" ? "will-clear" : "modified";
   return entry.hadValue ? "set" : "unset";
+}
+
+/**
+ * Server snapshot → local row, the one init policy every list editor shares:
+ * secrets blank out (the server never echoes values) with `hadValue` from
+ * the server; plain rows carry their literal. Callers only attach identity
+ * fields (key/name/…) on top.
+ */
+export function maskedFromServer({
+  isSecret,
+  value,
+  hasValue,
+}: {
+  isSecret: boolean;
+  value?: string;
+  hasValue?: boolean;
+}): MaskedSecretState {
+  return isSecret
+    ? { value: "", hadValue: hasValue ?? false, dirty: false }
+    : { value: value ?? "", hadValue: false, dirty: false };
+}
+
+/** User typed: set the value and mark the row in progress. */
+export function touchEntry<T extends MaskedSecretState>(
+  entry: T,
+  value: string,
+): T {
+  return { ...entry, value, dirty: true };
+}
+
+/**
+ * Revert a secret row to the untouched snapshot. Also disarms a pending
+ * demote — undo means "back to what the server holds," not "keep the flip."
+ */
+export function undoSecretEntry<T extends DemotableSecretState>(entry: T): T {
+  return { ...entry, value: "", dirty: false, demoteArmed: false };
+}
+
+/** Restore a plain row to the server literal. */
+export function undoPlainEntry<T extends MaskedSecretState>(
+  entry: T,
+  serverValue: string,
+): T {
+  return { ...entry, value: serverValue, dirty: false };
+}
+
+/** Mark the stored secret cleared (empty + dirty, so save sends `""`). */
+export function clearSecretEntry<T extends MaskedSecretState>(entry: T): T {
+  return { ...entry, value: "", dirty: true };
+}
+
+/**
+ * Chrome secrecy for a demotable row: an armed demote keeps secret chrome
+ * (badge, keep-placeholder) until the server echo lands. The save wire
+ * reads this too — never raw `isSecret`.
+ */
+export function effectiveIsSecret(row: DemotableSecretState): boolean {
+  return (row.isSecret ?? false) && !row.demoteArmed;
 }
 
 /** True when the entry would save as empty (deploy skips writing it). */
@@ -52,17 +127,30 @@ export function markSaved(entry: MaskedSecretState): MaskedSecretState {
  * Promoting a plain row that already carries a value marks it dirty, so
  * `valueForSave` sends the carried plaintext and `markSaved` converges to
  * `hadValue: true` — otherwise the badge would say "unset" while the server
- * holds the secret. Demoting an untouched secret keeps `hadValue`, so the
- * save still sends `null` (keep): we hold no plaintext to send, and `""`
- * would wrongly clear the stored value.
+ * holds the secret. Re-promoting an armed row just disarms it.
+ *
+ * Demoting an untouched secret arms the demote instead of flipping
+ * `isSecret`: we hold no plaintext to show, so the chrome stays secret and
+ * the save sends keep (`null`) + plain-flip — never a lying blank plain
+ * input. The server echo (plaintext) then heals the row through
+ * `mergeServerEntries`. Demoting a row the user already touched flips
+ * immediately: the typed value is right there to send and show.
  */
-export function setRowSecret<
-  T extends MaskedSecretState & { isSecret: boolean },
->(row: T, next: boolean): T {
-  if (next && !row.isSecret && row.value !== "" && !row.dirty) {
-    return { ...row, isSecret: next, dirty: true };
+export function setRowSecret<T extends DemotableSecretState>(
+  row: T,
+  next: boolean,
+): T {
+  if (next) {
+    if (row.demoteArmed) return { ...row, demoteArmed: false };
+    if (!row.isSecret && row.value !== "" && !row.dirty) {
+      return { ...row, isSecret: next, dirty: true };
+    }
+    return { ...row, isSecret: next };
   }
-  return { ...row, isSecret: next };
+  if (row.isSecret && row.hadValue && !row.dirty) {
+    return { ...row, demoteArmed: true };
+  }
+  return { ...row, isSecret: false, demoteArmed: false };
 }
 
 /**
@@ -148,6 +236,11 @@ export function useMaskedEntries<T extends MaskedSecretState>(
     update: (index: number, patch: Partial<T>) =>
       setEntries((prev) =>
         prev.map((e, i) => (i === index ? { ...e, ...patch } : e)),
+      ),
+    /** User typed in row `index`: set the value and mark it in progress. */
+    touch: (index: number, value: string) =>
+      setEntries((prev) =>
+        prev.map((e, i) => (i === index ? touchEntry(e, value) : e)),
       ),
     applySaved: (fold: (entry: T) => T = (e) => ({ ...e, ...markSaved(e) })) =>
       setEntries((prev) => prev.map(fold)),

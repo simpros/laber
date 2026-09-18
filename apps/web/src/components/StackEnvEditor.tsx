@@ -1,18 +1,23 @@
 import { useMemo } from "react";
 import { Button, Icon } from "@laber/ui";
 import {
+  clearSecretEntry,
+  effectiveIsSecret,
   markMixedSaved,
+  maskedFromServer,
   setRowSecret,
-  useMaskedEntries,
+  undoPlainEntry,
+  undoSecretEntry,
   valueForSave,
   type MaskedSecretState,
 } from "@/lib/masked-secret";
-import { useSaveStackEnv } from "@/lib/queries/stacks";
+import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
+import { stackEnvSave, type StackEnvPayload } from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
 import MutationNotice from "@/components/MutationNotice";
 import ConfigValueField from "@/components/ConfigValueField";
 
-type EnvEntry = {
+export type EnvEntry = {
   key: string;
   value: string;
   isSecret: boolean;
@@ -21,31 +26,41 @@ type EnvEntry = {
 
 /**
  * One row model for both plain and secret vars: the shared masked-secret
- * state plus the row chrome. `hadValue` is only meaningful for secret rows
- * (the server never echoes secret values); plain rows always carry their
- * literal value.
+ * state plus the row chrome. Secrecy is always known here (unlike
+ * always-secret rows), so `isSecret` stays required and the save fold never
+ * guesses. Init policy lives in `maskedFromServer` — this only attaches the
+ * key.
  */
-type Row = MaskedSecretState & {
+export type EnvRow = MaskedSecretState & {
   key: string;
   isSecret: boolean;
+  demoteArmed?: boolean;
 };
 
-function rowFor(entry: EnvEntry): Row {
+export function rowForEnv(entry: EnvEntry): EnvRow {
   return {
+    ...maskedFromServer({
+      isSecret: entry.isSecret,
+      value: entry.value,
+      hasValue: entry.hasValue,
+    }),
     key: entry.key,
-    value: entry.isSecret ? "" : entry.value,
     isSecret: entry.isSecret,
-    hadValue: entry.isSecret && entry.hasValue,
-    dirty: false,
   };
 }
 
-function blankRow(key = ""): Row {
-  return { key, value: "", isSecret: false, hadValue: false, dirty: true };
+function blankRow(key = ""): EnvRow {
+  return {
+    key,
+    value: "",
+    isSecret: false,
+    hadValue: false,
+    dirty: true,
+  };
 }
 
 // Module-level so `useMaskedEntries` sync identity never thrashes.
-function envKeyOf(e: Pick<Row, "key">): string {
+function envKeyOf(e: Pick<EnvRow, "key">): string {
   return e.key;
 }
 
@@ -60,15 +75,36 @@ export default function StackEnvEditor({
 }) {
   // Owned by stack identity: the parent remounts per stack (`key={name}`),
   // so initializing from props once is correct — no fingerprint dance.
-  // Server echo owns convergence through the shared hook (heals a demoted
-  // row — local `""` becomes the server plaintext — without inventing a
-  // literal; dirty rows are never touched). The save fold is the optimistic
-  // half of the same hook-owned policy, not a second owner.
-  const serverValues = useMemo(() => envVars.map(rowFor), [envVars]);
-  const { entries, setEntries, update, applySaved } = useMaskedEntries<Row>(
-    () => envVars.map(rowFor),
-    { values: serverValues, keyOf: envKeyOf },
-  );
+  // Save orchestration (payload, mutation, optimistic fold) lives in the
+  // shared list hook; the server echo converges non-dirty rows underneath —
+  // including an armed demote, which heals to the server plaintext.
+  const serverValues = useMemo(() => envVars.map(rowForEnv), [envVars]);
+  const {
+    entries,
+    setEntries,
+    update,
+    touch,
+    saveMutation,
+    handleSave,
+  } = useMaskedListEditor<EnvRow, StackEnvPayload>({
+    init: () => envVars.map(rowForEnv),
+    syncValues: serverValues,
+    keyOf: envKeyOf,
+    // `valueForSave` keys off `hadValue`/`dirty` — "the server still holds a
+    // masked value we never echoed → null (keep)" — and `effectiveIsSecret`
+    // keeps an armed demote on secret chrome while flipping the wire to
+    // plain. Both toggle directions save with no branch.
+    toPayload: (rows) =>
+      rows.map((entry) => ({
+        key: entry.key,
+        value: valueForSave(entry),
+        isSecret: effectiveIsSecret(entry),
+      })),
+    save: stackEnvSave(stackName),
+    // One fold for secrets and plains — the keep/reset decision lives in
+    // `markMixedSaved`, not here.
+    fold: markMixedSaved,
+  });
 
   const serverByKey = useMemo(
     () => new Map(serverValues.map((e) => [e.key, e])),
@@ -78,27 +114,6 @@ export default function StackEnvEditor({
   const missingVars = detectedEnvVars.filter(
     (name) => !entries.some((e) => e.key === name),
   );
-
-  const saveMutation = useSaveStackEnv(stackName, {
-    // One fold for secrets and plains — the keep/reset decision lives in
-    // `markMixedSaved`; server echo (above) owns demote convergence.
-    onSaved: () => applySaved(markMixedSaved),
-  });
-
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    // `valueForSave` keys off `hadValue`/`dirty` — "the server still holds a
-    // masked value we never echoed → null (keep)" — and never looks at
-    // `isSecret`, so both toggle directions save correctly with no branch.
-    // The notice hides stale errors while pending, so no `reset()` ritual.
-    saveMutation.mutate(
-      entries.map((entry) => ({
-        key: entry.key,
-        value: valueForSave(entry),
-        isSecret: entry.isSecret,
-      })),
-    );
-  }
 
   function addEnvVar() {
     setEntries((prev) => [...prev, blankRow()]);
@@ -114,6 +129,24 @@ export default function StackEnvEditor({
 
   function removeEnvVar(index: number) {
     setEntries((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /** Pure-model undo in one line: secrets revert (and disarm demote), plains
+   * restore the server literal, brand-new rows remove themselves instead of
+   * inventing a literal. */
+  function undoRow(index: number) {
+    const entry = entries[index];
+    if (!entry) return;
+    if (entry.isSecret) {
+      update(index, undoSecretEntry(entry));
+      return;
+    }
+    const server = serverByKey.get(entry.key);
+    if (!server) {
+      removeEnvVar(index);
+      return;
+    }
+    update(index, undoPlainEntry(entry, server.isSecret ? "" : server.value));
   }
 
   return (
@@ -139,27 +172,11 @@ export default function StackEnvEditor({
                   placeholder="value"
                   keepPlaceholder="Hidden — leave empty to keep"
                   editPlaceholder="value"
-                  onInput={(value) => update(i, { value, dirty: true })}
-                  onUndo={() => {
-                    if (entry.isSecret) {
-                      update(i, { value: "", dirty: false });
-                      return;
-                    }
-                    const server = serverByKey.get(entry.key);
-                    if (!server) {
-                      // Brand-new row: nothing to restore, so undo removes
-                      // it instead of inventing a literal.
-                      removeEnvVar(i);
-                      return;
-                    }
-                    update(i, {
-                      value: !server.isSecret ? server.value : "",
-                      dirty: false,
-                    });
-                  }}
+                  onInput={(value) => touch(i, value)}
+                  onUndo={() => undoRow(i)}
                   onClear={
                     entry.isSecret
-                      ? () => update(i, { value: "", dirty: true })
+                      ? () => update(i, clearSecretEntry(entry))
                       : undefined
                   }
                 />
@@ -172,11 +189,15 @@ export default function StackEnvEditor({
               {entry.isSecret && <SecretBadge entry={entry} />}
               <label
                 className="text-text-muted flex items-center gap-1 text-xs"
-                title="Masks the value in the UI and hides it from API responses. The actual value is still stored and passed to Docker on deploy."
+                title={
+                  entry.demoteArmed
+                    ? "Demote armed — saving flips this row to plain. Re-check to cancel."
+                    : "Masks the value in the UI and hides it from API responses. The actual value is still stored and passed to Docker on deploy."
+                }
               >
                 <input
                   type="checkbox"
-                  checked={entry.isSecret}
+                  checked={effectiveIsSecret(entry)}
                   onChange={(e) =>
                     update(i, setRowSecret(entry, e.target.checked))
                   }

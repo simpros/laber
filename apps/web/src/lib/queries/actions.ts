@@ -1,6 +1,7 @@
 import {
   useMutation,
   useQueryClient,
+  type MutateOptions,
   type QueryKey,
 } from "@tanstack/react-query";
 import { unwrap } from "@/lib/api";
@@ -30,11 +31,11 @@ export function toErrorMessage(
  * The one mutation skeleton in the SPA. `mutationFn` resolves to the success
  * message shown in the page (`null` = silent success); failures surface
  * through React Query's `error`/`isError`, so no hook owns a parallel result
- * channel. Pages render `mutation.data` / `mutation.error` through
- * `MutationNotice` — multi-mutation surfaces pass the group and the notice
- * shows the latest-settled state; any pending hides stale notices on both
- * paths — so pages never choreograph sibling `reset()` calls and never
- * `reset()` themselves before firing.
+ * channel. Every submit starts by resetting the mutation's own terminal
+ * state, so a retry never shows the old failure while pending and pages
+ * never choreograph `reset()` calls — sibling or self. Pages render
+ * `mutation.data` / `mutation.error` through one `MutationNotice` per
+ * action.
  */
 export function useApiMutation<TData, TVariables>(opts: {
   mutationFn: (variables: TVariables) => Promise<TData>;
@@ -42,7 +43,7 @@ export function useApiMutation<TData, TVariables>(opts: {
   onSuccess?: (data: TData, variables: TVariables) => void;
 }) {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: opts.mutationFn,
     onSuccess: (data, variables) => {
       // Local snapshot folds first so it owns the save even if the
@@ -53,6 +54,18 @@ export function useApiMutation<TData, TVariables>(opts: {
       }
     },
   });
+  type Options = MutateOptions<TData, unknown, TVariables> | undefined;
+  return {
+    ...mutation,
+    mutate: (variables: TVariables, options?: Options) => {
+      mutation.reset();
+      return mutation.mutate(variables, options);
+    },
+    mutateAsync: (variables: TVariables, options?: Options) => {
+      mutation.reset();
+      return mutation.mutateAsync(variables, options);
+    },
+  };
 }
 
 type EdenResult = { data: unknown; error: unknown };

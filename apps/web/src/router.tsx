@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { authClient } from "@/lib/auth";
 import { api, unwrap } from "@/lib/api";
+import { ActivityProvider } from "@/lib/activity";
 import Layout from "@/components/Layout";
 import DashboardPage from "@/pages/DashboardPage";
 import StacksPage from "@/pages/StacksPage";
@@ -143,10 +144,15 @@ const appRoute = createRoute({
     const target = gateRedirect("app", await loadGate());
     if (target) throw redirect({ to: target });
   },
+  // The SSE stream sits behind the session guard: the provider mounts here,
+  // not at the SPA root — `/login` and `/setup` open zero EventSource
+  // traffic. (Svelte connected from the authenticated layout; same rule.)
   component: () => (
-    <Layout>
-      <Outlet />
-    </Layout>
+    <ActivityProvider>
+      <Layout>
+        <Outlet />
+      </Layout>
+    </ActivityProvider>
   ),
 });
 

@@ -24,8 +24,8 @@ export function MaskedSecretField({
   entry: MaskedSecretState;
   /** User typed: caller sets value + dirty. */
   onInput: (value: string) => void;
-  /** Revert to the untouched snapshot. */
-  onUndo: () => void;
+  /** Revert to the untouched snapshot. Omit to hide Undo. */
+  onUndo?: () => void;
   /** Mark the stored value cleared (empty + dirty). Omit to hide Clear. */
   onClear?: () => void;
   type?: "password" | "text";
@@ -44,7 +44,7 @@ export function MaskedSecretField({
         placeholder={keep ? keepPlaceholder : editPlaceholder}
         className="flex-1 font-mono text-sm"
       />
-      {entry.dirty ? (
+      {entry.dirty && onUndo ? (
         <button
           type="button"
           onClick={onUndo}

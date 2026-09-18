@@ -20,12 +20,15 @@ export function LifecycleToolbar<TAction extends string>({
   isPending,
   onAction,
   size = "sm",
+  disabled,
 }: {
   actions: LifecycleActionItem<TAction>[];
   pendingAction: TAction | undefined;
   isPending: boolean;
   onAction: (action: TAction) => void;
   size?: ButtonSize;
+  /** Extra disable reason beyond a running action (e.g. not configured). */
+  disabled?: boolean;
 }) {
   return (
     <>
@@ -34,7 +37,7 @@ export function LifecycleToolbar<TAction extends string>({
           key={item.action}
           variant={item.variant ?? "secondary"}
           size={size}
-          disabled={isPending}
+          disabled={disabled || isPending}
           onClick={() => onAction(item.action)}
         >
           {pendingAction === item.action ? item.pendingLabel : item.label}

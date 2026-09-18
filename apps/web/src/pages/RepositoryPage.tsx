@@ -36,9 +36,12 @@ export default function RepositoryPage() {
     setFormValues((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function handleAddSubmit(e: React.FormEvent) {
+  function handleAddSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await addMutation.mutateAsync({
+    // Fire-and-forget: `MutationNotice` is the one error owner, and the form
+    // closes in `onAdded` on success only — awaiting here would surface the
+    // same failure twice (rejected submit + notice).
+    addMutation.mutate({
       name: formValues.name,
       url: formValues.url,
       branch: formValues.branch || "main",
@@ -75,18 +78,20 @@ export default function RepositoryPage() {
         )}
       </div>
 
+      {/* One small notice per action: each mutation resets its own terminal
+       * state on submit, so no sibling choreography and no latest-settled
+       * group — a stale Add failure can never hide behind a Sync success. */}
       <MutationNotice
-        mutations={[
-          { mutation: addMutation, errorFallback: "Failed to add repository" },
-          {
-            mutation: syncMutation,
-            errorFallback: "Failed to sync repository",
-          },
-          {
-            mutation: removeMutation,
-            errorFallback: "Failed to remove repository",
-          },
-        ]}
+        mutation={addMutation}
+        errorFallback="Failed to add repository"
+      />
+      <MutationNotice
+        mutation={syncMutation}
+        errorFallback="Failed to sync repository"
+      />
+      <MutationNotice
+        mutation={removeMutation}
+        errorFallback="Failed to remove repository"
       />
 
       {(showAddForm || data.repositories.length === 0) && (

@@ -5,8 +5,8 @@ import type { MaskedSecretState } from "@/lib/masked-secret";
  * One value field for every config row in the SPA: secret rows get the
  * shared `MaskedSecretField` (keep/clear contract from `lib/masked-secret`),
  * plain rows get the echoed literal plus an Undo that restores the server
- * value. Callers pass `onUndo` only when a server value exists to restore —
- * brand-new rows omit it and show no Undo.
+ * value. `onUndo` is optional everywhere — brand-new rows omit it and show
+ * no Undo.
  */
 export function ConfigValueField({
   id,
@@ -33,10 +33,8 @@ export function ConfigValueField({
   editPlaceholder?: string;
   /** User typed: caller sets value + dirty. */
   onInput: (value: string) => void;
-  /** Restore the server literal (plain) / untouched snapshot (secret).
-   * Brand-new env rows pass a remove-the-row undo so the affordance stays
-   * honest instead of inventing a literal. */
-  onUndo: () => void;
+  /** Restore the server literal (plain) / untouched snapshot (secret). */
+  onUndo?: () => void;
   /** Mark the stored secret cleared. Secret rows only; omit to hide Clear. */
   onClear?: () => void;
 }) {
@@ -65,7 +63,7 @@ export function ConfigValueField({
         placeholder={placeholder}
         className={inputClassName}
       />
-      {entry.dirty ? (
+      {entry.dirty && onUndo ? (
         <button
           type="button"
           onClick={onUndo}

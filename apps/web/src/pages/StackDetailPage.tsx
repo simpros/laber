@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   stackIsRunning,
+  stackLifecycleActions,
   useStackAction,
   useStackDetail,
   type StackAction,
@@ -11,9 +12,7 @@ import StackSecretsEditor from "@/components/StackSecretsEditor";
 import StackComposeView from "@/components/StackComposeView";
 import StackDeploymentLogs from "@/components/StackDeploymentLogs";
 import MutationNotice from "@/components/MutationNotice";
-import LifecycleToolbar, {
-  type LifecycleActionItem,
-} from "@/components/LifecycleToolbar";
+import LifecycleToolbar from "@/components/LifecycleToolbar";
 import QueryStatus from "@/components/QueryStatus";
 
 const tabs = [
@@ -54,32 +53,9 @@ export default function StackDetailPage({
   return (
     <QueryStatus query={query} failedMessage="Failed to load stack">
       {(data) => {
-        const isRunning = stackIsRunning(data);
-        const lifecycleActions: LifecycleActionItem<StackAction>[] = [
-          { action: "pull", label: "Pull", pendingLabel: "Pulling..." },
-          ...(isRunning
-            ? ([
-                {
-                  action: "restart",
-                  label: "Restart",
-                  pendingLabel: "Restarting...",
-                },
-                {
-                  action: "stop",
-                  label: "Stop",
-                  pendingLabel: "Stopping...",
-                  variant: "danger",
-                },
-              ] as const)
-            : ([
-                {
-                  action: "deploy",
-                  label: "Deploy",
-                  pendingLabel: "Deploying...",
-                  variant: "primary",
-                },
-              ] as const)),
-        ];
+        // The action list lives in the query layer next to `stackIsRunning`
+        // — the page renders the catalog, it never builds it.
+        const lifecycleActions = stackLifecycleActions(stackIsRunning(data));
 
         return (
     <div className="space-y-6">

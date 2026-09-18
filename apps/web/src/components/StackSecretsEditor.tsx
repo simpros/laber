@@ -1,44 +1,49 @@
 import { useMemo } from "react";
 import { Button, Icon } from "@laber/ui";
 import {
+  clearSecretEntry,
   isUnset,
-  useMaskedEntries,
+  maskedFromServer,
+  undoSecretEntry,
   valueForSave,
   type MaskedSecretState,
 } from "@/lib/masked-secret";
-import { useSaveStackSecrets } from "@/lib/queries/stacks";
+import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
+import {
+  stackSecretsSave,
+  type StackSecretPayload,
+} from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
 import MutationNotice from "@/components/MutationNotice";
 import { MaskedSecretField } from "@/components/MaskedSecretField";
 
-type SecretEntry = {
+export type SecretEntry = {
   name: string;
   filePath: string;
   services: string[];
   hasValue: boolean;
 };
 
-type Row = MaskedSecretState & {
+export type SecretRow = MaskedSecretState & {
   name: string;
   filePath: string;
   services: string[];
 };
 
 // Module-level so `useMaskedEntries` sync identity never thrashes.
-function secretKeyOf(e: Pick<Row, "name">): string {
+function secretKeyOf(e: Pick<SecretRow, "name">): string {
   return e.name;
 }
 
 // One row builder for mount and server-echo snapshots so the two cannot
-// drift apart.
-function rowForSecret(s: SecretEntry): Row {
+// drift apart. Init policy lives in `maskedFromServer` — this only attaches
+// the secret identity fields.
+export function rowForSecret(s: SecretEntry): SecretRow {
   return {
+    ...maskedFromServer({ isSecret: true, hasValue: s.hasValue }),
     name: s.name,
     filePath: s.filePath,
     services: s.services,
-    hadValue: s.hasValue,
-    value: "",
-    dirty: false,
   };
 }
 
@@ -53,28 +58,20 @@ export default function StackSecretsEditor({
   // so initializing from props once is correct — no fingerprint dance.
   // Server echo converges through the same hook every list editor uses.
   const serverValues = useMemo(() => secrets.map(rowForSecret), [secrets]);
-  const { entries, update, applySaved } = useMaskedEntries<Row>(
-    () => secrets.map(rowForSecret),
-    { values: serverValues, keyOf: secretKeyOf },
-  );
+  const { entries, update, touch, saveMutation, handleSave } =
+    useMaskedListEditor<SecretRow, StackSecretPayload>({
+      init: () => secrets.map(rowForSecret),
+      syncValues: serverValues,
+      keyOf: secretKeyOf,
+      toPayload: (rows) =>
+        rows.map((entry) => ({
+          name: entry.name,
+          value: valueForSave(entry),
+        })),
+      save: stackSecretsSave(stackName),
+    });
 
   const unsetCount = entries.filter(isUnset).length;
-
-  const saveMutation = useSaveStackSecrets(stackName, {
-    // The server now holds what we sent: secrets clear back to the
-    // untouched snapshot instead of waiting for the refetch.
-    onSaved: () => applySaved(),
-  });
-
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    saveMutation.mutate(
-      entries.map((entry) => ({
-        name: entry.name,
-        value: valueForSave(entry),
-      })),
-    );
-  }
 
   if (entries.length === 0) {
     return (
@@ -90,7 +87,7 @@ export default function StackSecretsEditor({
         {unsetCount > 0 && (
           <div className="border-warning/30 bg-warning/5 flex items-center gap-2 rounded-lg border px-3 py-2">
             <Icon className="text-warning shrink-0">
-              <path d="M8 1a1 1 0 0 1 .867.5l6.928 12A1 1 0 0 1 14.928 15H1.072a1 1 0 0 1-.867-1.5l6.928-12A1 1 0 0 1 8 1ZM8 5a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 8 5Zm0 8a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" />
+              <path d="M8 1a1 1 0 0 1 .867.5l6.928 12A1 1 0 0 1 14.928 15H1.072a1 1 0 0 1-.867-1.5l6.928-12A1 1 0 0 1 8 1ZM8 5a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 8 5Zm0 8a.75.75 0 1 0 0-1.5.75.75 0 1 0 0 1.5Z" />
             </Icon>
             <span className="text-warning text-xs">
               {unsetCount} secret{unsetCount > 1 ? "s" : ""} without a
@@ -117,9 +114,9 @@ export default function StackSecretsEditor({
 
             <MaskedSecretField
               entry={entry}
-              onInput={(value) => update(i, { value, dirty: true })}
-              onUndo={() => update(i, { value: "", dirty: false })}
-              onClear={() => update(i, { value: "", dirty: true })}
+              onInput={(value) => touch(i, value)}
+              onUndo={() => update(i, undoSecretEntry(entry))}
+              onClear={() => update(i, clearSecretEntry(entry))}
             />
 
             <div className="text-text-muted mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">

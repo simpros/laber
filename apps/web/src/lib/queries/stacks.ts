@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
 import { queryKeys, useApiMutation, useLifecycleAction } from "./actions";
+import type { LifecycleActionItem } from "@/components/LifecycleToolbar";
 
 export function useStacks() {
   return useQuery({
@@ -44,6 +45,37 @@ export function useStackAction(name: string) {
   });
 }
 
+/**
+ * The stack lifecycle catalog: the action list the detail page renders,
+ * owned by the query layer next to `stackIsRunning` — no inline spreads or
+ * casts in the page. Deploy shows when stopped; restart/stop when running.
+ */
+export function stackLifecycleActions(
+  isRunning: boolean,
+): LifecycleActionItem<StackAction>[] {
+  if (isRunning) {
+    return [
+      { action: "pull", label: "Pull", pendingLabel: "Pulling..." },
+      { action: "restart", label: "Restart", pendingLabel: "Restarting..." },
+      {
+        action: "stop",
+        label: "Stop",
+        pendingLabel: "Stopping...",
+        variant: "danger",
+      },
+    ];
+  }
+  return [
+    { action: "pull", label: "Pull", pendingLabel: "Pulling..." },
+    {
+      action: "deploy",
+      label: "Deploy",
+      pendingLabel: "Deploying...",
+      variant: "primary",
+    },
+  ];
+}
+
 /** Render-local `isRunning` used to be recomputed in the page; the query
  * layer owns it so every consumer reads one rule. */
 export function stackIsRunning(detail: {
@@ -62,12 +94,15 @@ export type StackEnvPayload = Array<{
   isSecret: boolean;
 }>;
 
-export function useSaveStackEnv(
-  stackName: string,
-  opts?: { onSaved?: () => void },
-) {
-  return useApiMutation({
-    mutationFn: async (entries: StackEnvPayload) => {
+/**
+ * Query-layer half of the env save: wire call + invalidation. The editor
+ * passes this into `useMaskedListEditor`, which owns entries, payload, and
+ * the post-save fold — no `useSave*` hook with an optional `onSaved` every
+ * caller must remember.
+ */
+export function stackEnvSave(stackName: string) {
+  return {
+    mutationFn: async (entries: StackEnvPayload): Promise<null> => {
       const res = await api.api
         .stacks({ name: stackName })
         .env.put({ entries });
@@ -75,8 +110,7 @@ export function useSaveStackEnv(
       return null;
     },
     invalidate: [queryKeys.stack(stackName)],
-    onSuccess: () => opts?.onSaved?.(),
-  });
+  };
 }
 
 export type StackSecretPayload = Array<{
@@ -84,12 +118,10 @@ export type StackSecretPayload = Array<{
   value: string | null;
 }>;
 
-export function useSaveStackSecrets(
-  stackName: string,
-  opts?: { onSaved?: () => void },
-) {
-  return useApiMutation({
-    mutationFn: async (entries: StackSecretPayload) => {
+/** Query-layer half of the secrets save; see `stackEnvSave`. */
+export function stackSecretsSave(stackName: string) {
+  return {
+    mutationFn: async (entries: StackSecretPayload): Promise<null> => {
       const res = await api.api
         .stacks({ name: stackName })
         .secrets.put({ entries });
@@ -97,13 +129,12 @@ export function useSaveStackSecrets(
       return null;
     },
     invalidate: [queryKeys.stack(stackName)],
-    onSuccess: () => opts?.onSaved?.(),
-  });
+  };
 }
 
 export function useSaveStackCompose(
   stackName: string,
-  opts?: { onSaved?: () => void },
+  onSaved: () => void,
 ) {
   return useApiMutation({
     mutationFn: async (content: string) => {
@@ -114,6 +145,6 @@ export function useSaveStackCompose(
       return null;
     },
     invalidate: [queryKeys.stack(stackName)],
-    onSuccess: () => opts?.onSaved?.(),
+    onSuccess: () => onSaved(),
   });
 }
