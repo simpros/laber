@@ -25,7 +25,6 @@ const tabs = [
 
 export type StackTab = (typeof tabs)[number]["id"];
 
-/** Props arrive from the route wrapper, so this module never imports the router back. */
 export default function StackDetailPage({
   name,
   tab,

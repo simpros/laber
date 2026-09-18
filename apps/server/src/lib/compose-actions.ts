@@ -20,12 +20,7 @@ type OpCtx = {
 
 type OpDef = {
   action: string;
-  /** Stop owns runtime intent (`stack`); restart/pull are log-only (`stack-log`). */
   stackIdentity: (stackId: string) => ActionIdentity;
-  /**
-   * Stop removes the containers the sync probe reads, so it holds the lock;
-   * restart/pull neither start nor remove projects, so they run unlocked.
-   */
   holdsRepoLock: boolean;
   title: (label: string) => string;
   failureMessage: (label: string) => string;
@@ -34,7 +29,6 @@ type OpDef = {
   }>;
 };
 
-// One lifecycle table for stacks and core: each op owns its `run`, so callers never branch on the op name.
 const OPS: Record<LifecycleOp, OpDef> = {
   stop: {
     action: "stop",
@@ -73,7 +67,6 @@ const OPS: Record<LifecycleOp, OpDef> = {
   },
 };
 
-/** One logged-lifecycle shell: status machine, title, and failure phrasing live once. */
 function runLifecycleOp(
   op: LifecycleOp,
   identity: ActionIdentity,
@@ -93,10 +86,6 @@ function runLifecycleOp(
   });
 }
 
-/**
- * Stop holds the per-repo lock (it removes the containers the sync probe
- * reads); restart/pull run unlocked. Restart/pull never write status.
- */
 export async function runStackOp(
   name: string,
   op: LifecycleOp
@@ -122,7 +111,6 @@ export async function runStackOp(
 
 type CoreOp = "stop" | "restart";
 
-/** Core shares the one `OPS` table with stacks; no stack row, so no status commit. */
 export function runCoreOp(op: CoreOp): Promise<{ output: string }> {
   return runLifecycleOp(op, { kind: "core" }, {
     projectName: CORE_PROJECT,

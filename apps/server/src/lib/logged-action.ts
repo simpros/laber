@@ -4,10 +4,6 @@ import { createActivity, appendOutput, finishActivity } from "./activity";
 import type { Activity } from "./activity";
 import { ActionFailedError } from "./errors";
 
-/**
- * Only `stack` deploy/stop moves `stacks.status`; `stack-log`/`core` never
- * do. Repo ops use `runActivity` (transcript only) so the dashboard never mistakes them for deploy history.
- */
 export type ActionIdentity =
   | { kind: "stack"; stackId: string; onSuccess: "deployed" | "stopped" }
   | { kind: "stack-log"; stackId: string }
@@ -21,8 +17,6 @@ async function recordActionOutcome(options: {
 }): Promise<void> {
   const outcome = options.result.success ? "success" : "error";
 
-  // Deployment log + status commit together; the activity finishes only after
-  // the tx commits, so a persist failure after a successful run never reads as success.
   try {
     db.transaction((tx) => {
       const stackId =
@@ -40,8 +34,6 @@ async function recordActionOutcome(options: {
         })
         .run();
 
-      // Only `stack` moves the column (UI/history); `stack-log` leaves it
-      // alone so a failed pull does not paint `"error"` while containers keep running.
       if (options.identity.kind === "stack") {
         const next = options.result.success
           ? options.identity.onSuccess
@@ -54,11 +46,10 @@ async function recordActionOutcome(options: {
       }
     });
   } catch (persistError) {
-    // Already finished as error: propagate without recording a second outcome.
     try {
       finishActivity(options.activityId, "error");
     } catch {
-      // best-effort: the persist error is what matters
+      // Best-effort cleanup: ignore failure.
     }
     throw persistError;
   }
@@ -80,10 +71,6 @@ type LoggedActionBase = {
   failureMessage?: string;
 };
 
-/**
- * Shared streaming half behind both shells; never finishes or persists
- * (`runActivity` finishes, `runLoggedAction` records) so the two cannot drift.
- */
 async function runTranscript<T>(
   title: string,
   run: (
@@ -95,7 +82,6 @@ async function runTranscript<T>(
 > {
   const activity = createActivity(title);
 
-  // On failure `run` threw, so this transcript plus the error line is what the durable log records.
   let transcript = "";
   const onOutput = (chunk: string) => {
     transcript += chunk;
@@ -141,7 +127,6 @@ export async function runLoggedAction<T>(
         result: { success: false, output: outcome.transcript },
       });
     } catch (persistError) {
-      // Prefer the operational error: the persist failure only means the durable row is missing.
       console.error("Failed to persist action outcome:", persistError);
     }
     if (outcome.error instanceof ActionFailedError) {
@@ -150,7 +135,6 @@ export async function runLoggedAction<T>(
     throw outcome.error;
   }
 
-  // A throw here is a persist failure (activity already finished as error), not an operational one.
   await recordActionOutcome({
     activityId: outcome.activity.id,
     identity: options.identity,
@@ -165,10 +149,6 @@ type ActivityActionBase = {
   failureMessage?: string;
 };
 
-/**
- * Transcript-only shell for repo-level ops: no `deployment_logs` row and no
- * status write (those ops are not deployments).
- */
 export async function runActivity(
   options: ActivityActionBase & { run: LoggedActionRunVoid }
 ): Promise<{ output: string }>;

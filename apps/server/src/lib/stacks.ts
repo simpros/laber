@@ -49,10 +49,6 @@ export async function listStacks() {
   }));
 }
 
-/**
- * Missing file → empty defaults; present-but-invalid → loud `ValidationError`
- * (the same gate deploy enforces, so the UI looks broken instead of empty).
- */
 function loadComposeForDetail(composePath: string, repoId: string) {
   const loaded = loadCompose(composePath, { missing: "empty" });
   if (!loaded.doc) {
@@ -76,10 +72,8 @@ function loadComposeForDetail(composePath: string, repoId: string) {
 }
 
 export async function getStackDetail(name: string) {
-  // A stack whose repo row is gone is corrupt, not "empty": 404 like deploy/stop do.
   const { stack, repo, composePath } = await getStackAndRepo(name);
 
-  // An unreadable daemon reads as "unknown" (empty), never a 500 on a read path.
   const [envVars, secrets, logs, containers] = await Promise.all([
     db
       .select()

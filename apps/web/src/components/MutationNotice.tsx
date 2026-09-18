@@ -8,14 +8,12 @@ type NoticeMutation = {
   isPending: boolean;
   isError: boolean;
   isSuccess: boolean;
-  // Idle omits the clocks but never reaches terminal state, so still renders nothing.
   dataUpdatedAt?: number;
   errorUpdatedAt?: number;
 };
 
 export type { NoticeMutation };
 
-/** Pending hides the notice, so a retry never shows the old failure mid-flight. */
 export function shouldHideNotice(
   mutation: Pick<NoticeMutation, "isPending">,
 ): boolean {
@@ -58,7 +56,6 @@ function NoticeBody({
   return null;
 }
 
-/** Split out so default notices stay presentational (no activity import in pages). */
 function LinkedNotice({
   mutation,
   errorFallback,
@@ -76,11 +73,6 @@ function LinkedNotice({
   );
 }
 
-/**
- * The one mutation notice: success copy from `mutation.data` (`null` =
- * silent success). One mutation per notice, so a stale failure can never
- * hide behind a sibling's success.
- */
 export function MutationNotice({
   mutation,
   errorFallback,
@@ -89,9 +81,7 @@ export function MutationNotice({
 }: {
   mutation: NoticeMutation;
   errorFallback: string;
-  /** Explicit opener; wins over `linkActivity` when both are passed. */
   onViewActivity?: () => void;
-  /** Wire the Activity pointer without importing the activity module. */
   linkActivity?: boolean;
 }) {
   if (onViewActivity) {

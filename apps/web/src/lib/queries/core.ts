@@ -11,7 +11,6 @@ export function useCore() {
   });
 }
 
-/** Query-layer half of the core-config save (wire + invalidation). */
 export function coreConfigSave() {
   return {
     mutationFn: async (

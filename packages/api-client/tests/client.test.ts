@@ -86,8 +86,6 @@ describe("createApiClient", () => {
       fetcher: stubFetch(calls, { success: true }),
     });
 
-    // Pins the typed request contract: fails `turbo check` if Eden
-    // stops inferring the body schema.
     // @ts-expect-error - entries requires key/value/isSecret entries
     await client.api.stacks({ name: "demo" }).env.put({ wrong: true });
   });

@@ -141,7 +141,6 @@ export default function AppSidebar({
   const queryClient = useQueryClient();
   const user = session?.user;
 
-  // Destroy the session, then `leaveApp` owns the whole exit.
   async function handleSignOut() {
     await signOut();
     await leaveApp(router, queryClient);

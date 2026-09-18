@@ -45,10 +45,6 @@ export async function listContainers(
   return containers.map(mapContainer);
 }
 
-/**
- * Soft contract for read paths: Docker unreadable means "unknown" (empty).
- * Commit gates must use `listContainers` and fail closed — never this.
- */
 export async function listContainersSoft(
   projectLabel?: string
 ): Promise<ContainerInfo[]> {
@@ -150,7 +146,6 @@ export async function connectTraefikToNetwork(
     },
   });
 
-  // A rename touches `core-identity`, not the template and the engine in parallel.
   const traefik = containers.find(
     (c) =>
       c.Names.some((n) => n === `/${TRAEFIK_CONTAINER}`) ||

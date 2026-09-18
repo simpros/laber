@@ -27,7 +27,7 @@ function withSshKey(
     try {
       unlinkSync(keyPath);
     } catch {
-      // ignore cleanup errors
+      // Best-effort cleanup: ignore failure.
     }
   });
 }
@@ -57,10 +57,6 @@ export async function pullRepo(
   });
 }
 
-/**
- * Filesystem discovery only — no compose parsing (deploy re-parses fresh, so
- * a cached network name would be a second source of truth this server refuses to trust).
- */
 export async function discoverStacks(
   repoDir: string,
   stacksPath: string

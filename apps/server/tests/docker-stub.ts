@@ -11,7 +11,6 @@ const defaults = {
   listContainersSoft: async (
     _projectLabel?: string
   ): Promise<ContainerInfo[]> => {
-    // Fail soft: delegate to the hard probe, degrade to empty on failure.
     try {
       return await dockerStub.listContainers(_projectLabel);
     } catch {
@@ -55,7 +54,6 @@ const defaults = {
   }),
 };
 
-// Mutable so tests can override per test (reset in afterEach).
 export const dockerStub: typeof defaults = { ...defaults };
 
 export function resetDockerStub() {

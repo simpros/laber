@@ -9,11 +9,6 @@ import {
 } from "@/lib/masked-secret";
 import { useApiMutation } from "@/lib/queries/actions";
 
-/**
- * The one save orchestration for every masked list editor. `keyOf` must be
- * module-stable or the sync identity thrashes; the fold runs as the
- * required `onSuccess`, so no caller can forget an optional `onSaved`.
- */
 export function useMaskedListEditor<
   T extends MaskedSecretState & SecrecyState,
   TPayload,
@@ -21,14 +16,11 @@ export function useMaskedListEditor<
   init: () => T[];
   syncValues: T[];
   keyOf: (entry: T) => string;
-  /** Entries → wire payload. */
   toPayload: (entries: T[]) => TPayload;
-  /** Query-layer save (mutationFn + invalidation); the fold is wired here. */
   save: {
     mutationFn: (payload: TPayload) => Promise<string | null>;
     invalidate?: readonly QueryKey[];
   };
-  /** Post-save fold. */
   fold?: (entry: T) => T;
 }) {
   const [entries, setEntries] = useState<T[]>(opts.init);

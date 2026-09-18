@@ -16,13 +16,11 @@ export const logRoutes = new Elysia().get(
       return getStackLogSnapshot(params.name, tail);
     }
 
-    // SSE framing lives in the route; the lib only hands over the log stream.
     const stream = await followStackLogs(params.name, tail);
     return sseResponse(async (controller, onCleanup) => {
       const reader = stream.getReader();
       onCleanup(() => {
         reader.cancel().catch(() => {
-          // already closed
         });
       });
       try {
@@ -36,7 +34,7 @@ export const logRoutes = new Elysia().get(
         try {
           controller.close();
         } catch {
-          // already closed
+          // Best-effort cleanup: ignore failure.
         }
       } finally {
         reader.releaseLock();

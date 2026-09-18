@@ -18,7 +18,6 @@ export function StackComposeView({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
 
-  // Parent remounts per stack; this only guards a refetch while viewing.
   useEffect(() => {
     if (!editing) setDraft(content);
   }, [content, editing]);
@@ -30,7 +29,6 @@ export function StackComposeView({
 
   function toggleEditing() {
     setDraft(content);
-    // Cancel-path clear: no new mutation fires, so this is the one surviving `reset()`.
     saveMutation.reset();
     setEditing((v) => !v);
   }

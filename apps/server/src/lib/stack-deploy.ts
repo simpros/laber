@@ -9,10 +9,6 @@ import { ValidationError } from "./errors";
 
 type StackRow = Awaited<ReturnType<typeof getStackAndRepo>>["stack"];
 
-/**
- * Deploy input resolution (env map, compose document, secret files with a
- * missing-value gate), resolved once under the lock by locked callers.
- */
 export async function resolveStackDeployInputsFor(
   stack: StackRow,
   composePath: string
@@ -30,7 +26,6 @@ export async function resolveStackDeployInputsFor(
   const envMap: Record<string, string> = {};
   for (const ev of envVars) envMap[ev.key] = ev.value;
 
-  // A broken compose or missing secret fails instead of producing a secret-less deploy with a stale network name.
   const { raw, doc, secrets: defs } = loadCompose(composePath, {
     missing: "error",
     errorPrefix: "Cannot deploy",
@@ -72,8 +67,6 @@ export async function resolveStackDeployInputsFor(
 }
 
 export async function deployStackByName(name: string) {
-  // Deploy holds the per-repo lock (`up -d` creates the containers the sync
-  // probe reads), and the validated bytes travel as a snapshot live-tree writers cannot swap mid-attempt.
   return withLockedStack(name, async ({ stack, composePath }) => {
     const { stackId, deploy, composeRaw } =
       await resolveStackDeployInputsFor(stack, composePath);

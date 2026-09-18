@@ -5,7 +5,6 @@ import {
 } from "./docker-engine";
 import { NotFoundError } from "./errors";
 
-/** Container selection plus snapshot-vs-follow branching; the route alone owns SSE framing. */
 async function resolveLogContainerId(name: string): Promise<string> {
   const containers = await listContainers(name);
   if (containers.length === 0) {

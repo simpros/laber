@@ -1,9 +1,5 @@
 import type { ComposeDocument, ComposeService } from "./compose-parse";
 
-/**
- * Pure projections off the parsed document for the detail UI. Fail policy
- * lives at the parse gate; skipped values inside a valid shape stay lenient (inert data, not a broken document).
- */
 
 export type ServiceInfo = {
   name: string;
@@ -44,7 +40,6 @@ function parsePorts(
   if (!ports) return [];
   const out: Array<{ host?: number; container: number }> = [];
   for (const entry of ports) {
-    // Long-form `ports:` objects have no short string to split: read the fields directly.
     if (typeof entry === "object") {
       const target = Number(entry.target);
       if (!Number.isFinite(target)) continue;
@@ -150,7 +145,6 @@ export function extractAllEnvVarNames(doc: ComposeDocument): string[] {
 export function extractNetworkName(doc: ComposeDocument): string | undefined {
   if (!doc.networks) return undefined;
 
-  // `default` wins over other external networks, so it is checked first.
   const { default: defaultNet, ...rest } = doc.networks;
   const ordered = [
     ...(defaultNet ? [defaultNet] : []),

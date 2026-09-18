@@ -7,7 +7,6 @@ import {
   removeContainer,
 } from "./docker-engine";
 
-/** Raw compose spawn; `runComposeCommand` below is the single failure contract. */
 async function execCompose(options: {
   composePath: string;
   command: string[];
@@ -20,7 +19,6 @@ async function execCompose(options: {
   }
   args.push(...options.command);
 
-  // Stack env travels only via --env-file; process.env is inherited for the docker CLI itself, with no second overlay.
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
@@ -69,9 +67,6 @@ async function execCompose(options: {
   return { stdout, stderr, exitCode };
 }
 
-/**
- * Exit→throw only, with no cleanup hook: the caller owns secret wipe + compensating `down`.
- */
 export async function runComposeCommand(
   composePath: string,
   command: string[],
@@ -94,10 +89,6 @@ export async function runComposeCommand(
   return { output };
 }
 
-/**
- * Project teardown by name: regular `compose down` while the file exists,
- * container stop/remove by project label when it is gone. Never fails open.
- */
 export async function downProject(options: {
   projectName: string;
   composePath?: string;

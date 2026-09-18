@@ -1,25 +1,13 @@
 import { ActionFailedError, ConflictError } from "./errors";
 import { listContainers } from "./docker-engine";
 
-/**
- * The one removable-stack authority: `stacks.status` is not part of this
- * gate (a stale `"deployed"` must not force a stop-before-sync); the daemon is the ground truth, fail-closed.
- */
 
-/**
- * Capability proving the Docker probe ran for an exact removal set: only the
- * factories below can mint one, so no literal can skip Docker.
- */
 export class RemovableClearance {
   private constructor(
     readonly repoId: string,
-    /** Stack names the probe cleared for removal. */
     readonly names: readonly string[]
   ) {}
 
-  /**
-   * Mint a clearance for the disappearing stacks (not the whole table).
-   */
   static async clear(
     repoId: string,
     disappearing: { name: string }[]
@@ -31,7 +19,6 @@ export class RemovableClearance {
     );
   }
 }
-/** Running containers for a compose project; throws when Docker is unreadable (fail-closed). */
 export async function countProjectContainers(
   projectName: string
 ): Promise<number> {
@@ -39,7 +26,6 @@ export async function countProjectContainers(
   return containers.filter((c) => c.state === "running").length;
 }
 
-/** Fail-closed commit gate, never a soft probe: an unreadable daemon refuses removal. */
 export async function assertStackRemovable(stack: {
   name: string;
 }): Promise<void> {

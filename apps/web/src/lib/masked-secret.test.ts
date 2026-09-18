@@ -166,7 +166,6 @@ describe("setRowSecret", () => {
     };
     const promoted = setRowSecret(plain, true);
     expect(valueForSave(promoted)).toBe("carried-plaintext");
-    // Post-save fold lands on the untouched snapshot with the server holding the value.
     const saved = fold(promoted);
     expect(saved.hadValue).toBe(true);
     expect(secretStatus(saved)).toBe("set");
@@ -195,7 +194,6 @@ describe("setRowSecret", () => {
     };
     const demoted = setRowSecret(secret, false);
     expect(valueForSave(demoted)).toBeNull();
-    // One discriminant: secret chrome until the echo lands, plain on the wire.
     expect(demoted.secrecy).toBe("demote-pending");
     expect(chromeIsSecret(demoted)).toBe(true);
     expect(wireIsSecret(demoted)).toBe(false);
@@ -319,13 +317,11 @@ describe("mergeServerEntries", () => {
     };
     const demoted = setRowSecret(untouched, false);
     expect(valueForSave(demoted)).toBeNull();
-    // Fold keeps the secret chrome (still pending)…
     const folded = markMixedSaved(demoted);
     expect(folded).toEqual({ ...demoted, dirty: false });
     expect(folded.secrecy).toBe("demote-pending");
     expect(chromeIsSecret(folded)).toBe(true);
     expect(wireIsSecret(folded)).toBe(false);
-    // …and the plaintext echo heals the row, clearing pending.
     const echo: EnvRow = {
       key: "TOKEN",
       value: "kept-plaintext",
@@ -338,7 +334,6 @@ describe("mergeServerEntries", () => {
   });
 
   it("heals a demoted row even while an unrelated row is dirty", () => {
-    // Per-row merge: row B's echo heals while row A is still being typed.
     const demoted = setRowSecret(
       {
         key: "TOKEN",
@@ -370,7 +365,6 @@ describe("mergeServerEntries", () => {
   });
 
   it("preserves a pending demote across a still-secret echo (pre-save refetch)", () => {
-    // A background invalidate echoes the still-secret snapshot; pending must survive.
     const demoted = setRowSecret<EnvRow>(
       {
         key: "TOKEN",

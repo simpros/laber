@@ -18,11 +18,6 @@ const COPY = {
   },
 } as const;
 
-/**
- * The one credentials form for login and setup. Submit state is react-form's
- * own `isSubmitting` (no parallel register); `onSuccess` is awaited so gate
- * failures surface here instead of being swallowed.
- */
 export default function AuthCredentialsForm({
   mode,
   onSuccess,

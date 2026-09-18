@@ -1,9 +1,5 @@
 import { createApiClient, type ApiClient } from "@laber/api-client";
 
-/**
- * Same-origin treaty client: Vite proxies `/api/*`, so cookies flow as
- * first-party with no cross-origin config.
- */
 let cached: ApiClient | null = null;
 
 export function getApiClient(baseUrl?: string): ApiClient {
@@ -11,7 +7,7 @@ export function getApiClient(baseUrl?: string): ApiClient {
     return createApiClient(baseUrl);
   }
   if (!cached) {
-    // Absolute origin: an empty base breaks Eden's URL joining ("Request failed").
+    // Empty base breaks Eden URL joining, so use an absolute origin.
     const origin =
       typeof window !== "undefined" ? window.location.origin : "";
     cached = createApiClient(origin);
@@ -30,7 +26,6 @@ export class ApiError extends Error {
   }
 }
 
-/** Unwrap an Eden `{ data, error }` union, throwing `ApiError` on failure. */
 export function unwrap<T>(res: { data: T | null; error: unknown }): T {
   if (res.error !== null && res.error !== undefined) {
     throw toApiError(res.error);

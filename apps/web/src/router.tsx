@@ -18,7 +18,6 @@ import RepositoryPage from "@/pages/RepositoryPage";
 import LoginPage from "@/pages/LoginPage";
 import SetupPage from "@/pages/SetupPage";
 
-/** Fail-closed probe: any failure throws to the retry UI, never misroutes. */
 async function fetchSetupStatus(): Promise<{ needsSetup: boolean }> {
   let status: { needsSetup: boolean };
   try {
@@ -35,7 +34,6 @@ async function fetchSetupStatus(): Promise<{ needsSetup: boolean }> {
   return status;
 }
 
-/** Fail-closed: a transport blip surfaces retry, never a fake logged-out bounce. */
 async function getSessionUser() {
   try {
     const { data } = await authClient.getSession({
@@ -60,7 +58,6 @@ async function loadGate() {
 
 type GateKind = "login" | "setup" | "app";
 
-/** One table instead of three hand-rolled `if` ladders. */
 function gateRedirect(
   kind: GateKind,
   gate: { needsSetup: boolean; user: unknown },
@@ -130,7 +127,6 @@ const appRoute = createRoute({
     const target = gateRedirect("app", await loadGate());
     if (target) throw redirect({ to: target });
   },
-  // SSE mounts behind the session guard, so unauthenticated routes open zero EventSources.
   component: () => (
     <ActivityProvider>
       <Layout>
@@ -170,7 +166,6 @@ export const stackDetailRoute = createRoute({
   component: StackDetailRouteComponent,
 });
 
-/** Props cross the router → page boundary, so this module never imports back. */
 function StackDetailRouteComponent() {
   const { name } = stackDetailRoute.useParams();
   const { tab } = stackDetailRoute.useSearch();

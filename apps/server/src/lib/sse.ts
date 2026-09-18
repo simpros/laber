@@ -20,9 +20,6 @@ function sseHeaders(): Record<string, string> {
   };
 }
 
-/**
- * `cleanup` runs on client disconnect; producers also clean up when `enqueue` throws on a closed stream.
- */
 export function sseResponse(
   start: (
     controller: ReadableStreamDefaultController<Uint8Array>,
@@ -38,7 +35,7 @@ export function sseResponse(
       try {
         fn();
       } catch {
-        // ignore cleanup errors
+        // Best-effort cleanup: ignore failure.
       }
     }
   };
@@ -56,7 +53,7 @@ export function sseResponse(
             try {
               controller.close();
             } catch {
-              // already closed
+              // Best-effort cleanup: ignore failure.
             }
           });
         }
@@ -65,7 +62,7 @@ export function sseResponse(
         try {
           controller.close();
         } catch {
-          // already closed
+          // Best-effort cleanup: ignore failure.
         }
       }
     },

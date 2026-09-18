@@ -19,9 +19,6 @@ function isUniqueViolation(e: unknown): boolean {
   );
 }
 
-/**
- * Re-read in-tx to name only rows another repo actually owns; generic message when none found.
- */
 function alreadyRegisteredConflict(
   tx: StackTx,
   repoId: string,
@@ -48,10 +45,6 @@ function alreadyRegisteredConflict(
       );
 }
 
-/**
- * Persistence policy next to repositories (not VCS work in `git.ts`), always
- * inside the caller's transaction so throwing rolls back repo insert and `lastSyncedAt` too.
- */
 export function reconcileStacksTx(
   tx: StackTx,
   repoId: string,
@@ -78,8 +71,6 @@ export function reconcileStacksTx(
   const removed = existing.filter((s) => !discoveredByName.has(s.name));
   const removedNames = removed.map((s) => s.name);
 
-  // Removal needs a clearance the async pre-check mints under the per-repo
-  // lock (the tx cannot await Docker); `stacks.status` is never consulted.
   if (removedNames.length > 0) {
     if (!clearance || clearance.repoId !== repoId) {
       throw new ActionFailedError(
@@ -95,7 +86,6 @@ export function reconcileStacksTx(
     }
   }
 
-  // Drizzle sync-tx queries are lazy: only `.run()` executes them.
   if (removedNames.length > 0) {
     tx.delete(stacks)
       .where(
@@ -107,8 +97,6 @@ export function reconcileStacksTx(
       .run();
   }
   if (added.length > 0) {
-    // `stacks.name` is globally UNIQUE (API keys and `--project-name` collide
-    // on it): a foreign-owned name is a 409, with cross-repo races surfacing via the constraint catch below.
     const addedNames = added.map((s) => s.name);
     const dupInBatch = addedNames.filter(
       (n, i) => addedNames.indexOf(n) !== i

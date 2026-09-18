@@ -67,10 +67,6 @@ function isActivity(value: unknown): value is Activity {
   );
 }
 
-/**
- * The SSE stream is `any` JSON: unknown shapes are ignored loudly, never
- * applied (a wrong `type` on the finish path would stall the panel).
- */
 function isActivityEvent(value: unknown): value is ActivityEvent {
   if (!isRecord(value)) return false;
   switch (value.type) {
@@ -111,7 +107,6 @@ function applyEvent(prev: Activity[], event: ActivityEvent): Activity[] {
           : a,
       );
     default: {
-      // A new variant fails to compile here until it gets its own arm above.
       const _exhaustive: never = event;
       void _exhaustive;
       return prev;
@@ -135,7 +130,6 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       try {
         parsed = JSON.parse(raw.data);
       } catch {
-        // Malformed frames signal a server/stream bug; never swallow silently.
         console.warn("[activity] ignoring malformed frame", raw.data);
         return;
       }

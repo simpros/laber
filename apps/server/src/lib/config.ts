@@ -15,10 +15,5 @@ export function getComposePath(
   return resolve(DATA_DIR, "repos", repoId, relativePath, composeFile);
 }
 
-// Stack context lives in `stack-context.ts`; this module owns paths and `ConfigValue` only.
 
-/**
- * Three-state config value: `null` (or omitted) = leave unchanged, `""` =
- * clear, string = set. Stack tables apply it as replace-all, core config as patch upsert.
- */
 export type ConfigValue = string | null;

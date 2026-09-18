@@ -4,7 +4,6 @@ import { getComposePath } from "./config";
 import { NotFoundError, ValidationError } from "./errors";
 import { withRepoLock } from "./repo-lock";
 
-/** Stack loader plus name guard, kept out of the path-builder module. */
 export async function getStackAndRepo(stackName: string) {
   const [stack] = await db
     .select()
@@ -36,10 +35,6 @@ export function assertStackName(name: string): string {
   return name;
 }
 
-/**
- * Re-resolve identity + compose path *under* the lock, so a sync that deletes
- * the row between the two reads 404s instead of mutating an orphan project.
- */
 export async function withLockedStack<T>(
   name: string,
   fn: (ctx: { stack: Awaited<ReturnType<typeof getStackAndRepo>>["stack"]; composePath: string }) => Promise<T>

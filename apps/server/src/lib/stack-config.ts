@@ -12,9 +12,7 @@ export async function saveComposeContent(name: string, content: string) {
   if (!content) {
     throw new ValidationError("Compose content must not be empty");
   }
-  // Live-file writes serialize with the removable-mutation holders under the same mutex.
   return withLockedStack(name, async ({ composePath }) => {
-    // Save accepts exactly what deploy/detail accept, so a saved file never 400s on read/deploy.
     parseComposeDocument(content, composePath);
 
     mkdirSync(dirname(composePath), { recursive: true });
@@ -24,7 +22,6 @@ export async function saveComposeContent(name: string, content: string) {
   });
 }
 
-/** `null` means "leave unchanged", anything else replaces the whole set. */
 export function replaceNullableKeyedRows(
   existingByKey: Map<string, string>,
   entries: Array<{ key: string; value: ConfigValue }>
@@ -46,10 +43,6 @@ export type SecretEntry = {
   value: ConfigValue;
 };
 
-/**
- * Snapshot read and delete+insert share one transaction, so concurrent PUTs
- * merge against committed state instead of clobbering each other.
- */
 async function replaceStackKeyedBag(options: {
   name: string;
   entries: Array<{ key: string; value: ConfigValue }>;
