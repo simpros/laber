@@ -7,9 +7,7 @@ export default function SetupPage() {
   return (
     <AuthCredentialsForm
       mode="setup"
-      onSuccess={() => {
-        void enterApp(router);
-      }}
+      onSuccess={() => enterApp(router)}
     />
   );
 }

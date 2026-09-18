@@ -7,9 +7,7 @@ export default function LoginPage() {
   return (
     <AuthCredentialsForm
       mode="login"
-      onSuccess={() => {
-        void enterApp(router);
-      }}
+      onSuccess={() => enterApp(router)}
     />
   );
 }

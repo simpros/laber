@@ -22,14 +22,17 @@ const COPY = {
  * The one credentials form for login and setup. The only difference is the
  * name field; submit state comes from react-form's own `isSubmitting`, so
  * there is no parallel `loading` register to drift (success unmounts via
- * navigation, failure resets `isSubmitting` by itself).
+ * navigation, failure resets `isSubmitting` by itself). `onSuccess` may be
+ * async — the form awaits it, so the gate refresh in `enterApp` finishes
+ * before submit state settles and its failures surface here instead of
+ * being swallowed.
  */
 export default function AuthCredentialsForm({
   mode,
   onSuccess,
 }: {
   mode: "login" | "setup";
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
 }) {
   const copy = COPY[mode];
   const [error, setError] = useState("");
@@ -43,7 +46,11 @@ export default function AuthCredentialsForm({
         setError(message);
         return;
       }
-      onSuccess();
+      try {
+        await onSuccess();
+      } catch {
+        setError("Signed in, but entering the app failed. Please retry.");
+      }
     },
   });
 

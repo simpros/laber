@@ -44,6 +44,11 @@ function blankRow(key = ""): Row {
   return { key, value: "", isSecret: false, hadValue: false, dirty: true };
 }
 
+// Module-level so `useMaskedEntries` sync identity never thrashes.
+function envKeyOf(e: Pick<Row, "key">): string {
+  return e.key;
+}
+
 export default function StackEnvEditor({
   envVars,
   stackName,
@@ -62,7 +67,7 @@ export default function StackEnvEditor({
   const serverValues = useMemo(() => envVars.map(rowFor), [envVars]);
   const { entries, setEntries, update, applySaved } = useMaskedEntries<Row>(
     () => envVars.map(rowFor),
-    { values: serverValues, keyOf: (e) => e.key },
+    { values: serverValues, keyOf: envKeyOf },
   );
 
   const missingVars = detectedEnvVars.filter(

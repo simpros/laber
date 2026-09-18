@@ -54,6 +54,11 @@ function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   });
 }
 
+// Module-level so `useMaskedEntries` sync identity never thrashes.
+function coreKeyOf(e: Pick<FieldState, "key">): string {
+  return e.key;
+}
+
 /**
  * Mounted only once `QueryStatus` has the snapshot (parent renders it inside
  * the render-prop with `key="core"`), so fields init from props directly —
@@ -73,7 +78,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
     applySaved,
   } = useMaskedEntries<FieldState>(() => fieldStatesFor(snapshot.config), {
     values: serverValues,
-    keyOf: (f) => f.key,
+    keyOf: coreKeyOf,
   });
 
   const saveMutation = useSaveCoreConfig({

@@ -30,8 +30,10 @@ export function toErrorMessage(
  * The one mutation skeleton in the SPA. `mutationFn` resolves to the success
  * message shown in the page (`null` = silent success); failures surface
  * through React Query's `error`/`isError`, so no hook owns a parallel result
- * channel. Pages render `mutation.data` / `mutation.error` and clear
- * siblings with `other.reset()` before firing.
+ * channel. Pages render `mutation.data` / `mutation.error` through
+ * `MutationNotice` — multi-mutation surfaces pass the group and the notice
+ * shows the latest-settled state, so pages never choreograph sibling
+ * `reset()` calls.
  */
 export function useApiMutation<TData, TVariables>(opts: {
   mutationFn: (variables: TVariables) => Promise<TData>;

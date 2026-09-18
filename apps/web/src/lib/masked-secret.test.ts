@@ -218,6 +218,39 @@ describe("mergeServerEntries", () => {
     expect(merged).toEqual([echo]);
   });
 
+  it("heals a demoted row even while an unrelated row is dirty", () => {
+    // The hook must not gate the whole merge on any-dirty: row B's echo
+    // heals while row A is still being typed.
+    const demoted = setRowSecret(
+      {
+        key: "TOKEN",
+        value: "",
+        isSecret: true,
+        hadValue: true,
+        dirty: false,
+      },
+      false,
+    );
+    const folded = markMixedSaved(demoted);
+    const local: EnvRow[] = [
+      { key: "A", value: "typing", isSecret: false, hadValue: false, dirty: true },
+      folded,
+    ];
+    const server: EnvRow[] = [
+      { key: "A", value: "old", isSecret: false, hadValue: false, dirty: false },
+      {
+        key: "TOKEN",
+        value: "kept-plaintext",
+        isSecret: false,
+        hadValue: false,
+        dirty: false,
+      },
+    ];
+    const merged = mergeServerEntries(local, server, keyOf);
+    expect(merged[0]).toEqual(local[0]);
+    expect(merged[1]).toEqual(server[1]);
+  });
+
   it("never clobbers in-progress (dirty) rows", () => {
     const local: EnvRow[] = [
       { key: "A", value: "typing", isSecret: false, hadValue: false, dirty: true },

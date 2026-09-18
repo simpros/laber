@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * One masked-secret field model for every secret input in the SPA.
@@ -110,12 +110,15 @@ export function mergeServerEntries<T extends MaskedSecretState>(
  * `markMixedSaved` instead, so the keep/reset decision lives in the model,
  * not in one predicate per editor.
  *
- * The single owner for server-vs-local convergence: pass `sync` and the
- * hook rebuilds non-dirty rows from the latest server snapshot (heals a
- * demoted env row without inventing a literal). In-progress (dirty) rows
- * are never touched, and returning the previous reference when nothing
- * changed keeps the effect idempotent. Every list editor opts in with one
- * line instead of bolting on its own effect.
+ * Server-vs-local convergence has one policy: `mergeServerEntries`, which
+ * heals non-dirty rows per key (a demoted env row absorbs the server
+ * plaintext) and never touches in-progress (dirty) rows. The optimistic
+ * fold is the other half of the same policy, not a second owner: secrets
+ * can only reset locally because the server never echoes their values.
+ * Every list editor opts in with one line instead of bolting on its own
+ * effect. `keyOf` is read through a ref so call-site identity never
+ * re-fires the sync; reference equality against the previous entries keeps
+ * the effect idempotent.
  */
 export function useMaskedEntries<T extends MaskedSecretState>(
   init: () => T[],
@@ -124,23 +127,25 @@ export function useMaskedEntries<T extends MaskedSecretState>(
   const [entries, setEntries] = useState<T[]>(init);
 
   const syncValues = sync?.values;
-  const syncKeyOf = sync?.keyOf;
+  const keyOfRef = useRef(sync?.keyOf);
   useEffect(() => {
-    if (!syncValues || !syncKeyOf) return;
+    keyOfRef.current = sync?.keyOf;
+  });
+
+  useEffect(() => {
+    const keyOf = keyOfRef.current;
+    if (!syncValues || !keyOf) return;
     setEntries((prev) => {
-      if (prev.some((e) => e.dirty)) return prev;
-      const merged = mergeServerEntries(prev, syncValues, syncKeyOf);
+      const merged = mergeServerEntries(prev, syncValues, keyOf);
       if (
         merged.length === prev.length &&
-        merged.every(
-          (m, i) => JSON.stringify(m) === JSON.stringify(prev[i]),
-        )
+        merged.every((m, i) => m === prev[i])
       ) {
         return prev;
       }
       return merged;
     });
-  }, [syncValues, syncKeyOf]);
+  }, [syncValues]);
 
   return {
     entries,

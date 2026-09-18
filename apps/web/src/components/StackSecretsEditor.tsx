@@ -24,6 +24,11 @@ type Row = MaskedSecretState & {
   services: string[];
 };
 
+// Module-level so `useMaskedEntries` sync identity never thrashes.
+function secretKeyOf(e: Pick<Row, "name">): string {
+  return e.name;
+}
+
 export default function StackSecretsEditor({
   secrets,
   stackName,
@@ -56,7 +61,7 @@ export default function StackSecretsEditor({
         value: "",
         dirty: false,
       })),
-    { values: serverValues, keyOf: (e) => e.name },
+    { values: serverValues, keyOf: secretKeyOf },
   );
 
   const unsetCount = entries.filter(isUnset).length;
