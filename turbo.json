@@ -28,7 +28,6 @@
     "lint": {
       "dependsOn": ["^lint"]
     },
-    "format": {},
     "db:generate": {
       "cache": false
     },
