@@ -15,11 +15,9 @@ FROM base AS builder
 
 COPY --from=prepare /app/out/json/ .
 COPY --from=prepare /app/bun.lock ./bun.lock
-COPY --from=prepare /app/packages/typescript-config/package.json ./packages/typescript-config/package.json
 RUN bun install --frozen-lockfile
 
 COPY --from=prepare /app/out/full/ .
-COPY --from=prepare /app/packages/typescript-config/ ./packages/typescript-config/
 RUN bun run build --filter=@laber/web
 
 FROM base AS runner
