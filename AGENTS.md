@@ -15,7 +15,8 @@ laber is a Bun + Turborepo monorepo (`apps/*`, `packages/*`) in TypeScript.
 Run from the repo root unless noted:
 
 - `bun run dev` — all dev servers in parallel (Turbo).
-- `bun run build` / `bun run check` (`tsc --noEmit`) / `bun run lint` (`eslint`) — per-package via Turbo.
+- `bun run build` / `bun run check` (`tsc --noEmit`) / `bun run lint` (`eslint`) — per-package via Turbo, plus `scripts/` at the root.
+- `bun run deps:orphans` — fail on workspace packages no manifest declares.
 - `bun run test` — unit/integration (`bun test` per package; server tests need ~60s timeout).
 - `bun run format` / `bun run format:check` — Prettier (2-space, double quotes, print width 75).
 - `bun run db:generate` / `db:migrate` / `db:push` / `db:studio` — Drizzle Kit via `@laber/db`.
@@ -29,7 +30,7 @@ Server tests preload `./svelte-test-setup.ts` via `bunfig.toml`; run them from `
 - `apps/server/src/routes/` — Elysia route modules mounted by `src/app.ts`.
 - `apps/server/tests/` — `bun test` suites plus `docker-stub.ts` / `helpers.ts` / `setup.ts`.
 - `apps/web/src/` — `components/`, `lib/` (+ `lib/queries/`), `pages/`, `router.tsx`, `main.tsx`.
-- `packages/` — `api-client`, `auth`, `db` (schema/client/migrate), `ui`, `logging`, plus shared `eslint-config`, `typescript-config`.
+- `packages/` — `api-client`, `auth`, `db` (schema/client/migrate), `ui`, `logging`, plus shared `eslint-config`.
 
 ## Style
 

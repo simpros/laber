@@ -8,7 +8,9 @@
         "@eslint/compat": "^2.0.2",
         "@eslint/js": "10.0.1",
         "@happy-dom/global-registrator": "^20.7.0",
+        "@laber/eslint-config": "workspace:*",
         "@testing-library/svelte": "^5.3.1",
+        "@types/bun": "^1.3.10",
         "eslint": "10.3.0",
         "eslint-plugin-svelte": "^3.0.0",
         "globals": "^15.0.0",
@@ -18,6 +20,7 @@
         "prettier-plugin-tailwindcss": "0.8.0",
         "svelte": "^5.53.6",
         "turbo": "^2.4.0",
+        "typescript": "^5.9.3",
         "typescript-eslint": "^8.0.0",
       },
     },
@@ -132,13 +135,6 @@
         "@laber/eslint-config": "workspace:*",
         "@types/node": "^25.3.2",
         "typescript": "^5.9.3",
-      },
-    },
-    "packages/typescript-config": {
-      "name": "@laber/typescript-config",
-      "version": "0.0.0",
-      "devDependencies": {
-        "@laber/eslint-config": "workspace:*",
       },
     },
     "packages/ui": {
@@ -386,8 +382,6 @@
     "@laber/logging": ["@laber/logging@workspace:packages/logging"],
 
     "@laber/server": ["@laber/server@workspace:apps/server"],
-
-    "@laber/typescript-config": ["@laber/typescript-config@workspace:packages/typescript-config"],
 
     "@laber/ui": ["@laber/ui@workspace:packages/ui"],
 
