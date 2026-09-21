@@ -18,6 +18,7 @@
     "db:seed": "turbo run db:seed",
     "db:studio": "turbo run db:studio",
     "check": "turbo run check",
+    "deps:orphans": "bun scripts/check-orphan-workspaces.ts",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "auth:generate": "turbo run auth:generate"

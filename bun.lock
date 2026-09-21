@@ -134,16 +134,6 @@
         "typescript": "^5.9.3",
       },
     },
-    "packages/tailwind-config": {
-      "name": "@laber/tailwind-config",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@laber/eslint-config": "workspace:*",
-      },
-      "peerDependencies": {
-        "tailwindcss": "^4.0.0",
-      },
-    },
     "packages/typescript-config": {
       "name": "@laber/typescript-config",
       "version": "0.0.0",
@@ -396,8 +386,6 @@
     "@laber/logging": ["@laber/logging@workspace:packages/logging"],
 
     "@laber/server": ["@laber/server@workspace:apps/server"],
-
-    "@laber/tailwind-config": ["@laber/tailwind-config@workspace:packages/tailwind-config"],
 
     "@laber/typescript-config": ["@laber/typescript-config@workspace:packages/typescript-config"],
 

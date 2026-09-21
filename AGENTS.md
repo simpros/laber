@@ -29,7 +29,7 @@ Server tests preload `./svelte-test-setup.ts` via `bunfig.toml`; run them from `
 - `apps/server/src/routes/` — Elysia route modules mounted by `src/app.ts`.
 - `apps/server/tests/` — `bun test` suites plus `docker-stub.ts` / `helpers.ts` / `setup.ts`.
 - `apps/web/src/` — `components/`, `lib/` (+ `lib/queries/`), `pages/`, `router.tsx`, `main.tsx`.
-- `packages/` — `api-client`, `auth`, `db` (schema/client/migrate), `ui`, `logging`, plus shared `eslint-config`, `typescript-config`, `tailwind-config`.
+- `packages/` — `api-client`, `auth`, `db` (schema/client/migrate), `ui`, `logging`, plus shared `eslint-config`, `typescript-config`.
 
 ## Style
 
