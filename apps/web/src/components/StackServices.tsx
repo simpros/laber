@@ -1,6 +1,6 @@
 import { Card } from "@laber/ui";
 import { statusColor, containerStatusBg } from "@/lib/utils";
-import type { ContainerInfo } from "@/lib/types";
+import type { ContainerInfo } from "@laber/api-client";
 
 export type ServiceInfo = {
   name: string;

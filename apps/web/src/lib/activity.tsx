@@ -8,28 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-
-export type ActivityStatus = "running" | "success" | "error";
-
-export interface Activity {
-  id: string;
-  title: string;
-  status: ActivityStatus;
-  output: string;
-  startedAt: number;
-  finishedAt?: number;
-}
-
-type ActivityEvent =
-  | { type: "init"; activities: Activity[] }
-  | { type: "start"; activity: Activity }
-  | { type: "output"; id: string; chunk: string }
-  | {
-      type: "finish";
-      id: string;
-      status: "success" | "error";
-      finishedAt: number;
-    };
+import type { Activity, ActivityEvent } from "@laber/api-client";
 
 interface ActivityContextValue {
   activities: Activity[];
@@ -63,7 +42,8 @@ function isActivity(value: unknown): value is Activity {
       value.status === "error") &&
     typeof value.output === "string" &&
     typeof value.startedAt === "number" &&
-    (value.finishedAt === undefined || typeof value.finishedAt === "number")
+    (value.finishedAt === undefined ||
+      typeof value.finishedAt === "number")
   );
 }
 
@@ -78,7 +58,9 @@ function isActivityEvent(value: unknown): value is ActivityEvent {
     case "start":
       return isActivity(value.activity);
     case "output":
-      return typeof value.id === "string" && typeof value.chunk === "string";
+      return (
+        typeof value.id === "string" && typeof value.chunk === "string"
+      );
     case "finish":
       return (
         typeof value.id === "string" &&
@@ -98,13 +80,13 @@ function applyEvent(prev: Activity[], event: ActivityEvent): Activity[] {
       return [event.activity, ...prev].slice(0, 50);
     case "output":
       return prev.map((a) =>
-        a.id === event.id ? { ...a, output: a.output + event.chunk } : a,
+        a.id === event.id ? { ...a, output: a.output + event.chunk } : a
       );
     case "finish":
       return prev.map((a) =>
         a.id === event.id
           ? { ...a, status: event.status, finishedAt: event.finishedAt }
-          : a,
+          : a
       );
     default: {
       const _exhaustive: never = event;

@@ -1,13 +1,15 @@
+export type ActivityStatus = "running" | "success" | "error";
+
 export type Activity = {
   id: string;
   title: string;
-  status: "running" | "success" | "error";
+  status: ActivityStatus;
   output: string;
   startedAt: number;
   finishedAt?: number;
 };
 
-type ActivityEvent =
+export type ActivityEvent =
   | { type: "init"; activities: Activity[] }
   | { type: "start"; activity: Activity }
   | { type: "output"; id: string; chunk: string }
