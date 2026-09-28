@@ -3,6 +3,13 @@ import type { App } from "@laber/server/api-type";
 
 export type ApiClient = Treaty.Create<App>;
 
+export type {
+  Activity,
+  ActivityEvent,
+  ActivityStatus,
+  ContainerInfo,
+} from "@laber/server/api-type";
+
 export type ApiClientOptions = {
   headers?: Treaty.Config["headers"];
   fetcher?: Treaty.Config["fetcher"];
