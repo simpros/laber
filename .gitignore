@@ -5,8 +5,7 @@ node_modules/
 .turbo/
 **/.turbo/
 
-# SvelteKit
-.svelte-kit/
+# Web build (Vite outDir)
 build/
 
 # Build output

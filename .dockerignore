@@ -5,7 +5,6 @@
 node_modules
 
 # Build outputs (rebuilt in container)
-.svelte-kit
 build
 dist
 .turbo

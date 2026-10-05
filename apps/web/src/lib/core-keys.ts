@@ -104,20 +104,3 @@ export const CORE_KEYS = [
 
 export type CoreKey = (typeof CORE_KEYS)[number]["key"];
 export type CoreConfigProp = (typeof CORE_KEYS)[number]["prop"];
-
-type RequiredProps = Extract<
-  (typeof CORE_KEYS)[number],
-  { required: true }
->["prop"];
-type OptionalProps = Exclude<CoreConfigProp, RequiredProps>;
-
-export type CoreConfigShape = Record<RequiredProps, string> &
-  Partial<Record<OptionalProps, string>>;
-
-export const REQUIRED_CORE_KEYS = CORE_KEYS.filter((k) => k.required).map(
-  (k) => k.key
-) as string[];
-
-export function corePropForKey(key: string): CoreConfigProp | undefined {
-  return CORE_KEYS.find((k) => k.key === key)?.prop;
-}

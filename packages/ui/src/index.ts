@@ -5,7 +5,6 @@ export { default as Button } from "./Button.js";
 export { default as Alert } from "./Alert.js";
 export { default as StatusBadge } from "./StatusBadge.js";
 export { default as AuthLayout } from "./AuthLayout.js";
-export { cn } from "./cn.js";
 export type { ButtonProps, ButtonVariant, ButtonSize } from "./Button.js";
 export type { CardProps } from "./Card.js";
 export type { CardHeaderProps } from "./CardHeader.js";
