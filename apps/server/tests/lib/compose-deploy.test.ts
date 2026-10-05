@@ -51,7 +51,10 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
   const COMPOSE_PATH = "/data/repos/abc/stacks/myapp/docker-compose.yaml";
 
   it("returns empty array when no secrets defined", () => {
-    const { secrets } = parseComposeDocument("services: {}\n", COMPOSE_PATH);
+    const { secrets } = parseComposeDocument(
+      "services: {}\n",
+      COMPOSE_PATH
+    );
     expect(secrets).toEqual([]);
   });
 
@@ -67,7 +70,10 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
       "    file: ./secrets/db_password.txt",
       "",
     ].join("\n");
-    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
+    const { secrets: result } = parseComposeDocument(
+      content,
+      COMPOSE_PATH
+    );
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("db_password");
     expect(result[0].filePath).toBe(
@@ -92,7 +98,10 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
       "    file: ./secrets/key.txt",
       "",
     ].join("\n");
-    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
+    const { secrets: result } = parseComposeDocument(
+      content,
+      COMPOSE_PATH
+    );
     expect(result[0].services).toEqual(["web", "worker"]);
   });
 
@@ -108,7 +117,10 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
       "    external: true",
       "",
     ].join("\n");
-    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
+    const { secrets: result } = parseComposeDocument(
+      content,
+      COMPOSE_PATH
+    );
     expect(result).toHaveLength(0);
   });
 
@@ -172,7 +184,10 @@ describe("parseComposeDocument secret refs (via the one gate)", () => {
       "    file: ./secrets/unused.txt",
       "",
     ].join("\n");
-    const { secrets: result } = parseComposeDocument(content, COMPOSE_PATH);
+    const { secrets: result } = parseComposeDocument(
+      content,
+      COMPOSE_PATH
+    );
     expect(result).toHaveLength(1);
     expect(result[0].services).toEqual([]);
   });
@@ -240,9 +255,9 @@ describe("parseComposeDocument", () => {
   });
 
   it("rejects non-object services", () => {
-    expect(() => parseComposeDocument("services: just-a-string\n")).toThrow(
-      ValidationError
-    );
+    expect(() =>
+      parseComposeDocument("services: just-a-string\n")
+    ).toThrow(ValidationError);
   });
 
   it("rejects non-object service entries", () => {
@@ -285,6 +300,26 @@ describe("parseComposeDocument", () => {
     );
     expect(compose.services.web.image).toBe("nginx:latest");
   });
+
+  it("keeps networks and secrets visible to deploy-side extractors", () => {
+    const { doc } = parseComposeDocument(
+      [
+        "services:",
+        "  web:",
+        "    image: nginx:latest",
+        "networks:",
+        "  proxy:",
+        "    name: traefik-net",
+        "    external: true",
+        "secrets:",
+        "  mysecret:",
+        "    file: ./mysecret.txt",
+        "",
+      ].join("\n")
+    );
+    expect(doc.networks?.proxy?.name).toBe("traefik-net");
+    expect(doc.secrets?.mysecret?.file).toBe("./mysecret.txt");
+  });
 });
 
 describe("loadComposeDocument", () => {
@@ -315,6 +350,16 @@ describe("loadComposeDocument", () => {
     const { doc } = loadComposeDocument(filePath);
     expect(doc.services.web.image).toBe("nginx:latest");
     expect(extractNetworkName(doc)).toBe("traefik-net");
+  });
+
+  it("returns raw text alongside the parsed doc", () => {
+    const content = "services:\n  web:\n    image: nginx:latest\n";
+    const filePath = join(tempDir, "docker-compose.yaml");
+    writeFileSync(filePath, content, "utf-8");
+
+    const { raw, doc } = loadComposeDocument(filePath);
+    expect(raw).toBe(content);
+    expect(doc.services.web.image).toBe("nginx:latest");
   });
 
   it("throws a ValidationError for a missing services section", () => {
