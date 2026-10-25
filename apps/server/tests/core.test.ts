@@ -106,6 +106,79 @@ describe("PUT /api/core/config", () => {
   });
 });
 
+describe("PUT /api/core/config with EXTRA_NETWORKS", () => {
+  it("stores the list trimmed, deduped and without main", async () => {
+    await db.delete(coreConfig);
+
+    const save = await app.handle(
+      jsonReq(
+        "/api/core/config",
+        "PUT",
+        {
+          ROOT_DOMAIN: "example.com",
+          CF_DNS_API_TOKEN: "tok",
+          EXTRA_NETWORKS: " auth , monitor, auth, main ",
+        },
+        cookie
+      )
+    );
+    expect(save.status).toBe(200);
+
+    const get = (await (
+      await app.handle(req("/api/core", { headers: { cookie } }))
+    ).json()) as {
+      config: Record<
+        string,
+        { value: string; isSecret: boolean; hasValue: boolean }
+      >;
+    };
+    expect(get.config.EXTRA_NETWORKS.value).toBe("auth, monitor");
+    expect(get.config.EXTRA_NETWORKS.hasValue).toBe(true);
+  });
+
+  it("rejects invalid network names", async () => {
+    const res = await app.handle(
+      jsonReq(
+        "/api/core/config",
+        "PUT",
+        { EXTRA_NETWORKS: "auth net" },
+        cookie
+      )
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("Invalid network name");
+  });
+
+  it("writes the extra networks into the deployed core compose", async () => {
+    await app.handle(
+      jsonReq(
+        "/api/core/config",
+        "PUT",
+        {
+          ROOT_DOMAIN: "example.com",
+          CF_DNS_API_TOKEN: "tok",
+          EXTRA_NETWORKS: "auth, monitor",
+        },
+        cookie
+      )
+    );
+
+    const deploy = await app.handle(
+      jsonReq("/api/core/deploy", "POST", {}, cookie)
+    );
+    expect(deploy.status).toBe(200);
+
+    const live = readFileSync(getCoreComposePath(), "utf-8");
+    expect(live).toContain("auth");
+    expect(live).toContain("monitor");
+
+    await app.handle(
+      jsonReq("/api/core/config", "PUT", { EXTRA_NETWORKS: "" }, cookie)
+    );
+  });
+});
+
 describe("POST /api/core/deploy|stop|restart", () => {
   it("requires the mandatory config", async () => {
     await db.delete(coreConfig);

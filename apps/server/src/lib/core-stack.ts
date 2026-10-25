@@ -11,6 +11,7 @@ import {
   type CoreKey,
   type CoreConfigShape,
 } from "./core-keys";
+import { formatExtraNetworks, parseExtraNetworks } from "./core-networks";
 
 export type CoreConfig = CoreConfigShape;
 
@@ -44,11 +45,17 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
     cfDnsApiToken: required("CF_DNS_API_TOKEN"),
   };
   for (const field of CORE_KEYS) {
-    if (field.required) continue;
+    if (field.required || field.prop === "extraNetworks") continue;
     const value = configMap.get(field.key);
     if (value !== undefined && value !== "") {
       config[field.prop] = value;
     }
+  }
+  const extraNetworks = parseExtraNetworks(
+    configMap.get("EXTRA_NETWORKS")
+  );
+  if (extraNetworks.length > 0) {
+    config.extraNetworks = extraNetworks;
   }
 
   return config;
@@ -118,7 +125,11 @@ export async function saveCoreConfig(
   const rows = CORE_KEYS.flatMap((keyDef) => {
     const value = input[keyDef.key];
     if (value === undefined || value === null) return [];
-    return [{ key: keyDef.key, value, isSecret: keyDef.secret }];
+    const stored =
+      keyDef.key === "EXTRA_NETWORKS"
+        ? formatExtraNetworks(parseExtraNetworks(value))
+        : value;
+    return [{ key: keyDef.key, value: stored, isSecret: keyDef.secret }];
   });
 
   if (rows.length > 0) {

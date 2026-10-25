@@ -24,6 +24,12 @@ export const CORE_KEYS = [
     required: false,
   },
   { key: "TTL", prop: "ttl", secret: false, required: false },
+  {
+    key: "EXTRA_NETWORKS",
+    prop: "extraNetworks",
+    secret: false,
+    required: false,
+  },
 ] as const;
 
 export type CoreKey = (typeof CORE_KEYS)[number]["key"];
@@ -33,7 +39,13 @@ type RequiredProps = Extract<
   (typeof CORE_KEYS)[number],
   { required: true }
 >["prop"];
-type OptionalProps = Exclude<CoreConfigProp, RequiredProps>;
+
+// Stored as one CSV row like every other core key; the typed shape keeps the
+// list so compose generation never re-splits a string.
+type ListProps = "extraNetworks";
+type ScalarProps = Exclude<CoreConfigProp, ListProps>;
 
 export type CoreConfigShape = Record<RequiredProps, string> &
-  Partial<Record<OptionalProps, string>>;
+  Partial<Record<ScalarProps, string>> & {
+    extraNetworks?: string[];
+  };

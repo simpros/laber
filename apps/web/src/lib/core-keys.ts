@@ -47,6 +47,15 @@ export const CORE_KEYS = [
     group: "proxy",
   },
   {
+    key: "EXTRA_NETWORKS",
+    prop: "extraNetworks",
+    label: "Extra Networks",
+    secret: false,
+    required: false,
+    placeholder: "auth, monitor",
+    group: "proxy",
+  },
+  {
     key: "TUNNEL_TOKEN",
     prop: "tunnelToken",
     label: "Tunnel Token",

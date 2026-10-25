@@ -45,6 +45,13 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
 
+const CORE_KEY_HINTS: Partial<Record<CoreKey, string>> = {
+  EXTRA_NETWORKS:
+    "Comma-separated Docker networks Traefik should join. Add one per " +
+    "isolated stack network whose services pin " +
+    "traefik.docker.network; leave empty when sharing main is fine.",
+};
+
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
     const stored = config[keyDef.key];
@@ -159,6 +166,11 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                             : undefined
                         }
                       />
+                      {CORE_KEY_HINTS[keyDef.key] ? (
+                        <p className="text-text-muted mt-1 text-xs">
+                          {CORE_KEY_HINTS[keyDef.key]}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 );

@@ -1,5 +1,6 @@
 import { stringify } from "yaml";
 import type { CoreConfigShape } from "./core-keys";
+import { CORE_NETWORK, normalizeExtraNetworks } from "./core-networks";
 import { TRAEFIK_CONTAINER, TRAEFIK_SERVICE } from "./core-identity";
 
 export function buildCoreCompose(
@@ -11,6 +12,10 @@ export function buildCoreCompose(
   const pollingInterval = config.pollingInterval ?? "30";
   const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
+  const networks = [
+    CORE_NETWORK,
+    ...normalizeExtraNetworks(config.extraNetworks ?? []),
+  ];
 
   const services: Record<string, unknown> = {
     [TRAEFIK_SERVICE]: {
@@ -52,7 +57,7 @@ export function buildCoreCompose(
         "--serversTransport.insecureSkipVerify=true",
       ],
       labels: ["traefik.enable=true"],
-      networks: ["main"],
+      networks,
     },
   };
 
@@ -65,7 +70,7 @@ export function buildCoreCompose(
       environment: {
         TUNNEL_TOKEN: "${TUNNEL_TOKEN}",
       },
-      networks: ["main"],
+      networks,
     };
   }
 
@@ -92,18 +97,15 @@ export function buildCoreCompose(
         PROPAGATION_TIMEOUT: propagationTimeout,
       },
       volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"],
-      networks: ["main"],
+      networks,
     };
   }
 
   return {
     services,
-    networks: {
-      main: {
-        name: "main",
-        external: true,
-      },
-    },
+    networks: Object.fromEntries(
+      networks.map((name) => [name, { name, external: true }])
+    ),
     volumes: {
       acme: null,
       traefik: null,
