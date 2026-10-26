@@ -28,26 +28,26 @@ export function ConfigValueField({
   keepPlaceholder?: string;
   editPlaceholder?: string;
 }) {
-  const isSecret = chromeIsSecret(entry);
-  const keep = isSecret && entry.hadValue && !entry.dirty;
+  const secret = chromeIsSecret(entry);
+  const keep = secret && entry.hadValue && !entry.dirty;
 
   return (
     <div className="flex items-center gap-2">
       <input
         id={id}
         name={name}
-        type={isSecret ? "password" : "text"}
+        type={secret ? "password" : "text"}
         value={entry.value}
         onChange={(e) => onInput(e.target.value)}
         placeholder={
-          keep ? keepPlaceholder : isSecret ? editPlaceholder : placeholder
+          keep ? keepPlaceholder : secret ? editPlaceholder : placeholder
         }
         className={inputClassName}
       />
       <FieldActions
         entry={entry}
         onUndo={onUndo}
-        onClear={isSecret ? onClear : undefined}
+        onClear={secret ? onClear : undefined}
       />
     </div>
   );

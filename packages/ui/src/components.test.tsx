@@ -16,8 +16,8 @@ describe("StatusBadge", () => {
   for (const [tone, cls] of CASES) {
     it(`${tone} → ${cls}`, () => {
       try {
-        render(<StatusBadge status="label" tone={tone} />);
-        expect(screen.getByText("label").className).toContain(cls);
+        render(<StatusBadge tone={tone}>{tone}</StatusBadge>);
+        expect(screen.getByText(tone).className).toContain(cls);
       } finally {
         cleanup();
       }

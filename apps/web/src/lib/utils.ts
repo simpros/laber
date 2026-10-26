@@ -1,4 +1,4 @@
-import type { StatusTone } from "@laber/ui";
+import type { Tone } from "@laber/ui";
 
 export function isRecord(
   value: unknown
@@ -18,23 +18,24 @@ export function containerStatusBg(state: string) {
   return "bg-danger/10 border-danger/20";
 }
 
-// Badge tones live in one table: stack statuses (deployed/stopped/
-// discovered) and deployment-log statuses (running/success/error) map
-// to a kit tone here, so @laber/ui stays free of domain vocabulary.
-// Container text colors above are a separate scale on purpose: a
-// running container reads green inline but amber as a badge.
-const STATUS_TONE: Record<string, StatusTone> = {
-  success: "success",
+export type StackStatus = "discovered" | "deployed" | "stopped" | "error";
+export type LogStatus = "running" | "success" | "error";
+
+const STACK_TONE: Record<StackStatus, Tone> = {
+  discovered: "neutral",
   deployed: "success",
-  running: "warning",
   stopped: "warning",
   error: "danger",
-  discovered: "neutral",
 };
 
-export function statusTone(status: string): StatusTone {
-  return STATUS_TONE[status] ?? "neutral";
-}
+const LOG_TONE: Record<LogStatus, Tone> = {
+  running: "warning",
+  success: "success",
+  error: "danger",
+};
+
+export const stackTone = (status: StackStatus): Tone => STACK_TONE[status];
+export const logTone = (status: LogStatus): Tone => LOG_TONE[status];
 
 export function timeAgo(date: Date | string | null) {
   if (!date) return "never";

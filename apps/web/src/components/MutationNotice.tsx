@@ -10,8 +10,6 @@ type NoticeMutation = {
   isSuccess: boolean;
 };
 
-export type { NoticeMutation };
-
 export function MutationNotice({
   mutation,
   errorFallback,

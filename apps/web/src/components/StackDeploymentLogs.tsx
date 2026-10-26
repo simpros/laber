@@ -1,10 +1,18 @@
-import StatusBadge from "@/components/StatusBadge";
-import type { StackDeploymentLog } from "@/lib/queries/stacks";
+import { StatusBadge } from "@laber/ui";
+import { logTone, type LogStatus } from "@/lib/utils";
+
+type LogEntry = {
+  id: string;
+  status: LogStatus;
+  action: string;
+  output: string | null;
+  createdAt: Date | string | null;
+};
 
 export default function StackDeploymentLogs({
   logs,
 }: {
-  logs: StackDeploymentLog[];
+  logs: LogEntry[];
 }) {
   if (logs.length === 0) {
     return (
@@ -19,7 +27,9 @@ export default function StackDeploymentLogs({
           className="bg-surface-2 border-border rounded-lg border px-4 py-3"
         >
           <div className="flex items-center gap-3 text-sm">
-            <StatusBadge status={log.status} />
+            <StatusBadge tone={logTone(log.status)}>
+              {log.status}
+            </StatusBadge>
             <span className="text-text-secondary font-mono">
               {log.action}
             </span>

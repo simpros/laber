@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "./cn.js";
+import { toneClass } from "./tone.js";
 
 export type AlertVariant = "success" | "error" | "warning";
 
@@ -11,9 +12,9 @@ export interface AlertProps {
 }
 
 const styles: Record<AlertVariant, string> = {
-  success: "bg-success/5 border-success/20 text-success",
-  error: "bg-danger/5 border-danger/20 text-danger",
-  warning: "bg-warning/5 border-warning/20 text-warning",
+  success: `${toneClass("success")} border-success/20`,
+  error: `${toneClass("danger")} border-danger/20`,
+  warning: `${toneClass("warning")} border-warning/20`,
 };
 
 export default function Alert({

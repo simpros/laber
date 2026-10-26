@@ -1,34 +1,27 @@
+import type { ReactNode } from "react";
 import { cn } from "./cn.js";
-
-export type StatusTone = "success" | "warning" | "danger" | "neutral";
-
-const TONE_CLASS: Record<StatusTone, string> = {
-  success: "bg-success/10 text-success",
-  warning: "bg-warning/10 text-warning",
-  danger: "bg-danger/10 text-danger",
-  neutral: "bg-surface-3 text-text-secondary",
-};
+import { toneClass, type Tone } from "./tone.js";
 
 export interface StatusBadgeProps {
-  status: string;
-  tone: StatusTone;
+  tone: Tone;
   className?: string;
+  children: ReactNode;
 }
 
 export default function StatusBadge({
-  status,
   tone,
   className,
+  children,
 }: StatusBadgeProps) {
   return (
     <span
       className={cn(
         "rounded px-1.5 py-0.5 text-xs font-medium",
-        TONE_CLASS[tone],
+        toneClass(tone),
         className
       )}
     >
-      {status}
+      {children}
     </span>
   );
 }
