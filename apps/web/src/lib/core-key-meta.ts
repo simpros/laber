@@ -79,3 +79,26 @@ export const CORE_KEY_META: Record<CoreKey, CoreKeyMeta> = {
     group: "companion",
   },
 };
+
+export type CoreKeyEntry = CoreKeyMeta & { key: CoreKey };
+
+// Insertion order here is the render order; the page imports these instead
+// of reshaping the table itself.
+export const CORE_KEY_ENTRIES: CoreKeyEntry[] = (
+  Object.keys(CORE_KEY_META) as CoreKey[]
+).map((key) => ({ key, ...CORE_KEY_META[key] }));
+
+export type CoreKeySection = {
+  id: CoreKeyGroup;
+  label: string;
+  optional: boolean;
+  keys: CoreKeyEntry[];
+};
+
+export const CORE_KEY_SECTIONS: CoreKeySection[] = (
+  Object.keys(CORE_KEY_GROUPS) as CoreKeyGroup[]
+).map((id) => ({
+  id,
+  ...CORE_KEY_GROUPS[id],
+  keys: CORE_KEY_ENTRIES.filter((entry) => entry.group === id),
+}));

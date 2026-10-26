@@ -3,9 +3,8 @@ import { Card, CardHeader, Button } from "@laber/ui";
 import type { CoreKey } from "@laber/api-client";
 import { statusColor } from "@/lib/utils";
 import {
-  CORE_KEY_GROUPS,
-  CORE_KEY_META,
-  type CoreKeyGroup,
+  CORE_KEY_ENTRIES,
+  CORE_KEY_SECTIONS,
 } from "@/lib/core-key-meta";
 import {
   chromeIsSecret,
@@ -38,24 +37,14 @@ type FieldState = SecrecyEntry & {
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
 
-const META_ENTRIES = (Object.keys(CORE_KEY_META) as CoreKey[]).map(
-  (key) => ({ key, ...CORE_KEY_META[key] })
-);
-
-const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
-  id: id as CoreKeyGroup,
-  ...meta,
-  keys: META_ENTRIES.filter((k) => k.group === id),
-}));
-
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
-  return META_ENTRIES.map(({ key }) => {
+  return CORE_KEY_ENTRIES.map(({ key }) => {
     const stored = config[key];
     return {
       ...maskedFromServer({
-        isSecret: stored?.isSecret ?? false,
-        value: stored?.value,
-        hasValue: stored?.hasValue,
+        isSecret: stored.isSecret,
+        value: stored.value,
+        hasValue: stored.hasValue,
       }),
       key,
     };
@@ -109,7 +98,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
         />
       </div>
       <div className="space-y-6">
-        {groups.map((group) => (
+        {CORE_KEY_SECTIONS.map((group) => (
           <Card key={group.id}>
             <CardHeader
               title={group.label}
@@ -151,7 +140,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                               ? undoSecretEntry(field)
                               : undoPlainEntry(
                                   field,
-                                  snapshot.config[keyDef.key]?.value ?? ""
+                                  snapshot.config[keyDef.key].value
                                 )
                           )
                         }

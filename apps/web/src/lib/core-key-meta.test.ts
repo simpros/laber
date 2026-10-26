@@ -1,31 +1,11 @@
 import { describe, it, expect } from "bun:test";
 import {
-  CORE_KEY_GROUPS,
+  CORE_KEY_ENTRIES,
   CORE_KEY_META,
-  type CoreKeyGroup,
+  CORE_KEY_SECTIONS,
 } from "./core-key-meta";
 
-describe("CORE_KEY_GROUPS", () => {
-  it("has expected groups", () => {
-    expect("proxy" in CORE_KEY_GROUPS).toBe(true);
-    expect("tunnel" in CORE_KEY_GROUPS).toBe(true);
-    expect("companion" in CORE_KEY_GROUPS).toBe(true);
-  });
-});
-
 describe("CORE_KEY_META", () => {
-  it("covers ROOT_DOMAIN and CF_DNS_API_TOKEN", () => {
-    expect(CORE_KEY_META.ROOT_DOMAIN).toBeDefined();
-    expect(CORE_KEY_META.CF_DNS_API_TOKEN).toBeDefined();
-  });
-
-  it("every entry has a group matching CORE_KEY_GROUPS", () => {
-    const validGroups = Object.keys(CORE_KEY_GROUPS);
-    for (const entry of Object.values(CORE_KEY_META)) {
-      expect(validGroups).toContain(entry.group);
-    }
-  });
-
   it("every entry has a non-empty label", () => {
     for (const entry of Object.values(CORE_KEY_META)) {
       expect(entry.label.length).toBeGreaterThan(0);
@@ -45,8 +25,21 @@ describe("CORE_KEY_META", () => {
 
   it("every group has at least one key", () => {
     const groups = Object.values(CORE_KEY_META).map((e) => e.group);
-    for (const group of Object.keys(CORE_KEY_GROUPS)) {
-      expect(groups).toContain(group as CoreKeyGroup);
+    for (const section of CORE_KEY_SECTIONS) {
+      expect(groups).toContain(section.id);
+      expect(section.keys.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("CORE_KEY_SECTIONS", () => {
+  it("covers every entry exactly once", () => {
+    const sectioned = CORE_KEY_SECTIONS.flatMap((s) =>
+      s.keys.map((k) => k.key)
+    );
+    expect(new Set(sectioned).size).toBe(sectioned.length);
+    expect(new Set(sectioned)).toEqual(
+      new Set(CORE_KEY_ENTRIES.map((e) => e.key))
+    );
   });
 });

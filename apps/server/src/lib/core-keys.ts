@@ -69,6 +69,14 @@ export const CORE_KEYS = [
 export type CoreKey = (typeof CORE_KEYS)[number]["key"];
 export type CoreConfigProp = (typeof CORE_KEYS)[number]["prop"];
 
+// One entry of GET /api/core's config map. The server always serves every
+// CORE_KEYS member, so secrecy never needs a client-side fallback.
+export type CoreConfigEntry = {
+  value: string;
+  isSecret: boolean;
+  hasValue: boolean;
+};
+
 type RequiredProps = Extract<
   (typeof CORE_KEYS)[number],
   { required: true }
