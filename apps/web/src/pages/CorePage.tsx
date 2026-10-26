@@ -156,14 +156,11 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                                 )
                           )
                         }
-                        onClear={
-                          chromeIsSecret(field)
-                            ? () =>
-                                updateByKey(
-                                  keyDef.key,
-                                  clearSecretEntry(field)
-                                )
-                            : undefined
+                        onClear={() =>
+                          updateByKey(
+                            keyDef.key,
+                            clearSecretEntry(field)
+                          )
                         }
                       />
                       {"hint" in keyDef ? (

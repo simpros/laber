@@ -1,4 +1,5 @@
 import { createApiClient, type ApiClient } from "@laber/api-client";
+import { isRecord } from "./utils";
 
 let cached: ApiClient | null = null;
 
@@ -34,10 +35,6 @@ export function unwrap<T>(res: { data: T | null; error: unknown }): T {
     throw new ApiError("Request failed");
   }
   return res.data;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function toApiError(error: unknown): ApiError {

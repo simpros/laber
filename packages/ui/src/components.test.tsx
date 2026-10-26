@@ -7,24 +7,25 @@ const { default: AuthLayout } = await import("./AuthLayout.js");
 const { default: CardHeader } = await import("./CardHeader.js");
 
 describe("StatusBadge", () => {
-  it("renders status text with success styling", () => {
-    try {
-      render(<StatusBadge status="success" />);
-      const el = screen.getByText("success");
-      expect(el.className).toContain("text-success");
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("renders error styling", () => {
-    try {
-      render(<StatusBadge status="error" />);
-      expect(screen.getByText("error").className).toContain("text-danger");
-    } finally {
-      cleanup();
-    }
-  });
+  const CASES = [
+    ["success", "text-success"],
+    ["deployed", "text-success"],
+    ["running", "text-warning"],
+    ["stopped", "text-warning"],
+    ["error", "text-danger"],
+    ["discovered", "text-text-secondary"],
+    ["bogus-status", "text-text-secondary"],
+  ] as const;
+  for (const [status, tone] of CASES) {
+    it(`${status} → ${tone}`, () => {
+      try {
+        render(<StatusBadge status={status} />);
+        expect(screen.getByText(status).className).toContain(tone);
+      } finally {
+        cleanup();
+      }
+    });
+  }
 });
 
 describe("Icon", () => {

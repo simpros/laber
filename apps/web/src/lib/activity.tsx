@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Activity, ActivityEvent } from "@laber/api-client";
+import { isRecord } from "./utils";
 
 interface ActivityContextValue {
   activities: Activity[];
@@ -27,10 +28,6 @@ const ActivityContext = createContext<ActivityContextValue>({
   runningCount: 0,
   clear: () => {},
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function isActivity(value: unknown): value is Activity {
   if (!isRecord(value)) return false;

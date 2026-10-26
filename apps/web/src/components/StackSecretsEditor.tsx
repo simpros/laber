@@ -16,7 +16,7 @@ import {
 } from "@/lib/queries/stacks";
 import SecretBadge from "@/components/SecretBadge";
 import MutationNotice from "@/components/MutationNotice";
-import { MaskedSecretField } from "@/components/MaskedSecretField";
+import ConfigValueField from "@/components/ConfigValueField";
 
 export type SecretEntry = {
   name: string;
@@ -107,7 +107,8 @@ export default function StackSecretsEditor({
               <SecretBadge entry={entry} />
             </div>
 
-            <MaskedSecretField
+            <ConfigValueField
+              isSecret
               entry={entry}
               onInput={(value) => touch(i, value)}
               onUndo={() => update(i, undoSecretEntry(entry))}

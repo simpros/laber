@@ -158,11 +158,7 @@ export default function StackEnvEditor({
                   editPlaceholder="value"
                   onInput={(value) => touch(i, value)}
                   onUndo={() => undoRow(i)}
-                  onClear={
-                    chromeIsSecret(entry)
-                      ? () => update(i, clearSecretEntry(entry))
-                      : undefined
-                  }
+                  onClear={() => update(i, clearSecretEntry(entry))}
                 />
               </div>
               {isDetected && (
