@@ -106,8 +106,8 @@ export async function getCoreOverview() {
   for (const keyDef of CORE_KEYS) {
     const stored = storedByKey.get(keyDef.key);
     configMap[keyDef.key] = {
-      value: stored && !stored.isSecret ? stored.value : "",
-      isSecret: stored?.isSecret ?? keyDef.secret,
+      value: stored && !keyDef.secret ? stored.value : "",
+      isSecret: keyDef.secret,
       hasValue: (stored?.value ?? "") !== "",
     };
   }

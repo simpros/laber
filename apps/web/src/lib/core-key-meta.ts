@@ -1,22 +1,12 @@
 import type { CoreKey } from "@laber/api-client";
 
-export type CoreKeyGroup = "proxy" | "tunnel" | "companion";
-
-export const CORE_KEY_GROUPS: Record<
-  CoreKeyGroup,
-  { label: string; optional: boolean }
-> = {
-  proxy: { label: "Reverse Proxy", optional: false },
-  tunnel: { label: "Cloudflare Tunnel", optional: true },
-  companion: { label: "Cloudflare Companion", optional: true },
-};
-
 export type CoreKeyMeta = {
   label: string;
   placeholder?: string;
-  group: CoreKeyGroup;
   hint?: string;
 };
+
+export type CoreKeyEntry = CoreKeyMeta & { key: CoreKey };
 
 // Display strings only. Key membership, secrecy, and required flags live
 // in the server table; this map is keyed by CoreKey so tsc fails when the
@@ -25,26 +15,21 @@ export const CORE_KEY_META: Record<CoreKey, CoreKeyMeta> = {
   ROOT_DOMAIN: {
     label: "Root Domain",
     placeholder: "yourdomain.com",
-    group: "proxy",
   },
   CF_DNS_API_TOKEN: {
     label: "Cloudflare DNS API Token",
-    group: "proxy",
   },
   ACME_EMAIL: {
     label: "ACME Email",
     placeholder: "admin@yourdomain.com",
-    group: "proxy",
   },
   LOG_LEVEL: {
     label: "Log Level",
     placeholder: "INFO",
-    group: "proxy",
   },
   EXTRA_NETWORKS: {
     label: "Extra Networks",
     placeholder: "auth, monitor",
-    group: "proxy",
     hint:
       "Comma-separated Docker networks Traefik should join. Add one per " +
       "isolated stack network whose services pin traefik.docker.network; " +
@@ -52,53 +37,67 @@ export const CORE_KEY_META: Record<CoreKey, CoreKeyMeta> = {
   },
   TUNNEL_TOKEN: {
     label: "Tunnel Token",
-    group: "tunnel",
   },
   ZONE_ID: {
     label: "Zone ID",
-    group: "companion",
   },
   HTTP_TIMEOUT: {
     label: "HTTP Timeout",
     placeholder: "60",
-    group: "companion",
   },
   POLLING_INTERVAL: {
     label: "Polling Interval",
     placeholder: "10",
-    group: "companion",
   },
   PROPAGATION_TIMEOUT: {
     label: "Propagation Timeout",
     placeholder: "3600",
-    group: "companion",
   },
   TTL: {
     label: "TTL",
     placeholder: "300",
-    group: "companion",
   },
 };
 
-export type CoreKeyEntry = CoreKeyMeta & { key: CoreKey };
-
-// Insertion order here is the render order; the page imports these instead
-// of reshaping the table itself.
-export const CORE_KEY_ENTRIES: CoreKeyEntry[] = (
-  Object.keys(CORE_KEY_META) as CoreKey[]
-).map((key) => ({ key, ...CORE_KEY_META[key] }));
-
-export type CoreKeySection = {
-  id: CoreKeyGroup;
+type CoreKeySection = {
+  id: string;
   label: string;
   optional: boolean;
   keys: CoreKeyEntry[];
 };
 
-export const CORE_KEY_SECTIONS: CoreKeySection[] = (
-  Object.keys(CORE_KEY_GROUPS) as CoreKeyGroup[]
-).map((id) => ({
+const section = (
+  id: string,
+  label: string,
+  optional: boolean,
+  keys: CoreKey[]
+): CoreKeySection => ({
   id,
-  ...CORE_KEY_GROUPS[id],
-  keys: CORE_KEY_ENTRIES.filter((entry) => entry.group === id),
-}));
+  label,
+  optional,
+  keys: keys.map((key) => ({ key, ...CORE_KEY_META[key] })),
+});
+
+// Sections own their ordered keys; render order is explicit data here,
+// not object-literal insertion order.
+export const CORE_KEY_SECTIONS: CoreKeySection[] = [
+  section("proxy", "Reverse Proxy", false, [
+    "ROOT_DOMAIN",
+    "CF_DNS_API_TOKEN",
+    "ACME_EMAIL",
+    "LOG_LEVEL",
+    "EXTRA_NETWORKS",
+  ]),
+  section("tunnel", "Cloudflare Tunnel", true, ["TUNNEL_TOKEN"]),
+  section("companion", "Cloudflare Companion", true, [
+    "ZONE_ID",
+    "HTTP_TIMEOUT",
+    "POLLING_INTERVAL",
+    "PROPAGATION_TIMEOUT",
+    "TTL",
+  ]),
+];
+
+export const CORE_KEY_ENTRIES: CoreKeyEntry[] = CORE_KEY_SECTIONS.flatMap(
+  (s) => s.keys
+);

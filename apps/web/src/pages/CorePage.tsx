@@ -2,10 +2,7 @@ import { useMemo } from "react";
 import { Card, CardHeader, Button } from "@laber/ui";
 import type { CoreKey } from "@laber/api-client";
 import { statusColor } from "@/lib/utils";
-import {
-  CORE_KEY_ENTRIES,
-  CORE_KEY_SECTIONS,
-} from "@/lib/core-key-meta";
+import { CORE_KEY_ENTRIES, CORE_KEY_SECTIONS } from "@/lib/core-key-meta";
 import {
   chromeIsSecret,
   clearSecretEntry,

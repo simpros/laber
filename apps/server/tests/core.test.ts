@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "fs";
 import { db, coreConfig, deploymentLogs } from "@laber/db";
 import { eq } from "drizzle-orm";
 import { app } from "../src/app";
+import type { CoreConfigEntry, CoreKey } from "../src/lib/core-keys";
 import { signUp, req, jsonReq } from "./helpers";
 import { ActionFailedError } from "../src/lib/errors";
 import { getCoreComposePath } from "../src/lib/core-identity";
@@ -28,10 +29,7 @@ describe("GET /api/core", () => {
     );
     expect(res.status).toBe(200);
     const data = (await res.json()) as {
-      config: Record<
-        string,
-        { value: string; isSecret: boolean; hasValue: boolean }
-      >;
+      config: Record<CoreKey, CoreConfigEntry>;
       coreServices: unknown[];
       isConfigured: boolean;
     };
@@ -63,10 +61,7 @@ describe("PUT /api/core/config", () => {
     const get = (await (
       await app.handle(req("/api/core", { headers: { cookie } }))
     ).json()) as {
-      config: Record<
-        string,
-        { value: string; isSecret: boolean; hasValue: boolean }
-      >;
+      config: Record<CoreKey, CoreConfigEntry>;
       isConfigured: boolean;
     };
     expect(get.config.ROOT_DOMAIN.value).toBe("example.com");
@@ -129,10 +124,7 @@ describe("PUT /api/core/config with EXTRA_NETWORKS", () => {
     const get = (await (
       await app.handle(req("/api/core", { headers: { cookie } }))
     ).json()) as {
-      config: Record<
-        string,
-        { value: string; isSecret: boolean; hasValue: boolean }
-      >;
+      config: Record<CoreKey, CoreConfigEntry>;
     };
     expect(get.config.EXTRA_NETWORKS.value).toBe("auth, monitor");
     expect(get.config.EXTRA_NETWORKS.hasValue).toBe(true);
