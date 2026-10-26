@@ -6,9 +6,6 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "laber": {
-    "allowOrphan": "unwired library with no importer yet"
-  },
   "scripts": {
     "check": "tsc --noEmit",
     "lint": "eslint .",

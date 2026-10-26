@@ -78,7 +78,7 @@ export default defineConfig({
     {
       command: "bun run src/index.ts",
       cwd: join(__dirname, "../server"),
-      url: `${API_URL}/api/setup/status`,
+      url: `${API_URL}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       env: apiEnv,

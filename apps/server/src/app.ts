@@ -3,6 +3,7 @@ import { auth } from "@laber/auth";
 import { DomainError, type DomainErrorKind } from "./lib/errors";
 import { getSessionUser } from "./lib/auth";
 import { dashboardRoutes } from "./routes/dashboard";
+import { healthRoutes } from "./routes/health";
 import { setupRoutes } from "./routes/setup";
 import { stackRoutes } from "./routes/stacks";
 import { coreRoutes } from "./routes/core";
@@ -27,6 +28,7 @@ async function requireSession({
 
 export function createApp() {
   const app = new Elysia()
+    .use(healthRoutes)
     .onError(({ code, error, set }) => {
       if (error instanceof DomainError) {
         const statusByKind: Record<DomainErrorKind, number> = {
