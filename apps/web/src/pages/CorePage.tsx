@@ -4,7 +4,6 @@ import { statusColor } from "@/lib/utils";
 import {
   CORE_KEYS,
   CORE_KEY_GROUPS,
-  coreKeyPlaceholder,
   type CoreKey,
   type CoreKeyGroup,
 } from "@/lib/core-keys";
@@ -139,7 +138,9 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                         id={keyDef.key}
                         name={keyDef.key}
                         entry={field}
-                        placeholder={coreKeyPlaceholder(keyDef)}
+                        placeholder={
+                          keyDef.secret ? undefined : keyDef.placeholder
+                        }
                         onInput={(value) => touchByKey(keyDef.key, value)}
                         onUndo={() =>
                           updateByKey(

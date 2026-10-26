@@ -47,6 +47,9 @@ export const stacks = sqliteTable("stacks", {
     .$defaultFn(() => new Date()),
 });
 
+// Wire vocabulary lives with the column that defines it.
+export type StackStatus = (typeof stacks.$inferSelect)["status"];
+
 export const stackEnvVars = sqliteTable("stack_env_vars", {
   id: text("id")
     .primaryKey()
