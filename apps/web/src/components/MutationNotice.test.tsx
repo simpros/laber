@@ -1,6 +1,14 @@
 import { describe, it, expect } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MutationNotice, type NoticeMutation } from "./MutationNotice";
+import { MutationNotice } from "./MutationNotice";
+
+type NoticeMutation = {
+  data: string | null | undefined;
+  error: unknown;
+  isPending: boolean;
+  isError: boolean;
+  isSuccess: boolean;
+};
 
 function stub(overrides: Partial<NoticeMutation> = {}): NoticeMutation {
   return {
