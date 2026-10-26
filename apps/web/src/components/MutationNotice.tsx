@@ -9,6 +9,8 @@ type NoticeMutation = {
   isError: boolean;
 };
 
+export type { NoticeMutation };
+
 export function noticeFor(
   mutation: NoticeMutation
 ):
