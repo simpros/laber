@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, deploymentLogs, stacks } from "@laber/db";
+import { getLogger } from "@laber/logging";
 import { createActivity, appendOutput, finishActivity } from "./activity";
 import type { Activity } from "./activity";
 import { ActionFailedError } from "./errors";
@@ -8,6 +9,8 @@ export type ActionIdentity =
   | { kind: "stack"; stackId: string; onSuccess: "deployed" | "stopped" }
   | { kind: "stack-log"; stackId: string }
   | { kind: "core" };
+
+const logger = getLogger(["laber", "server", "actions"]);
 
 async function recordActionOutcome(options: {
   activityId: string;
@@ -90,9 +93,15 @@ async function runTranscript<T>(
 
   try {
     const result = await run(onOutput);
-    return { ok: true, activity, output: result.output, value: result.value };
+    return {
+      ok: true,
+      activity,
+      output: result.output,
+      value: result.value,
+    };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Unknown error";
+    const detail =
+      error instanceof Error ? error.message : "Unknown error";
     transcript += `\n${detail}\n`;
     appendOutput(activity.id, `\n${detail}\n`);
     return { ok: false, activity, error, transcript };
@@ -115,7 +124,8 @@ export async function runLoggedAction<T>(
     }>;
   }
 ): Promise<{ output: string; value?: T }> {
-  const failureMessage = options.failureMessage ?? `${options.title} failed`;
+  const failureMessage =
+    options.failureMessage ?? `${options.title} failed`;
   const outcome = await runTranscript<T>(options.title, options.run);
 
   if (!outcome.ok) {
@@ -127,7 +137,9 @@ export async function runLoggedAction<T>(
         result: { success: false, output: outcome.transcript },
       });
     } catch (persistError) {
-      console.error("Failed to persist action outcome:", persistError);
+      logger.error("Failed to persist action outcome", {
+        error: String(persistError),
+      });
     }
     if (outcome.error instanceof ActionFailedError) {
       throw new ActionFailedError(failureMessage);
@@ -163,7 +175,8 @@ export async function runActivity<T>(
     }>;
   }
 ): Promise<{ output: string; value?: T }> {
-  const failureMessage = options.failureMessage ?? `${options.title} failed`;
+  const failureMessage =
+    options.failureMessage ?? `${options.title} failed`;
   const outcome = await runTranscript<T>(options.title, options.run);
 
   if (!outcome.ok) {

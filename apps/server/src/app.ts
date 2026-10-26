@@ -27,6 +27,7 @@ async function requireSession({
 
 export function createApp() {
   const app = new Elysia()
+    .get("/health", () => ({ status: "ok" as const }))
     .onError(({ code, error, set }) => {
       if (error instanceof DomainError) {
         const statusByKind: Record<DomainErrorKind, number> = {

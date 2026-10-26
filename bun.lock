@@ -21,6 +21,7 @@
       "dependencies": {
         "@laber/auth": "workspace:*",
         "@laber/db": "workspace:*",
+        "@laber/logging": "workspace:*",
         "dockerode": "^4.0.9",
         "drizzle-orm": "1.0.0-beta.16-ea816b6",
         "elysia": "^1.4.0",
@@ -42,6 +43,7 @@
       "dependencies": {
         "@laber/api-client": "workspace:*",
         "@laber/auth": "workspace:*",
+        "@laber/logging": "workspace:*",
         "@laber/ui": "workspace:*",
         "@tanstack/react-form": "^1.0.0",
         "@tanstack/react-query": "^5.0.0",
