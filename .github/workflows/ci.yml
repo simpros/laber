@@ -23,6 +23,9 @@ jobs:
       - name: Check for orphan workspaces
         run: bun run deps:orphans
 
+      - name: Verify toolchain versions
+        run: bun run verify:toolchain
+
       - name: Lint
         run: bun run lint
 

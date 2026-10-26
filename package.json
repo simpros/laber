@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
-    "lint": "turbo run lint && eslint scripts/ && bun scripts/check-toolchain-version.ts",
+    "lint": "turbo run lint && eslint scripts/ && bun run verify:toolchain",
     "check": "turbo run check && tsc --noEmit -p tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -27,6 +27,7 @@
     "db:push": "turbo run db:push",
     "db:studio": "turbo run db:studio",
     "deps:orphans": "bun scripts/check-orphan-workspaces.ts",
+    "verify:toolchain": "bun scripts/check-toolchain-version.ts",
     "test": "turbo run test && bun test scripts/",
     "test:e2e": "turbo run test:e2e",
     "auth:generate": "turbo run auth:generate"

@@ -6,7 +6,7 @@ Homelab stack manager: an **Elysia API** (`apps/server`) plus a **React SPA**
 
 ## Quickstart (dev, zero external services)
 
-Requirements: Bun 1.4.4.
+Requirements: Bun (pinned by `packageManager` in `package.json`).
 
 ```sh
 bun install

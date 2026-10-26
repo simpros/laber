@@ -5,7 +5,6 @@ export interface VersionFinding {
 
 export interface CheckedFile {
   path: string;
-  kind: "readme" | "dockerfile" | "workflow";
   text: string;
 }
 
@@ -45,34 +44,20 @@ export function catalogEntry(
   return typeof entry === "string" ? entry : undefined;
 }
 
-const README_PATTERN = /Requirements: Bun (\d+\.\d+\.\d+)/;
 const DOCKER_ARG_PATTERN = /^ARG BUN_VERSION\s*$/m;
 const DOCKER_FROM_LITERAL = /FROM oven\/bun:\d+\.\d+\.\d+-/;
 const CI_PIN_PATTERN = /bun-version:\s*["']?\d/;
 
 // Pure so bun test can pin the skew cases; I/O
-// (manifest read, workflow glob) stays in the entry.
+// (manifest read, file glob) stays in the entry.
 export function checkBunVersions(
   files: CheckedFile[],
   pin: string,
   catalogBun: string | undefined
 ): VersionFinding[] {
   const findings: VersionFinding[] = [];
-  for (const { path, kind, text } of files) {
-    if (kind === "readme") {
-      const stated = text.match(README_PATTERN)?.[1];
-      if (!stated) {
-        findings.push({
-          file: path,
-          detail: "no 'Requirements: Bun x.y.z' line; update the guard",
-        });
-      } else if (stated !== pin) {
-        findings.push({
-          file: path,
-          detail: `states ${stated}, packageManager pins ${pin}`,
-        });
-      }
-    } else if (kind === "dockerfile") {
+  for (const { path, text } of files) {
+    if (path.endsWith("Dockerfile")) {
       if (!DOCKER_ARG_PATTERN.test(text)) {
         findings.push({ file: path, detail: "missing 'ARG BUN_VERSION'" });
       }

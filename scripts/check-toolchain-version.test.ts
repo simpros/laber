@@ -7,15 +7,8 @@ import {
 
 const PIN = "1.4.4";
 
-function kindFor(path: string): CheckedFile["kind"] {
-  if (path === "README.md") return "readme";
-  if (path.endsWith("Dockerfile")) return "dockerfile";
-  return "workflow";
-}
-
 function filesWith(overrides: Record<string, string> = {}): CheckedFile[] {
   const texts = {
-    "README.md": "Requirements: Bun 1.4.4.\n",
     "apps/server/Dockerfile":
       "ARG BUN_VERSION\n\nFROM oven/bun:${BUN_VERSION}-alpine AS base\n",
     "apps/web/Dockerfile":
@@ -24,11 +17,7 @@ function filesWith(overrides: Record<string, string> = {}): CheckedFile[] {
     ".github/actions/setup/action.yml": "bun-version-file: package.json\n",
     ...overrides,
   };
-  return Object.entries(texts).map(([path, text]) => ({
-    path,
-    kind: kindFor(path),
-    text,
-  }));
+  return Object.entries(texts).map(([path, text]) => ({ path, text }));
 }
 
 describe("readPin", () => {
@@ -46,24 +35,6 @@ describe("readPin", () => {
 });
 
 describe("checkBunVersions", () => {
-  test("a differing major.minor in README fails", () => {
-    const findings = checkBunVersions(
-      filesWith({ "README.md": "Requirements: Bun 1.5.0.\n" }),
-      PIN,
-      PIN
-    );
-    expect(findings.map((finding) => finding.file)).toEqual(["README.md"]);
-  });
-
-  test("a patch-level skew in README fails", () => {
-    const findings = checkBunVersions(
-      filesWith({ "README.md": "Requirements: Bun 1.4.5.\n" }),
-      PIN,
-      PIN
-    );
-    expect(findings).toHaveLength(1);
-  });
-
   test("a hardcoded Dockerfile base image fails", () => {
     const findings = checkBunVersions(
       filesWith({

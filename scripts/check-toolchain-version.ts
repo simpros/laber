@@ -8,32 +8,22 @@ import {
 
 const ROOT = join(import.meta.dir, "..");
 
-// Fixed-version files plus every workflow: a new workflow
-// is scanned by virtue of the glob, not by being listed.
-const CHECKED: Omit<CheckedFile, "text">[] = [
-  { path: "README.md", kind: "readme" },
-  { path: "apps/server/Dockerfile", kind: "dockerfile" },
-  { path: "apps/web/Dockerfile", kind: "dockerfile" },
-];
+// Globbed so a new Dockerfile or workflow is scanned
+// without being listed here.
+const GLOBS = ["apps/*/Dockerfile", ".github/**/*.yml"];
 
 const manifest = (await Bun.file(
   join(ROOT, "package.json")
 ).json()) as unknown;
 const pin = readPin(manifest);
 const files: CheckedFile[] = [];
-for (const { path, kind } of CHECKED) {
-  files.push({
-    path,
-    kind,
-    text: await Bun.file(join(ROOT, path)).text(),
-  });
-}
-for (const path of new Bun.Glob(".github/**/*.yml").scanSync(ROOT)) {
-  files.push({
-    path,
-    kind: "workflow",
-    text: await Bun.file(join(ROOT, path)).text(),
-  });
+for (const pattern of GLOBS) {
+  for (const path of new Bun.Glob(pattern).scanSync(ROOT)) {
+    files.push({
+      path,
+      text: await Bun.file(join(ROOT, path)).text(),
+    });
+  }
 }
 const findings = checkBunVersions(
   files,

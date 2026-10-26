@@ -1,5 +1,4 @@
-# BUN_VERSION comes from packageManager via publish.yml, or
-# scripts/build-web-image.sh for a local build.
+# BUN_VERSION has no default; pass it from packageManager via scripts/bun-version.ts.
 ARG BUN_VERSION
 
 FROM oven/bun:${BUN_VERSION}-alpine AS base
