@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
-    "lint": "turbo run lint && eslint scripts/ && bun run verify:toolchain",
+    "lint": "turbo run lint && eslint scripts/",
     "check": "turbo run check && tsc --noEmit -p tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

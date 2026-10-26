@@ -125,16 +125,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Same pin source as .github/actions/setup (packageManager via
-      # bun-version-file); both images declare ARG BUN_VERSION with no
-      # default, so the build needs it passed explicitly.
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Resolve Bun version
+      - uses: ./.github/actions/bun
         id: bun
-        run: echo "version=$(bun scripts/bun-version.ts)" >> "$GITHUB_OUTPUT"
 
       - name: Build ${{ matrix.name }} image
         uses: docker/build-push-action@v6

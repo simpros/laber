@@ -4,9 +4,8 @@ description: Install the packageManager-pinned Bun and project dependencies.
 runs:
   using: composite
   steps:
-    - uses: oven-sh/setup-bun@v2
-      with:
-        bun-version-file: package.json
+    - uses: ./.github/actions/bun
+      id: bun
 
     - name: Install dependencies
       shell: bash
@@ -15,6 +14,6 @@ runs:
     - name: Verify Bun toolchain
       shell: bash
       run: |
-        BUN=$(bun scripts/bun-version.ts)
+        BUN=${{ steps.bun.outputs.version }}
         echo "bun $BUN ($(bun --version))"
         test "$(bun --version)" = "$BUN"

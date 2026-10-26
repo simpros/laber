@@ -42,6 +42,7 @@ Run from the repo root unless noted:
 ## Verification
 
 - `bun run lint`, `bun run check`, `bun run test`, `bun run build` green.
+- `bun run verify:toolchain` — the `packageManager` Bun pin matches every Dockerfile and workflow reference.
 - E2E green with SQLite only (`bun run test:e2e`).
 - `grep -rni postgres apps packages docker-compose.prod.yml .github` shows no services/deps/env/docs (test fixtures using a `postgres:` image string as sample compose data are fine).
 - `BUN_VERSION=$(bun scripts/bun-version.ts) BETTER_AUTH_SECRET=... docker compose -f docker-compose.prod.yml up --build` serves api + web with a persistent SQLite volume; the API boots clean from an empty volume.

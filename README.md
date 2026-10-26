@@ -46,6 +46,7 @@ the default in code applies (`packages/db/src/paths.ts`,
 
 ```sh
 bun run lint
+bun run verify:toolchain
 bun run check
 bun run test
 bun run build
