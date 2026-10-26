@@ -9,6 +9,7 @@
       "packages/*"
     ],
     "catalog": {
+      "@happy-dom/global-registrator": "^20.14.6",
       "@types/bun": "1.4.4",
       "happy-dom": "^20.14.6",
       "typescript": "5.9.3"
@@ -32,11 +33,9 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.1",
-    "@happy-dom/global-registrator": "^20.14.6",
     "@laber/eslint-config": "workspace:*",
     "@types/bun": "catalog:",
     "eslint": "10.3.0",
-    "happy-dom": "catalog:",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "0.8.0",
     "turbo": "^2.11.10",

@@ -20,8 +20,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Verify Bun version
-        run: test "$(bun --version)" = "$(jq -er '.packageManager | split("bun@")[1]' package.json)"
+      - name: Verify Bun toolchain
+        run: |
+          BUN=$(bun scripts/bun-version.ts)
+          test "$(bun --version)" = "$BUN"
+          test "$(bun scripts/bun-version.ts --catalog @types/bun)" = "$BUN"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -53,9 +56,6 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Bun version
-        run: bun --version
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -78,9 +78,6 @@ jobs:
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
-
-      - name: Bun version
-        run: bun --version
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

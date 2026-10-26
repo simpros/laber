@@ -60,12 +60,22 @@ function exemptionReason(manifest: WorkspaceManifest): string | undefined {
 // Catalogs require Bun's object form of `workspaces`, where the
 // globs are nested under `packages`.
 function workspacePatterns(workspaces: unknown): string[] {
-  const patterns = Array.isArray(workspaces)
-    ? workspaces
-    : (workspaces as { packages?: unknown } | null)?.packages;
+  const nested =
+    typeof workspaces === "object" &&
+    workspaces !== null &&
+    "packages" in workspaces
+      ? workspaces.packages
+      : undefined;
+  const patterns = Array.isArray(workspaces) ? workspaces : nested;
   if (!Array.isArray(patterns))
     throw new Error("package.json#workspaces must list workspace globs");
-  return patterns.filter((p): p is string => typeof p === "string");
+  const globs: string[] = [];
+  for (const pattern of patterns) {
+    if (typeof pattern !== "string")
+      throw new Error("package.json#workspaces must list workspace globs");
+    globs.push(pattern);
+  }
+  return globs;
 }
 
 const rootManifest = (await Bun.file(

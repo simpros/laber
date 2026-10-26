@@ -1,6 +1,6 @@
 ARG COMMIT_SHA=unknown
-# publish.yml derives this from packageManager; pass --build-arg for a
-# standalone build.
+# BUN_VERSION comes from packageManager via publish.yml, or
+# scripts/build-web-image.sh for a local build.
 ARG BUN_VERSION
 
 FROM oven/bun:${BUN_VERSION}-alpine AS base
