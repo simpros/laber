@@ -3,10 +3,6 @@ import { resolve } from "path";
 
 export const DATA_DIR = resolveDataDir();
 
-export function getDataDir() {
-  return DATA_DIR;
-}
-
 export function getRepoDir(repoId: string) {
   return resolve(DATA_DIR, "repos", repoId);
 }

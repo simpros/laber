@@ -1,37 +1,28 @@
 import "../setup";
-import { TEST_DATA_DIR } from "../setup";
 import { describe, it, expect } from "bun:test";
 import {
-  DATA_DIR,
   getRepoDir,
   getComposePath,
-  getDataDir,
+  DATA_DIR,
 } from "../../src/lib/config";
 import { resolve } from "path";
 
-describe("getDataDir", () => {
+describe("DATA_DIR", () => {
   it("is defined as a string", () => {
-    expect(getDataDir()).toBeDefined();
-    expect(typeof getDataDir()).toBe("string");
-  });
-
-  it("resolves once at import time, alongside the database path", () => {
-    expect(getDataDir()).toBe(DATA_DIR);
-    expect(getDataDir()).toBe(resolve(TEST_DATA_DIR));
+    expect(DATA_DIR).toBeDefined();
+    expect(typeof DATA_DIR).toBe("string");
   });
 });
 
 describe("getRepoDir", () => {
   it("returns path under DATA_DIR/repos/{repoId}", () => {
     const result = getRepoDir("repo-123");
-    expect(result).toBe(resolve(getDataDir(), "repos", "repo-123"));
+    expect(result).toBe(resolve(DATA_DIR, "repos", "repo-123"));
   });
 
   it("handles repo IDs with special characters", () => {
     const result = getRepoDir("my_repo-with.dots");
-    expect(result).toBe(
-      resolve(getDataDir(), "repos", "my_repo-with.dots")
-    );
+    expect(result).toBe(resolve(DATA_DIR, "repos", "my_repo-with.dots"));
   });
 });
 
@@ -44,7 +35,7 @@ describe("getComposePath", () => {
     );
     expect(result).toBe(
       resolve(
-        getDataDir(),
+        DATA_DIR,
         "repos",
         "repo-1",
         "stacks/app",
@@ -56,20 +47,14 @@ describe("getComposePath", () => {
   it("handles empty relative path", () => {
     const result = getComposePath("repo-1", "", "compose.yml");
     expect(result).toBe(
-      resolve(getDataDir(), "repos", "repo-1", "compose.yml")
+      resolve(DATA_DIR, "repos", "repo-1", "compose.yml")
     );
   });
 
   it("handles different compose file names", () => {
     const result = getComposePath("repo-1", "path", "docker-compose.yml");
     expect(result).toBe(
-      resolve(
-        getDataDir(),
-        "repos",
-        "repo-1",
-        "path",
-        "docker-compose.yml"
-      )
+      resolve(DATA_DIR, "repos", "repo-1", "path", "docker-compose.yml")
     );
   });
 });
