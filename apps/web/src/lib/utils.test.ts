@@ -61,27 +61,27 @@ describe("timeAgo", () => {
   });
 
   it('returns "just now" for recent dates', () => {
-    const now = new Date();
+    const now = new Date().toISOString();
     expect(timeAgo(now)).toBe("just now");
   });
 
   it("returns minutes ago for dates within an hour", () => {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const fiveMinutesAgo = new Date(Date.now() - 300_000).toISOString();
     expect(timeAgo(fiveMinutesAgo)).toBe("5m ago");
   });
 
   it("returns hours ago for dates within a day", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const twoHoursAgo = new Date(Date.now() - 7_200_000).toISOString();
     expect(timeAgo(twoHoursAgo)).toBe("2h ago");
   });
 
   it("returns days ago for dates older than a day", () => {
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const threeDaysAgo = new Date(Date.now() - 259_200_000).toISOString();
     expect(timeAgo(threeDaysAgo)).toBe("3d ago");
   });
 
   it("returns 1m ago for 90 seconds", () => {
-    const ninetySecondsAgo = new Date(Date.now() - 90 * 1000);
+    const ninetySecondsAgo = new Date(Date.now() - 90_000).toISOString();
     expect(timeAgo(ninetySecondsAgo)).toBe("1m ago");
   });
 

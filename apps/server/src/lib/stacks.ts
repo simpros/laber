@@ -16,7 +16,7 @@ import {
 } from "./compose-services";
 import { getStackAndRepo } from "./stack-context";
 import { getRepoDir } from "./config";
-import { toWireLog } from "./wire";
+import { toWireLog, toWireStack, toWireEnvVar } from "./wire";
 
 export async function listStacks() {
   const [allStacks, envCounts] = await Promise.all([
@@ -45,7 +45,7 @@ export async function listStacks() {
   );
 
   return allStacks.map((stack) => ({
-    ...stack,
+    ...toWireStack(stack),
     envVarCount: countByStackId.get(stack.id) ?? 0,
   }));
 }
@@ -100,12 +100,14 @@ export async function getStackDetail(name: string) {
   const secretsByName = new Map(secrets.map((s) => [s.name, s]));
 
   return {
-    stack,
-    envVars: envVars.map((ev) => ({
-      ...ev,
-      value: ev.isSecret ? "" : ev.value,
-      hasValue: ev.value !== "",
-    })),
+    stack: toWireStack(stack),
+    envVars: envVars.map((ev) =>
+      toWireEnvVar({
+        ...ev,
+        value: ev.isSecret ? "" : ev.value,
+        hasValue: ev.value !== "",
+      })
+    ),
     secrets: detectedSecrets.map((ds) => ({
       name: ds.name,
       filePath: ds.filePath,

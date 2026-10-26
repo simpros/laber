@@ -17,6 +17,7 @@ import { getRepoDir, getComposePath } from "./config";
 import { downProject } from "./compose-cli";
 import { RemovableClearance } from "./stack-presence";
 import { withRepoLock } from "./repo-lock";
+import { toWireRepository, toWireStack } from "./wire";
 import { runActivity } from "./logged-action";
 import { NotFoundError, ActionFailedError } from "./errors";
 
@@ -152,7 +153,10 @@ export async function listRepositories() {
     db.select().from(stacks),
   ]);
 
-  return { repositories: repos, stacks: allStacks };
+  return {
+    repositories: repos.map(toWireRepository),
+    stacks: allStacks.map(toWireStack),
+  };
 }
 
 export async function cloneAndRegisterRepo(input: AddRepositoryInput) {

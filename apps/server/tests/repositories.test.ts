@@ -59,11 +59,20 @@ describe("repositories", () => {
     );
     expect(res.status).toBe(200);
     const data = (await res.json()) as {
-      repositories: unknown[];
-      stacks: unknown[];
+      repositories: Array<{ lastSyncedAt: string | null }>;
+      stacks: Array<{ createdAt: string; updatedAt: string }>;
     };
     expect(Array.isArray(data.repositories)).toBe(true);
     expect(Array.isArray(data.stacks)).toBe(true);
+    for (const repo of data.repositories) {
+      expect(
+        repo.lastSyncedAt === null || typeof repo.lastSyncedAt === "string"
+      ).toBe(true);
+    }
+    for (const stack of data.stacks) {
+      expect(typeof stack.createdAt).toBe("string");
+      expect(typeof stack.updatedAt).toBe("string");
+    }
   });
 
   it("rejects invalid input", async () => {
