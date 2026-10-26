@@ -1,8 +1,5 @@
 import { StatusBadge as KitStatusBadge, type StatusTone } from "@laber/ui";
-import type { ActivityStatus } from "@laber/api-client";
-
-// Mirrors stacks.status in packages/db/src/schema.ts.
-export type StackStatus = "discovered" | "deployed" | "stopped" | "error";
+import type { ActivityStatus, StackStatus } from "@laber/api-client";
 
 type BadgeStatus = StackStatus | ActivityStatus;
 

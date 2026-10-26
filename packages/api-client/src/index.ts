@@ -8,6 +8,7 @@ export type {
   ActivityEvent,
   ActivityStatus,
   ContainerInfo,
+  StackStatus,
 } from "@laber/server/api-type";
 
 export type ApiClientOptions = {

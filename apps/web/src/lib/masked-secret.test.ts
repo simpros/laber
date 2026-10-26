@@ -15,7 +15,7 @@ import {
   undoSecretEntry,
   wireIsSecret,
   type MaskedSecretState,
-  type SecrecyState,
+  type SecrecyEntry,
 } from "./masked-secret";
 
 describe("secretStatus", () => {
@@ -110,7 +110,7 @@ describe("touch / undo / clear transitions", () => {
 
   it("undoSecret reverts and disarms a pending demote", () => {
     expect(
-      undoSecretEntry<MaskedSecretState & SecrecyState>({
+      undoSecretEntry<SecrecyEntry>({
         hadValue: true,
         value: "",
         dirty: false,
@@ -145,12 +145,8 @@ describe("touch / undo / clear transitions", () => {
 });
 
 describe("setRowSecret", () => {
-  type TestRow = {
+  type TestRow = SecrecyEntry & {
     key: string;
-    value: string;
-    secrecy: "plain" | "secret" | "demote-pending";
-    hadValue: boolean;
-    dirty: boolean;
   };
   const fold = <T extends { hadValue: boolean; value: string; dirty: boolean }>(
     entry: T,
@@ -243,12 +239,8 @@ describe("setRowSecret", () => {
   });
 });
 
-type EnvRow = {
+type EnvRow = SecrecyEntry & {
   key: string;
-  value: string;
-  secrecy: "plain" | "secret" | "demote-pending";
-  hadValue: boolean;
-  dirty: boolean;
 };
 
 describe("markMixedSaved", () => {

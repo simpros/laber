@@ -4,6 +4,7 @@ import { statusColor } from "@/lib/utils";
 import {
   CORE_KEYS,
   CORE_KEY_GROUPS,
+  coreKeyPlaceholder,
   type CoreKey,
   type CoreKeyGroup,
 } from "@/lib/core-keys";
@@ -15,8 +16,7 @@ import {
   undoPlainEntry,
   undoSecretEntry,
   valueForSave,
-  type MaskedSecretState,
-  type SecrecyState,
+  type SecrecyEntry,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import {
@@ -33,10 +33,9 @@ import QueryStatus from "@/components/QueryStatus";
 import LifecycleToolbar from "@/components/LifecycleToolbar";
 import ConfigValueField from "@/components/ConfigValueField";
 
-type FieldState = MaskedSecretState &
-  SecrecyState & {
-    key: CoreKey;
-  };
+type FieldState = SecrecyEntry & {
+  key: CoreKey;
+};
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
 
@@ -142,9 +141,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                         id={keyDef.key}
                         name={keyDef.key}
                         entry={field}
-                        placeholder={
-                          keyDef.secret ? undefined : keyDef.placeholder
-                        }
+                        placeholder={coreKeyPlaceholder(keyDef)}
                         onInput={(value) => touchByKey(keyDef.key, value)}
                         onUndo={() =>
                           updateByKey(

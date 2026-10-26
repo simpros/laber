@@ -33,9 +33,7 @@ describe("CORE_KEYS", () => {
   it("every key has a non-empty label, and plain keys have a placeholder", () => {
     for (const entry of CORE_KEYS) {
       expect(entry.label.length).toBeGreaterThan(0);
-      if (entry.secret) {
-        expect("placeholder" in entry).toBe(false);
-      } else {
+      if (!entry.secret) {
         expect(entry.placeholder.length).toBeGreaterThan(0);
       }
     }

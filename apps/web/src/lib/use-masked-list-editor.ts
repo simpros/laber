@@ -4,13 +4,12 @@ import {
   markSaved,
   mergeServerEntries,
   touchEntry,
-  type MaskedSecretState,
-  type SecrecyState,
+  type SecrecyEntry,
 } from "@/lib/masked-secret";
 import { useApiMutation } from "@/lib/queries/actions";
 
 export function useMaskedListEditor<
-  T extends MaskedSecretState & SecrecyState,
+  T extends SecrecyEntry,
   TPayload,
 >(opts: {
   init: () => T[];

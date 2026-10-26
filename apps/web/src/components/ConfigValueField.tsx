@@ -2,7 +2,7 @@ import { Icon } from "@laber/ui";
 import {
   chromeIsSecret,
   type MaskedSecretState,
-  type SecrecyState,
+  type SecrecyEntry,
 } from "@/lib/masked-secret";
 
 export function ConfigValueField({
@@ -19,7 +19,7 @@ export function ConfigValueField({
 }: {
   id?: string;
   name?: string;
-  entry: MaskedSecretState & SecrecyState;
+  entry: SecrecyEntry;
   placeholder?: string;
   inputClassName?: string;
   onInput: (value: string) => void;

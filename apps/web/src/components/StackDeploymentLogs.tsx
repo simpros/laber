@@ -1,14 +1,10 @@
 import StatusBadge from "@/components/StatusBadge";
-import type { useStackDetail } from "@/lib/queries/stacks";
-
-type LogEntry = NonNullable<
-  ReturnType<typeof useStackDetail>["data"]
->["logs"][number];
+import type { StackDeploymentLog } from "@/lib/queries/stacks";
 
 export default function StackDeploymentLogs({
   logs,
 }: {
-  logs: LogEntry[];
+  logs: StackDeploymentLog[];
 }) {
   if (logs.length === 0) {
     return (

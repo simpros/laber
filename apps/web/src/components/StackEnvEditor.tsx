@@ -10,8 +10,7 @@ import {
   undoSecretEntry,
   valueForSave,
   wireIsSecret,
-  type MaskedSecretState,
-  type Secrecy,
+  type SecrecyEntry,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import { stackEnvSave, type StackEnvPayload } from "@/lib/queries/stacks";
@@ -26,10 +25,9 @@ export type EnvEntry = {
   hasValue: boolean;
 };
 
-export type EnvRow = MaskedSecretState & {
+export type EnvRow = SecrecyEntry & {
   id: string;
   key: string;
-  secrecy: Secrecy;
 };
 
 export function rowForEnv(entry: EnvEntry): EnvRow {

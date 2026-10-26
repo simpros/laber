@@ -6,8 +6,7 @@ import {
   maskedFromServer,
   undoSecretEntry,
   valueForSave,
-  type MaskedSecretState,
-  type Secrecy,
+  type SecrecyEntry,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import {
@@ -25,11 +24,10 @@ export type SecretEntry = {
   hasValue: boolean;
 };
 
-export type SecretRow = MaskedSecretState & {
+export type SecretRow = SecrecyEntry & {
   name: string;
   filePath: string;
   services: string[];
-  secrecy: Secrecy;
 };
 
 function secretKeyOf(e: Pick<SecretRow, "name">): string {

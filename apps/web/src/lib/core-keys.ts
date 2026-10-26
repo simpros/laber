@@ -18,9 +18,14 @@ type CoreKeyBase = {
   hint?: string;
 };
 
-type CoreKeyEntry =
+export type CoreKeyEntry =
   | (CoreKeyBase & { secret: false; placeholder: string })
   | (CoreKeyBase & { secret: true; placeholder?: never });
+
+// Placeholder is plain-only by construction; secret keys resolve to none.
+export function coreKeyPlaceholder(key: CoreKeyEntry): string | undefined {
+  return key.secret ? undefined : key.placeholder;
+}
 
 export const CORE_KEYS = [
   {
