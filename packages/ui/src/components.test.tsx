@@ -43,6 +43,22 @@ describe("StatusBadge", () => {
     } finally {
       cleanup();
     }
+    try {
+      render(<StatusBadge status="stopped" />);
+      expect(screen.getByText("stopped").className).toContain(
+        "text-warning"
+      );
+    } finally {
+      cleanup();
+    }
+    try {
+      render(<StatusBadge status="bogus-status" />);
+      expect(screen.getByText("bogus-status").className).toContain(
+        "text-text-secondary"
+      );
+    } finally {
+      cleanup();
+    }
   });
 });
 

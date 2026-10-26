@@ -1,12 +1,14 @@
 import { resolveDataDir } from "@laber/db/paths";
 import { resolve } from "path";
 
+export const DATA_DIR = resolveDataDir();
+
 export function getDataDir() {
-  return resolveDataDir();
+  return DATA_DIR;
 }
 
 export function getRepoDir(repoId: string) {
-  return resolve(getDataDir(), "repos", repoId);
+  return resolve(DATA_DIR, "repos", repoId);
 }
 
 export function getComposePath(
@@ -14,7 +16,7 @@ export function getComposePath(
   relativePath: string,
   composeFile: string
 ) {
-  return resolve(getDataDir(), "repos", repoId, relativePath, composeFile);
+  return resolve(DATA_DIR, "repos", repoId, relativePath, composeFile);
 }
 
 // Three-state: null (or omitted) keeps, "" clears, string sets.

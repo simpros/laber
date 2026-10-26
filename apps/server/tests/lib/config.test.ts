@@ -1,6 +1,8 @@
 import "../setup";
+import { TEST_DATA_DIR } from "../setup";
 import { describe, it, expect } from "bun:test";
 import {
+  DATA_DIR,
   getRepoDir,
   getComposePath,
   getDataDir,
@@ -13,19 +15,9 @@ describe("getDataDir", () => {
     expect(typeof getDataDir()).toBe("string");
   });
 
-  it("reflects the configured value instead of the import-time one", () => {
-    const before = getDataDir();
-    const original = process.env.DATA_DIR;
-    process.env.DATA_DIR = resolve(before, "..", "fresh-data-dir");
-    try {
-      expect(getDataDir()).toBe(resolve(before, "..", "fresh-data-dir"));
-      expect(getRepoDir("repo-123")).toBe(
-        resolve(getDataDir(), "repos", "repo-123")
-      );
-    } finally {
-      if (original === undefined) delete process.env.DATA_DIR;
-      else process.env.DATA_DIR = original;
-    }
+  it("resolves once at import time, alongside the database path", () => {
+    expect(getDataDir()).toBe(DATA_DIR);
+    expect(getDataDir()).toBe(resolve(TEST_DATA_DIR));
   });
 });
 

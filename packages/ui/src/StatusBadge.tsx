@@ -5,12 +5,20 @@ export interface StatusBadgeProps {
   className?: string;
 }
 
+// Stack and activity statuses share one tone scale. Unknown values fall
+// back to neutral so unrecognized statuses never read as a warning.
+const TONE: Record<string, string> = {
+  success: "bg-success/10 text-success",
+  deployed: "bg-success/10 text-success",
+  error: "bg-danger/10 text-danger",
+  stopped: "bg-warning/10 text-warning",
+  discovered: "bg-surface-3 text-text-secondary",
+};
+
+const NEUTRAL_TONE = "bg-surface-3 text-text-secondary";
+
 function statusColorClass(s: string): string {
-  if (s === "success" || s === "deployed")
-    return "bg-success/10 text-success";
-  if (s === "error") return "bg-danger/10 text-danger";
-  if (s === "discovered") return "bg-surface-3 text-text-secondary";
-  return "bg-warning/10 text-warning";
+  return TONE[s] ?? NEUTRAL_TONE;
 }
 
 export default function StatusBadge({

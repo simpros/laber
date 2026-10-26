@@ -26,75 +26,75 @@ export function ConfigValueField({
   keepPlaceholder?: string;
   editPlaceholder?: string;
 }) {
-  if (!isSecret) {
-    return (
-      <div className="flex items-center gap-2">
-        <input
-          id={id}
-          name={name}
-          type="text"
-          value={entry.value}
-          onChange={(e) => onInput(e.target.value)}
-          placeholder={placeholder}
-          className={inputClassName}
-        />
-        {entry.dirty && onUndo ? (
-          <button
-            type="button"
-            onClick={onUndo}
-            className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
-            aria-label="Undo changes"
-            title="Undo changes"
-          >
-            Undo
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-  const keep = entry.hadValue && !entry.dirty;
+  const secret = isSecret;
+  const keep = secret && entry.hadValue && !entry.dirty;
+
   return (
     <div className="flex items-center gap-2">
       <input
         id={id}
         name={name}
-        type="password"
+        type={secret ? "password" : "text"}
         value={entry.value}
         onChange={(e) => onInput(e.target.value)}
-        placeholder={keep ? keepPlaceholder : editPlaceholder}
-        className="flex-1 font-mono text-sm"
+        placeholder={
+          secret ? (keep ? keepPlaceholder : editPlaceholder) : placeholder
+        }
+        className={secret ? "flex-1 font-mono text-sm" : inputClassName}
       />
-      {entry.dirty && onUndo ? (
-        <button
-          type="button"
-          onClick={onUndo}
-          className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
-          aria-label="Undo changes"
-          title="Undo changes"
-        >
-          <Icon>
-            <path
-              d="M2.5 2v4.5h4.5M2.87 8a5.5 5.5 0 1 0 1.01-3.25"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Icon>
-        </button>
-      ) : entry.hadValue && onClear ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="text-text-muted hover:text-danger shrink-0 p-1 text-xs transition-colors"
-          title="Clear stored value"
-        >
-          Clear
-        </button>
-      ) : null}
+      <FieldActions
+        entry={entry}
+        onUndo={onUndo}
+        onClear={secret ? onClear : undefined}
+      />
     </div>
   );
+}
+
+function FieldActions({
+  entry,
+  onUndo,
+  onClear,
+}: {
+  entry: MaskedSecretState;
+  onUndo?: () => void;
+  onClear?: () => void;
+}) {
+  if (entry.dirty && onUndo) {
+    return (
+      <button
+        type="button"
+        onClick={onUndo}
+        className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
+        aria-label="Undo changes"
+        title="Undo changes"
+      >
+        <Icon>
+          <path
+            d="M2.5 2v4.5h4.5M2.87 8a5.5 5.5 0 1 0 1.01-3.25"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Icon>
+      </button>
+    );
+  }
+  if (entry.hadValue && onClear) {
+    return (
+      <button
+        type="button"
+        onClick={onClear}
+        className="text-text-muted hover:text-danger shrink-0 p-1 text-xs transition-colors"
+        title="Clear stored value"
+      >
+        Clear
+      </button>
+    );
+  }
+  return null;
 }
 
 export default ConfigValueField;

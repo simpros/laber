@@ -73,6 +73,7 @@
       "devDependencies": {
         "@laber/eslint-config": "workspace:*",
         "@types/bun": "catalog:",
+        "elysia": "^1.4.0",
         "typescript": "catalog:",
       },
     },
