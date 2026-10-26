@@ -8,8 +8,6 @@ const MANIFEST_DEPENDENCY_FIELDS = [
   "peerDependencies",
 ] as const;
 
-// apps/* are deployment roots, not dependencies, so only
-// packages/* can be orphaned.
 const SCANNED_PARENTS = ["packages"];
 
 interface WorkspaceManifest {
@@ -50,15 +48,12 @@ async function expandWorkspaces(patterns: string[]): Promise<Workspace[]> {
   return found;
 }
 
-// Exemptions live on the exempted package's own manifest so
-// the reason is visible where the decision was made.
 function exemptionReason(manifest: WorkspaceManifest): string | undefined {
   const reason = manifest.laber?.allowOrphan;
   return typeof reason === "string" ? reason : undefined;
 }
 
-// Catalogs require Bun's object form of `workspaces`, where the
-// globs are nested under `packages`.
+// Bun catalogs require the object form of workspaces, with globs nested under `packages`.
 function workspacePatterns(workspaces: unknown): string[] {
   const nested =
     typeof workspaces === "object" &&

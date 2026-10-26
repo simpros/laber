@@ -259,7 +259,6 @@ export default function CorePage() {
 
           <CoreConfigForm key="core" snapshot={data} />
 
-          {/* Deploy shares the toolbar path; layout keeps it at the bottom. */}
           <div className="-mt-4 flex justify-end">
             <LifecycleToolbar
               actions={[CORE_DEPLOY_ACTION]}

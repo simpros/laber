@@ -8,8 +8,6 @@ export interface CheckedFile {
   text: string;
 }
 
-// packageManager is the single home of the Bun pin;
-// every other mention is compared against it.
 export function readPin(manifest: unknown): string {
   const packageManager =
     typeof manifest === "object" && manifest !== null
@@ -48,8 +46,6 @@ const DOCKER_ARG_PATTERN = /^ARG BUN_VERSION\s*$/m;
 const DOCKER_FROM_LITERAL = /FROM oven\/bun:\d+\.\d+\.\d+-/;
 const CI_PIN_PATTERN = /bun-version:\s*["']?\d/;
 
-// Pure so bun test can pin the skew cases; I/O
-// (manifest read, file glob) stays in the entry.
 export function checkBunVersions(
   files: CheckedFile[],
   pin: string,

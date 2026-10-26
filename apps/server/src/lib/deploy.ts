@@ -14,15 +14,11 @@ type SecretFile = {
 
 type DeployOptions = {
   composePath: string;
-  // Exact bytes Docker applies, frozen to a temp snapshot: validated === applied.
   composeBytes: string;
-  // Promote applied bytes to the live path in the same attempt; failures compensate instead of drifting.
   commitLive?: boolean;
   envVars: Record<string, string>;
   secretFiles?: SecretFile[];
-  // Networks created before `up -d`; the compose file declares them external.
   networks?: readonly string[];
-  // Stack network Traefik joins after `up -d`.
   attachTraefikTo?: string;
   projectName: string;
   onOutput?: (chunk: string) => void;
@@ -66,7 +62,6 @@ function removeSecretFiles(files: SecretFile[]): void {
   }
 }
 
-// Success means up -d plus Traefik attached; failure wipes written secrets and downs started containers.
 export async function deployStack(
   options: DeployOptions
 ): Promise<{ output: string }> {
@@ -129,7 +124,6 @@ export async function deployStack(
     if (options.commitLive) {
       writeFileSync(options.composePath, options.composeBytes, "utf-8");
     }
-    // Running containers mount the secret files, so they stay on success.
     secretsWritten = false;
     return { output };
   } catch (e) {

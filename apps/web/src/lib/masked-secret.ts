@@ -1,4 +1,3 @@
-// The server never echoes secrets: untouched input keeps the stored value, empty clears.
 export type MaskedSecretState = {
   hadValue: boolean;
   value: string;
@@ -74,7 +73,6 @@ export function isUnset(entry: MaskedSecretState): boolean {
   return entry.dirty ? entry.value === "" : !entry.hadValue;
 }
 
-// Untouched secrets send null (keep); everything else sends the literal.
 export function valueForSave(entry: MaskedSecretState): string | null {
   return !entry.dirty && entry.hadValue ? null : entry.value;
 }

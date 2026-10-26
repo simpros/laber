@@ -108,7 +108,6 @@ export default function StackDetailPage({
           services={data.services}
         />
       )}
-      {/* Editors stay mounted (hidden + inert) so drafts survive tab switches. */}
       <div hidden={tab !== "env"} inert={tab !== "env"}>
         <StackEnvEditor
           key={name}

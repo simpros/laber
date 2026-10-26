@@ -20,9 +20,7 @@ export const logRoutes = new Elysia().get(
     return sseResponse(async (controller, onCleanup) => {
       const reader = stream.getReader();
       onCleanup(() => {
-        reader.cancel().catch(() => {
-          // Already closed.
-        });
+        reader.cancel().catch(() => {});
       });
       try {
         while (true) {

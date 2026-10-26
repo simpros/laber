@@ -8,8 +8,6 @@ import {
 
 const ROOT = join(import.meta.dir, "..");
 
-// Globbed so a new Dockerfile or workflow is scanned
-// without being listed here.
 const GLOBS = ["apps/*/Dockerfile", ".github/**/*.yml"];
 
 const manifest = (await Bun.file(
