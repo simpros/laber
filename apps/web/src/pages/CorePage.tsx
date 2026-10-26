@@ -33,9 +33,10 @@ import QueryStatus from "@/components/QueryStatus";
 import LifecycleToolbar from "@/components/LifecycleToolbar";
 import ConfigValueField from "@/components/ConfigValueField";
 
-type FieldState = MaskedSecretState & SecrecyState & {
-  key: CoreKey;
-};
+type FieldState = MaskedSecretState &
+  SecrecyState & {
+    key: CoreKey;
+  };
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
 
@@ -44,13 +45,6 @@ const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   ...meta,
   keys: CORE_KEYS.filter((k) => k.group === id),
 }));
-
-const CORE_KEY_HINTS: Partial<Record<CoreKey, string>> = {
-  EXTRA_NETWORKS:
-    "Comma-separated Docker networks Traefik should join. Add one per " +
-    "isolated stack network whose services pin " +
-    "traefik.docker.network; leave empty when sharing main is fine.",
-};
 
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
   return CORE_KEYS.map((keyDef) => {
@@ -73,7 +67,7 @@ function coreKeyOf(e: Pick<FieldState, "key">): string {
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   const serverValues = useMemo(
     () => fieldStatesFor(snapshot.config),
-    [snapshot.config],
+    [snapshot.config]
   );
   const {
     entries: fields,
@@ -81,7 +75,10 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
     updateByKey,
     saveMutation,
     handleSave,
-  } = useMaskedListEditor<FieldState, Partial<Record<CoreKey, string | null>>>({
+  } = useMaskedListEditor<
+    FieldState,
+    Partial<Record<CoreKey, string | null>>
+  >({
     init: () => fieldStatesFor(snapshot.config),
     syncValues: serverValues,
     keyOf: coreKeyOf,
@@ -98,13 +95,16 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
 
   const byKey = useMemo(
     () => new Map(fields.map((f) => [f.key, f] as const)),
-    [fields],
+    [fields]
   );
 
   return (
     <form onSubmit={handleSave}>
       <div className="mb-6">
-        <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
+        <MutationNotice
+          mutation={saveMutation}
+          errorFallback="Save failed"
+        />
       </div>
       <div className="space-y-6">
         {groups.map((group) => (
@@ -152,8 +152,8 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                               ? undoSecretEntry(field)
                               : undoPlainEntry(
                                   field,
-                                  snapshot.config[keyDef.key]?.value ?? "",
-                                ),
+                                  snapshot.config[keyDef.key]?.value ?? ""
+                                )
                           )
                         }
                         onClear={
@@ -161,14 +161,14 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                             ? () =>
                                 updateByKey(
                                   keyDef.key,
-                                  clearSecretEntry(field),
+                                  clearSecretEntry(field)
                                 )
                             : undefined
                         }
                       />
-                      {CORE_KEY_HINTS[keyDef.key] ? (
+                      {"hint" in keyDef ? (
                         <p className="text-text-muted mt-1 text-xs">
-                          {CORE_KEY_HINTS[keyDef.key]}
+                          {keyDef.hint}
                         </p>
                       ) : null}
                     </div>

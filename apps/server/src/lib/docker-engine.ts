@@ -111,17 +111,19 @@ export function followContainerLogs(options: {
     });
 }
 
-export async function ensureNetwork(networkName: string): Promise<void> {
+export async function ensureNetwork(
+  networkName: string
+): Promise<boolean> {
   const networks = await getDocker().listNetworks({
     filters: { name: [networkName] },
   });
   const exact = networks.find((n) => n.Name === networkName);
-  if (!exact) {
-    await getDocker().createNetwork({
-      Name: networkName,
-      Driver: "bridge",
-    });
-  }
+  if (exact) return false;
+  await getDocker().createNetwork({
+    Name: networkName,
+    Driver: "bridge",
+  });
+  return true;
 }
 
 export async function connectContainerToNetwork(

@@ -1,17 +1,17 @@
 import { sql } from "drizzle-orm";
+import { stringify } from "yaml";
 import { ValidationError } from "./errors";
 import { db, coreConfig } from "@laber/db";
 import { listContainersSoft } from "./docker-engine";
 import { runLoggedDeploy } from "./deploy";
 import { type ConfigValue } from "./config";
 import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
-import { getCoreComposeContent } from "./core-compose";
+import { buildCoreCompose } from "./core-compose";
 import {
   CORE_KEYS,
   type CoreKey,
   type CoreConfigShape,
 } from "./core-keys";
-import { formatExtraNetworks, parseExtraNetworks } from "./core-networks";
 
 export type CoreConfig = CoreConfigShape;
 
@@ -45,17 +45,12 @@ export async function loadCoreConfig(): Promise<CoreConfig> {
     cfDnsApiToken: required("CF_DNS_API_TOKEN"),
   };
   for (const field of CORE_KEYS) {
-    if (field.required || field.prop === "extraNetworks") continue;
+    if (field.required) continue;
     const value = configMap.get(field.key);
     if (value !== undefined && value !== "") {
-      config[field.prop] = value;
+      config[field.prop] =
+        "normalize" in field ? field.normalize(value) : value;
     }
-  }
-  const extraNetworks = parseExtraNetworks(
-    configMap.get("EXTRA_NETWORKS")
-  );
-  if (extraNetworks.length > 0) {
-    config.extraNetworks = extraNetworks;
   }
 
   return config;
@@ -72,7 +67,12 @@ function toCoreServiceStatus(c: {
   state: string;
   image: string;
 }): CoreServiceStatus {
-  return { name: c.name, status: c.status, state: c.state, image: c.image };
+  return {
+    name: c.name,
+    status: c.status,
+    state: c.state,
+    image: c.image,
+  };
 }
 
 export function isCoreConfiguredRows(
@@ -125,10 +125,7 @@ export async function saveCoreConfig(
   const rows = CORE_KEYS.flatMap((keyDef) => {
     const value = input[keyDef.key];
     if (value === undefined || value === null) return [];
-    const stored =
-      keyDef.key === "EXTRA_NETWORKS"
-        ? formatExtraNetworks(parseExtraNetworks(value))
-        : value;
+    const stored = "normalize" in keyDef ? keyDef.normalize(value) : value;
     return [{ key: keyDef.key, value: stored, isSecret: keyDef.secret }];
   });
 
@@ -152,7 +149,7 @@ export async function saveCoreConfig(
 export async function deployCore() {
   const config = await loadCoreConfig();
   const composePath = getCoreComposePath();
-  const content = getCoreComposeContent(config);
+  const compose = buildCoreCompose(config);
 
   const envVars: Record<string, string> = {
     CF_DNS_API_TOKEN: config.cfDnsApiToken,
@@ -168,10 +165,12 @@ export async function deployCore() {
     failureMessage: "Deploying core services failed",
     deploy: {
       composePath,
-      composeBytes: content,
+      composeBytes: stringify(compose),
       commitLive: true,
       envVars,
       projectName: CORE_PROJECT,
+      // Declared and ensured are the same set by construction.
+      networks: Object.keys(compose.networks),
     },
   });
 }

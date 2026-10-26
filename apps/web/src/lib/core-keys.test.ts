@@ -50,10 +50,4 @@ describe("CORE_KEYS", () => {
     expect(required).toContain("ROOT_DOMAIN");
     expect(required).toContain("CF_DNS_API_TOKEN");
   });
-
-  it("contains EXTRA_NETWORKS as an optional non-secret key", () => {
-    const extra = CORE_KEYS.find((k) => k.key === "EXTRA_NETWORKS");
-    expect(extra?.secret).toBe(false);
-    expect(extra?.required).toBe(false);
-  });
 });

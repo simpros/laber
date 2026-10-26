@@ -8,6 +8,7 @@ import { signUp, req, jsonReq } from "./helpers";
 import { ActionFailedError } from "../src/lib/errors";
 import { getCoreComposePath } from "../src/lib/core-identity";
 import { dockerStub, resetDockerStub } from "./docker-stub";
+import { parse } from "yaml";
 
 let cookie = "";
 
@@ -15,8 +16,9 @@ beforeAll(async () => {
   ({ cookie } = await signUp());
 });
 
-afterEach(() => {
+afterEach(async () => {
   resetDockerStub();
+  await db.delete(coreConfig);
 });
 
 describe("GET /api/core", () => {
@@ -169,13 +171,17 @@ describe("PUT /api/core/config with EXTRA_NETWORKS", () => {
     );
     expect(deploy.status).toBe(200);
 
-    const live = readFileSync(getCoreComposePath(), "utf-8");
-    expect(live).toContain("auth");
-    expect(live).toContain("monitor");
-
-    await app.handle(
-      jsonReq("/api/core/config", "PUT", { EXTRA_NETWORKS: "" }, cookie)
-    );
+    const live = parse(readFileSync(getCoreComposePath(), "utf-8"));
+    expect(Object.keys(live.networks)).toEqual([
+      "main",
+      "auth",
+      "monitor",
+    ]);
+    expect(live.services["reverse-proxy"].networks).toEqual([
+      "main",
+      "auth",
+      "monitor",
+    ]);
   });
 });
 
@@ -263,8 +269,8 @@ describe("POST /api/core/deploy|stop|restart", () => {
       .select()
       .from(deploymentLogs)
       .where(eq(deploymentLogs.isCore, true));
-    expect(logs.some((l) => (l.output ?? "").includes("core blew up"))).toBe(
-      true
-    );
+    expect(
+      logs.some((l) => (l.output ?? "").includes("core blew up"))
+    ).toBe(true);
   });
 });

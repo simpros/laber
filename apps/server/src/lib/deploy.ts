@@ -2,14 +2,8 @@ import { writeFileSync, unlinkSync, mkdirSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { nanoid } from "nanoid";
-import {
-  runComposeCommand,
-  downProject,
-} from "./compose-cli";
-import {
-  ensureNetwork,
-  connectTraefikToNetwork,
-} from "./docker-engine";
+import { runComposeCommand, downProject } from "./compose-cli";
+import { ensureNetwork, connectTraefikToNetwork } from "./docker-engine";
 import { ActionFailedError } from "./errors";
 import { runLoggedAction, type ActionIdentity } from "./logged-action";
 
@@ -26,7 +20,10 @@ type DeployOptions = {
   commitLive?: boolean;
   envVars: Record<string, string>;
   secretFiles?: SecretFile[];
-  networkName?: string;
+  // Networks created before `up -d`; the compose file declares them external.
+  networks?: readonly string[];
+  // Stack network Traefik joins after `up -d`.
+  attachTraefikTo?: string;
   projectName: string;
   onOutput?: (chunk: string) => void;
 };
@@ -73,10 +70,6 @@ function removeSecretFiles(files: SecretFile[]): void {
 export async function deployStack(
   options: DeployOptions
 ): Promise<{ output: string }> {
-  if (options.networkName) {
-    await ensureNetwork(options.networkName);
-  }
-
   let envFilePath: string | undefined;
   let secretsWritten = false;
   let composeUp = false;
@@ -99,6 +92,16 @@ export async function deployStack(
       envArgs.push("--env-file", envFilePath);
     }
 
+    const networkNames = [...new Set(options.networks ?? [])];
+    const created = await Promise.all(
+      networkNames.map((networkName) => ensureNetwork(networkName))
+    );
+    networkNames.forEach((networkName, index) => {
+      if (created[index]) {
+        options.onOutput?.(`Created network ${networkName}\n`);
+      }
+    });
+
     const { output: base } = await runComposeCommand(
       composePath,
       [...envArgs, "up", "-d"],
@@ -109,16 +112,16 @@ export async function deployStack(
 
     let output = base;
 
-    if (options.networkName) {
+    if (options.attachTraefikTo) {
       try {
-        await connectTraefikToNetwork(options.networkName);
+        await connectTraefikToNetwork(options.attachTraefikTo);
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
-        const detail = `Could not attach Traefik to network ${options.networkName}: ${reason}\n`;
+        const detail = `Could not attach Traefik to network ${options.attachTraefikTo}: ${reason}\n`;
         output += detail;
         options.onOutput?.(detail);
         throw new ActionFailedError(
-          `Could not attach Traefik to network ${options.networkName}: ${reason}`
+          `Could not attach Traefik to network ${options.attachTraefikTo}: ${reason}`
         );
       }
     }

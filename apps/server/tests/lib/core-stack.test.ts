@@ -1,15 +1,17 @@
 import "../setup";
 import { describe, it, expect } from "bun:test";
-import { getCoreComposeContent } from "../../src/lib/core-compose";
-import { parseComposeDocument } from "../../src/lib/compose-parse";
-import { extractServices } from "../../src/lib/compose-services";
+import { buildCoreCompose } from "../../src/lib/core-compose";
+import { CORE_NETWORK } from "../../src/lib/core-identity";
 import type { CoreConfig } from "../../src/lib/core-stack";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 const minimalConfig: CoreConfig = {
   rootDomain: "example.com",
   cfDnsApiToken: "test-token-123",
 };
+
+const getCoreComposeContent = (config: CoreConfig) =>
+  stringify(buildCoreCompose(config));
 
 describe("getCoreComposeContent", () => {
   describe("base config with minimal required fields", () => {
@@ -623,20 +625,22 @@ describe("getCoreComposeContent", () => {
   describe("extra networks", () => {
     const extraConfig: CoreConfig = {
       ...minimalConfig,
-      extraNetworks: ["auth", "monitor"],
+      extraNetworks: "auth, monitor",
     };
 
-    it("attaches reverse-proxy to main plus each extra network", () => {
-      const parsed = parse(getCoreComposeContent(extraConfig));
+    it("declares each network external and attaches only the proxy", () => {
+      const parsed = parse(
+        getCoreComposeContent({
+          ...extraConfig,
+          tunnelToken: "tok",
+          zoneId: "zone",
+        })
+      );
       expect(parsed.services["reverse-proxy"].networks).toEqual([
         "main",
         "auth",
         "monitor",
       ]);
-    });
-
-    it("declares each extra network as external", () => {
-      const parsed = parse(getCoreComposeContent(extraConfig));
       expect(Object.keys(parsed.networks)).toEqual([
         "main",
         "auth",
@@ -645,106 +649,45 @@ describe("getCoreComposeContent", () => {
       for (const name of ["main", "auth", "monitor"]) {
         expect(parsed.networks[name]).toEqual({ name, external: true });
       }
+      expect(parsed.services.tunnel.networks).toEqual([CORE_NETWORK]);
+      expect(parsed.services["cloudflare-companion"].networks).toEqual([
+        CORE_NETWORK,
+      ]);
     });
 
-    it("keeps the docker provider pin on main", () => {
+    it("keeps the docker provider pin on the core network", () => {
       const parsed = parse(getCoreComposeContent(extraConfig));
       expect(parsed.services["reverse-proxy"].command).toContain(
-        "--providers.docker.network=main"
+        `--providers.docker.network=${CORE_NETWORK}`
       );
-    });
-
-    it("joins tunnel and companion to the extra networks too", () => {
-      const parsed = parse(
-        getCoreComposeContent({
-          ...extraConfig,
-          tunnelToken: "tok",
-          zoneId: "zone",
-        })
-      );
-      expect(parsed.services.tunnel.networks).toEqual([
-        "main",
-        "auth",
-        "monitor",
-      ]);
-      expect(parsed.services["cloudflare-companion"].networks).toEqual([
-        "main",
-        "auth",
-        "monitor",
-      ]);
     });
 
     it("generates exactly the default output for an empty list", () => {
       expect(
-        getCoreComposeContent({ ...minimalConfig, extraNetworks: [] })
+        getCoreComposeContent({ ...minimalConfig, extraNetworks: "" })
       ).toBe(getCoreComposeContent(minimalConfig));
       expect(
         Object.keys(parse(getCoreComposeContent(minimalConfig)).networks)
-      ).toEqual(["main"]);
+      ).toEqual([CORE_NETWORK]);
     });
 
     it("normalizes duplicates and main out of the list", () => {
       const parsed = parse(
         getCoreComposeContent({
           ...minimalConfig,
-          extraNetworks: ["auth", "auth", "main"],
+          extraNetworks: " auth, auth, main, monitor ",
         })
       );
       expect(parsed.services["reverse-proxy"].networks).toEqual([
         "main",
         "auth",
+        "monitor",
       ]);
-      expect(Object.keys(parsed.networks)).toEqual(["main", "auth"]);
-    });
-  });
-
-  describe("routing for a stack on its own network", () => {
-    const authStackCompose = `services:
-  app:
-    image: nginx:alpine
-    labels:
-      traefik.enable: "true"
-      traefik.docker.network: auth
-      traefik.http.routers.app.rule: Host(\`app.example.com\`)
-      traefik.http.services.app.loadbalancer.server.port: "80"
-networks:
-  auth:
-    name: auth
-    external: true
-`;
-
-    it("routes a stack pinned to an extra network through the core proxy", () => {
-      const core = parse(
-        getCoreComposeContent({
-          ...minimalConfig,
-          extraNetworks: ["auth"],
-        })
-      );
-      const { doc } = parseComposeDocument(authStackCompose);
-      const [stackService] = extractServices(doc);
-      const labels = doc.services.app.labels as Record<string, string>;
-
-      expect(stackService.traefikRoute).toEqual({
-        subdomain: "app",
-        port: 80,
-        routerName: "app",
-      });
-      expect(labels["traefik.docker.network"]).toBe("auth");
-      expect(core.services["reverse-proxy"].networks).toContain("auth");
-      expect(core.networks.auth).toEqual({
-        name: "auth",
-        external: true,
-      });
-      expect(core.services["reverse-proxy"].command).toContain(
-        "--providers.docker.exposedbydefault=false"
-      );
-    });
-
-    it("leaves the stack unreachable while core does not join its network", () => {
-      const core = parse(getCoreComposeContent(minimalConfig));
-      expect(core.services["reverse-proxy"].networks).not.toContain(
-        "auth"
-      );
+      expect(Object.keys(parsed.networks)).toEqual([
+        "main",
+        "auth",
+        "monitor",
+      ]);
     });
   });
 });

@@ -1,23 +1,32 @@
-import { stringify } from "yaml";
 import type { CoreConfigShape } from "./core-keys";
-import { CORE_NETWORK, normalizeExtraNetworks } from "./core-networks";
-import { TRAEFIK_CONTAINER, TRAEFIK_SERVICE } from "./core-identity";
+import {
+  CORE_NETWORK,
+  TRAEFIK_CONTAINER,
+  TRAEFIK_SERVICE,
+} from "./core-identity";
+import { parseExtraNetworks } from "./core-networks";
 
-export function buildCoreCompose(
-  config: CoreConfigShape
-): Record<string, unknown> {
+export type CoreCompose = {
+  services: Record<string, Record<string, unknown>>;
+  networks: Record<string, { name: string; external: true }>;
+  volumes: Record<string, null>;
+};
+
+export function buildCoreCompose(config: CoreConfigShape): CoreCompose {
   const acmeEmail = config.acmeEmail ?? `admin@${config.rootDomain}`;
   const logLevel = config.logLevel ?? "ERROR";
   const httpTimeout = config.httpTimeout ?? "180";
   const pollingInterval = config.pollingInterval ?? "30";
   const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
+  // Only the proxy joins the extra networks: the tunnel reaches stacks through
+  // it, and the companion only needs Cloudflare and the docker socket.
   const networks = [
     CORE_NETWORK,
-    ...normalizeExtraNetworks(config.extraNetworks ?? []),
+    ...parseExtraNetworks(config.extraNetworks),
   ];
 
-  const services: Record<string, unknown> = {
+  const services: Record<string, Record<string, unknown>> = {
     [TRAEFIK_SERVICE]: {
       image: "traefik:v3",
       container_name: TRAEFIK_CONTAINER,
@@ -38,7 +47,7 @@ export function buildCoreCompose(
         "--api.dashboard=true",
         "--providers.docker=true",
         "--providers.docker.exposedbydefault=false",
-        "--providers.docker.network=main",
+        `--providers.docker.network=${CORE_NETWORK}`,
         "--providers.file.directory=/etc/traefik/dynamic",
         "--entrypoints.web.address=:80",
         "--entrypoints.web.http.redirections.entryPoint.to=websecure",
@@ -70,7 +79,7 @@ export function buildCoreCompose(
       environment: {
         TUNNEL_TOKEN: "${TUNNEL_TOKEN}",
       },
-      networks,
+      networks: [CORE_NETWORK],
     };
   }
 
@@ -97,7 +106,7 @@ export function buildCoreCompose(
         PROPAGATION_TIMEOUT: propagationTimeout,
       },
       volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"],
-      networks,
+      networks: [CORE_NETWORK],
     };
   }
 
@@ -111,8 +120,4 @@ export function buildCoreCompose(
       traefik: null,
     },
   };
-}
-
-export function getCoreComposeContent(config: CoreConfigShape): string {
-  return stringify(buildCoreCompose(config));
 }

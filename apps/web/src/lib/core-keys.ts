@@ -9,6 +9,17 @@ export const CORE_KEY_GROUPS: Record<
   companion: { label: "Cloudflare Companion", optional: true },
 };
 
+type CoreKeyEntry = {
+  key: string;
+  prop: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+  group: CoreKeyGroup;
+  hint?: string;
+};
+
 export const CORE_KEYS = [
   {
     key: "ROOT_DOMAIN",
@@ -54,6 +65,10 @@ export const CORE_KEYS = [
     required: false,
     placeholder: "auth, monitor",
     group: "proxy",
+    hint:
+      "Comma-separated Docker networks Traefik should join. Add one per " +
+      "isolated stack network whose services pin traefik.docker.network; " +
+      "leave empty when sharing main is fine.",
   },
   {
     key: "TUNNEL_TOKEN",
@@ -109,7 +124,7 @@ export const CORE_KEYS = [
     placeholder: "300",
     group: "companion",
   },
-] as const;
+] as const satisfies readonly CoreKeyEntry[];
 
 export type CoreKey = (typeof CORE_KEYS)[number]["key"];
 export type CoreConfigProp = (typeof CORE_KEYS)[number]["prop"];
