@@ -1,35 +1,29 @@
+import { StatusBadge, type Tone } from "@laber/ui";
 import {
+  chromeIsSecret,
   secretStatus,
   type MaskedSecretState,
+  type SecrecyState,
   type SecretStatus,
 } from "@/lib/masked-secret";
-import { toneClass, type Tone } from "@laber/ui";
 
-const TONE: Record<SecretStatus, Tone> = {
-  set: "success",
-  unset: "warning",
-  modified: "success",
-  "will-clear": "warning",
-};
-
-const labels: Record<SecretStatus, string> = {
-  set: "set",
-  unset: "unset",
-  modified: "modified",
-  "will-clear": "will clear",
+const META: Record<SecretStatus, { tone: Tone; label: string }> = {
+  set: { tone: "success", label: "set" },
+  unset: { tone: "warning", label: "unset" },
+  modified: { tone: "success", label: "modified" },
+  "will-clear": { tone: "warning", label: "will clear" },
 };
 
 export default function SecretBadge({
   entry,
 }: {
-  entry: MaskedSecretState;
+  entry: MaskedSecretState & SecrecyState;
 }) {
-  const status = secretStatus(entry);
+  if (!chromeIsSecret(entry)) return null;
+  const meta = META[secretStatus(entry)];
   return (
-    <span
-      className={`${toneClass(TONE[status])} ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium`}
-    >
-      {labels[status]}
-    </span>
+    <StatusBadge tone={meta.tone} className="ml-2 text-[10px]">
+      {meta.label}
+    </StatusBadge>
   );
 }
