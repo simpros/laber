@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "./cn.js";
+import { toneText } from "./tone.js";
 
 export type AlertVariant = "success" | "error" | "warning";
 
@@ -10,10 +11,11 @@ export interface AlertProps {
   children: ReactNode;
 }
 
+// Alerts keep their fainter surface; only the text colour is shared.
 const styles: Record<AlertVariant, string> = {
-  success: "bg-success/5 border-success/20 text-success",
-  error: "bg-danger/5 border-danger/20 text-danger",
-  warning: "bg-warning/5 border-warning/20 text-warning",
+  success: `bg-success/5 ${toneText("success")} border-success/20`,
+  error: `bg-danger/5 ${toneText("danger")} border-danger/20`,
+  warning: `bg-warning/5 ${toneText("warning")} border-warning/20`,
 };
 
 export default function Alert({

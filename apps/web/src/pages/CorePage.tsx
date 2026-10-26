@@ -132,9 +132,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                       className="text-text-secondary text-sm font-medium"
                     >
                       {keyDef.label}
-                      {chromeIsSecret(field) ? (
-                        <SecretBadge entry={field} />
-                      ) : null}
+                      <SecretBadge entry={field} />
                     </label>
                     <div className="col-span-2">
                       <ConfigValueField

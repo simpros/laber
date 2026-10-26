@@ -160,7 +160,7 @@ export default function StackEnvEditor({
                   detected
                 </span>
               )}
-              {chromeIsSecret(entry) && <SecretBadge entry={entry} />}
+              <SecretBadge entry={entry} />
               <label
                 className="text-text-muted flex items-center gap-1 text-xs"
                 title={

@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 
 const { render, screen, cleanup } = await import("@testing-library/react");
 const { default: StatusBadge } = await import("./StatusBadge.js");
+const { default: Alert } = await import("./Alert.js");
 const { default: Icon } = await import("./Icon.js");
 const { default: AuthLayout } = await import("./AuthLayout.js");
 const { default: CardHeader } = await import("./CardHeader.js");
@@ -16,8 +17,28 @@ describe("StatusBadge", () => {
   for (const [tone, cls] of CASES) {
     it(`${tone} → ${cls}`, () => {
       try {
-        render(<StatusBadge status="label" tone={tone} />);
-        expect(screen.getByText("label").className).toContain(cls);
+        render(<StatusBadge tone={tone}>{tone}</StatusBadge>);
+        expect(screen.getByText(tone).className).toContain(cls);
+      } finally {
+        cleanup();
+      }
+    });
+  }
+});
+
+describe("Alert", () => {
+  const CASES = [
+    ["success", "bg-success/5", "text-success"],
+    ["error", "bg-danger/5", "text-danger"],
+    ["warning", "bg-warning/5", "text-warning"],
+  ] as const;
+  for (const [variant, bg, fg] of CASES) {
+    it(`${variant} keeps its faint surface`, () => {
+      try {
+        render(<Alert variant={variant}>{variant}</Alert>);
+        const cls = screen.getByText(variant).className;
+        expect(cls).toContain(bg);
+        expect(cls).toContain(fg);
       } finally {
         cleanup();
       }

@@ -1,6 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MutationNotice, type NoticeMutation } from "./MutationNotice";
+import type { ComponentProps } from "react";
+import MutationNotice, { noticeFor } from "./MutationNotice";
+
+type NoticeMutation = ComponentProps<typeof MutationNotice>["mutation"];
 
 function stub(overrides: Partial<NoticeMutation> = {}): NoticeMutation {
   return {
@@ -8,10 +11,37 @@ function stub(overrides: Partial<NoticeMutation> = {}): NoticeMutation {
     error: null,
     isPending: false,
     isError: false,
-    isSuccess: false,
     ...overrides,
   };
 }
+
+describe("noticeFor", () => {
+  it("hides a stale error while its retry is in flight", () => {
+    expect(
+      noticeFor(
+        stub({
+          isPending: true,
+          isError: true,
+          error: new Error("boom"),
+        })
+      )
+    ).toEqual({ kind: "hidden" });
+  });
+
+  it("hides settled output while a new retry is in flight", () => {
+    expect(noticeFor(stub({ isPending: true, data: "saved" }))).toEqual({
+      kind: "hidden",
+    });
+  });
+
+  it("shows the error once the retry settles", () => {
+    const error = new Error("boom");
+    expect(noticeFor(stub({ isError: true, error }))).toEqual({
+      kind: "error",
+      error,
+    });
+  });
+});
 
 describe("MutationNotice", () => {
   it("hides a stale error while its retry is in flight", () => {
