@@ -22,8 +22,6 @@ Run from the repo root unless noted:
 - `bun run db:generate` / `db:migrate` / `db:push` / `db:studio` — Drizzle Kit via `@laber/db`.
 - Package-scoped: `bun run --filter <pkg> <task>` or `cd apps/server && bun test <file>`.
 
-Server tests preload `./svelte-test-setup.ts` via `bunfig.toml`; run them from `apps/server` so the happy-dom globals at the repo root do not shadow `Response`/`Headers`.
-
 ## Layout
 
 - `apps/server/src/lib/` — domain logic (compose, git, stacks, deploy, Docker engine).

@@ -38,9 +38,7 @@
     "eslint": "10.3.0",
     "happy-dom": "catalog:",
     "prettier": "^3.9.10",
-    "prettier-plugin-svelte": "^3.5.2",
     "prettier-plugin-tailwindcss": "0.8.0",
-    "svelte": "^5.57.2",
     "turbo": "^2.11.10",
     "typescript": "catalog:"
   },
