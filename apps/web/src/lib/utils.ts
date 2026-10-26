@@ -1,25 +1,34 @@
+import { toneSurface, toneText, type Tone } from "@laber/ui";
+
 export function isRecord(
   value: unknown
 ): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+// Docker states are not stack/activity statuses; an unclassifiable
+// container reads danger so it gets attention.
+const CONTAINER_TONE = new Map<string, Tone>([
+  ["running", "success"],
+  ["exited", "warning"],
+  ["stopped", "warning"],
+]);
+
+function containerTone(state: string): Tone {
+  return CONTAINER_TONE.get(state) ?? "danger";
+}
+
 export function statusColor(state: string) {
-  if (state === "running") return "text-success";
-  if (state === "exited" || state === "stopped") return "text-warning";
-  return "text-danger";
+  return toneText(containerTone(state));
 }
 
 export function containerStatusBg(state: string) {
-  if (state === "running") return "bg-success/10 border-success/20";
-  if (state === "exited") return "bg-warning/10 border-warning/20";
-  return "bg-danger/10 border-danger/20";
+  return toneSurface(containerTone(state));
 }
 
-export function timeAgo(date: Date | string | null) {
-  if (!date) return "never";
-  const d = typeof date === "string" ? new Date(date) : date;
-  const diff = Date.now() - d.getTime();
+export function timeAgo(iso: string | null) {
+  if (!iso) return "never";
+  const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;

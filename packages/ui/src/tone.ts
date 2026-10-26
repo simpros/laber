@@ -14,8 +14,19 @@ const TONE_BG: Record<Tone, string> = {
   neutral: "bg-surface-3",
 };
 
+const TONE_BORDER: Record<Tone, string> = {
+  success: "border-success/20",
+  warning: "border-warning/20",
+  danger: "border-danger/20",
+  neutral: "border-border",
+};
+
 export function toneClass(tone: Tone): string {
   return `${TONE_BG[tone]} ${TONE_TEXT[tone]}`;
+}
+
+export function toneSurface(tone: Tone): string {
+  return `${TONE_BG[tone]} ${TONE_BORDER[tone]}`;
 }
 
 export function toneText(tone: Tone): string {

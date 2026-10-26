@@ -100,11 +100,15 @@ describe("GET /api/stacks", () => {
       name: string;
       repoName: string;
       envVarCount: number;
+      createdAt: string;
+      updatedAt: string;
     }>;
     const row = data.find((s) => s.name === "list-me");
     expect(row).toBeDefined();
     expect(row!.repoName).toBe("list-me-repo");
     expect(row!.envVarCount).toBe(2);
+    expect(typeof row!.createdAt).toBe("string");
+    expect(typeof row!.updatedAt).toBe("string");
   });
 });
 
@@ -143,7 +147,13 @@ describe("GET /api/stacks/:name", () => {
     );
     expect(res.status).toBe(200);
     const data = (await res.json()) as {
-      envVars: Array<{ key: string; value: string; hasValue: boolean }>;
+      stack: { createdAt: string; updatedAt: string };
+      envVars: Array<{
+        key: string;
+        value: string;
+        hasValue: boolean;
+        createdAt: string;
+      }>;
       secrets: Array<{ name: string; hasValue: boolean }>;
       detectedEnvVars: string[];
       composeRaw: string;
@@ -156,6 +166,9 @@ describe("GET /api/stacks/:name", () => {
     const token = data.envVars.find((e) => e.key === "TOKEN")!;
     expect(token.value).toBe("");
     expect(token.hasValue).toBe(true);
+    expect(typeof token.createdAt).toBe("string");
+    expect(typeof data.stack.createdAt).toBe("string");
+    expect(typeof data.stack.updatedAt).toBe("string");
     const plain = data.envVars.find((e) => e.key === "PLAIN")!;
     expect(plain.value).toBe("visible");
     const secret = data.secrets.find((s) => s.name === "mysecret")!;
@@ -163,6 +176,26 @@ describe("GET /api/stacks/:name", () => {
     expect(data.detectedEnvVars).toContain("FOO");
     expect(data.services.map((s) => s.name)).toContain("web");
     expect(data.composeRaw).toContain("nginx");
+  });
+
+  it("returns deployment logs with ISO string timestamps", async () => {
+    const { stack } = await seedStack("wire-log-detail", BASIC_COMPOSE);
+    await db.insert(deploymentLogs).values({
+      stackId: stack.id,
+      action: "deploy",
+      status: "success",
+      output: "ok",
+    });
+
+    const res = await app.handle(
+      req("/api/stacks/wire-log-detail", { headers: { cookie } })
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      logs: Array<{ createdAt: string }>;
+    };
+    expect(data.logs.length).toBeGreaterThan(0);
+    expect(typeof data.logs[0].createdAt).toBe("string");
   });
 
   it("returns 400 when the compose file is present but invalid", async () => {

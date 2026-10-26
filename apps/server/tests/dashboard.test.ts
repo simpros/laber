@@ -46,7 +46,7 @@ describe("GET /api/dashboard", () => {
       };
       coreConfigured: boolean;
       coreServices: unknown[];
-      recentLogs: Array<{ output: string }>;
+      recentLogs: Array<{ output: string; createdAt: string }>;
     };
     expect(data.stats.totalStacks).toBeGreaterThanOrEqual(1);
     expect(data.stats.deployedStacks).toBeGreaterThanOrEqual(1);
@@ -54,5 +54,7 @@ describe("GET /api/dashboard", () => {
     expect(typeof data.coreConfigured).toBe("boolean");
     expect(Array.isArray(data.coreServices)).toBe(true);
     expect(data.recentLogs.some((l) => l.output === "ok")).toBe(true);
+    const ok = data.recentLogs.find((l) => l.output === "ok")!;
+    expect(typeof ok.createdAt).toBe("string");
   });
 });

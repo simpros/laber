@@ -11,5 +11,6 @@ export type { CardHeaderProps } from "./CardHeader.js";
 export type { AlertProps, AlertVariant } from "./Alert.js";
 export type { StatusBadgeProps } from "./StatusBadge.js";
 export type { Tone } from "./tone.js";
+export { toneSurface, toneText } from "./tone.js";
 export type { IconProps, IconSize } from "./Icon.js";
 export type { AuthLayoutProps } from "./AuthLayout.js";
