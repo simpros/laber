@@ -16,16 +16,25 @@ export function ConfigValueField({
 }: {
   id?: string;
   name?: string;
-  isSecret: boolean;
   entry: MaskedSecretState;
-  placeholder?: string;
   inputClassName?: string;
   onInput: (value: string) => void;
   onUndo?: () => void;
   onClear?: () => void;
-  keepPlaceholder?: string;
-  editPlaceholder?: string;
-}) {
+} & (
+  | {
+      isSecret: true;
+      keepPlaceholder?: string;
+      editPlaceholder?: string;
+      placeholder?: never;
+    }
+  | {
+      isSecret: false;
+      placeholder?: string;
+      keepPlaceholder?: never;
+      editPlaceholder?: never;
+    }
+)) {
   const keep = isSecret && entry.hadValue && !entry.dirty;
 
   return (
@@ -37,11 +46,7 @@ export function ConfigValueField({
         value={entry.value}
         onChange={(e) => onInput(e.target.value)}
         placeholder={
-          isSecret
-            ? keep
-              ? keepPlaceholder
-              : editPlaceholder
-            : placeholder
+          keep ? keepPlaceholder : isSecret ? editPlaceholder : placeholder
         }
         className={inputClassName}
       />

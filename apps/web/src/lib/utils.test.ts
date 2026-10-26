@@ -1,5 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { statusColor, containerStatusBg, timeAgo } from "./utils";
+import {
+  statusColor,
+  containerStatusBg,
+  statusTone,
+  timeAgo,
+} from "./utils";
 
 describe("statusColor", () => {
   it("returns success class for running state", () => {
@@ -46,6 +51,21 @@ describe("containerStatusBg", () => {
     expect(containerStatusBg("dead")).toBe(
       "bg-danger/10 border-danger/20"
     );
+  });
+});
+
+describe("statusTone", () => {
+  it("maps stack and deployment-log statuses onto one tone scale", () => {
+    expect(statusTone("success")).toBe("success");
+    expect(statusTone("deployed")).toBe("success");
+    expect(statusTone("running")).toBe("warning");
+    expect(statusTone("stopped")).toBe("warning");
+    expect(statusTone("error")).toBe("danger");
+    expect(statusTone("discovered")).toBe("neutral");
+  });
+
+  it("falls back to neutral for unrecognized statuses", () => {
+    expect(statusTone("bogus-status")).toBe("neutral");
   });
 });
 

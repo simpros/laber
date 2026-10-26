@@ -9,18 +9,15 @@ const { default: CardHeader } = await import("./CardHeader.js");
 describe("StatusBadge", () => {
   const CASES = [
     ["success", "text-success"],
-    ["deployed", "text-success"],
-    ["running", "text-warning"],
-    ["stopped", "text-warning"],
-    ["error", "text-danger"],
-    ["discovered", "text-text-secondary"],
-    ["bogus-status", "text-text-secondary"],
+    ["warning", "text-warning"],
+    ["danger", "text-danger"],
+    ["neutral", "text-text-secondary"],
   ] as const;
-  for (const [status, tone] of CASES) {
-    it(`${status} → ${tone}`, () => {
+  for (const [tone, cls] of CASES) {
+    it(`${tone} → ${cls}`, () => {
       try {
-        render(<StatusBadge status={status} />);
-        expect(screen.getByText(status).className).toContain(tone);
+        render(<StatusBadge status="label" tone={tone} />);
+        expect(screen.getByText("label").className).toContain(cls);
       } finally {
         cleanup();
       }

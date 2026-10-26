@@ -1,4 +1,5 @@
 import { StatusBadge } from "@laber/ui";
+import { statusTone } from "@/lib/utils";
 
 type LogEntry = {
   id: string;
@@ -26,7 +27,10 @@ export default function StackDeploymentLogs({
           className="bg-surface-2 border-border rounded-lg border px-4 py-3"
         >
           <div className="flex items-center gap-3 text-sm">
-            <StatusBadge status={log.status} />
+            <StatusBadge
+              status={log.status}
+              tone={statusTone(log.status)}
+            />
             <span className="text-text-secondary font-mono">
               {log.action}
             </span>
