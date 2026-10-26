@@ -9,8 +9,9 @@ import { CORE_PROJECT, getCoreComposePath } from "./core-identity";
 import { buildCoreCompose } from "./core-compose";
 import {
   CORE_KEYS,
-  type CoreKey,
+  type CoreConfigEntry,
   type CoreConfigShape,
+  type CoreKey,
 } from "./core-keys";
 
 export type CoreConfig = CoreConfigShape;
@@ -99,15 +100,14 @@ export async function getCoreSnapshot() {
 export async function getCoreOverview() {
   const snapshot = await getCoreSnapshot();
   const storedByKey = new Map(snapshot.rows.map((c) => [c.key, c]));
-  const configMap: Record<
-    string,
-    { value: string; isSecret: boolean; hasValue: boolean }
-  > = {};
+  // Total by construction: the loop assigns every CORE_KEYS member, so a
+  // lookup on the served map cannot miss.
+  const configMap = {} as Record<CoreKey, CoreConfigEntry>;
   for (const keyDef of CORE_KEYS) {
     const stored = storedByKey.get(keyDef.key);
     configMap[keyDef.key] = {
-      value: stored && !stored.isSecret ? stored.value : "",
-      isSecret: stored?.isSecret ?? keyDef.secret,
+      value: stored && !keyDef.secret ? stored.value : "",
+      isSecret: keyDef.secret,
       hasValue: (stored?.value ?? "") !== "",
     };
   }

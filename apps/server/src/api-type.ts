@@ -5,4 +5,5 @@ export type {
   ActivityStatus,
 } from "./lib/activity";
 export type { ContainerInfo } from "./lib/types";
+export type { CoreConfigEntry, CoreKey } from "./lib/core-keys";
 export type { StackStatus } from "@laber/db";

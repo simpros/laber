@@ -8,6 +8,8 @@ export type {
   ActivityEvent,
   ActivityStatus,
   ContainerInfo,
+  CoreConfigEntry,
+  CoreKey,
   StackStatus,
 } from "@laber/server/api-type";
 
