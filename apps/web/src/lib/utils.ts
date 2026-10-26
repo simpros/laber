@@ -1,4 +1,4 @@
-import type { StatusTone } from "@laber/ui";
+import { TONE_TOKENS, type StatusTone } from "@laber/ui";
 
 export function isRecord(
   value: unknown
@@ -6,9 +6,10 @@ export function isRecord(
   return typeof value === "object" && value !== null;
 }
 
-// Container states are a different domain from stack/activity statuses,
-// so they get their own state→tone map; the tone→class tables below are
-// the single place those tones turn into classes.
+// Container states are docker's vocabulary, not stack/activity statuses,
+// so they get their own state→tone map. An unclassifiable container
+// state renders danger (needs attention); an unknown status label
+// renders neutral instead (see StatusBadge).
 const CONTAINER_TONE: Record<string, StatusTone> = {
   running: "success",
   exited: "warning",
@@ -19,26 +20,12 @@ function containerTone(state: string): StatusTone {
   return CONTAINER_TONE[state] ?? "danger";
 }
 
-const TONE_TEXT: Record<StatusTone, string> = {
-  success: "text-success",
-  warning: "text-warning",
-  danger: "text-danger",
-  neutral: "text-text-secondary",
-};
-
-const TONE_BG: Record<StatusTone, string> = {
-  success: "bg-success/10 border-success/20",
-  warning: "bg-warning/10 border-warning/20",
-  danger: "bg-danger/10 border-danger/20",
-  neutral: "bg-surface-3 border-border",
-};
-
 export function statusColor(state: string) {
-  return TONE_TEXT[containerTone(state)];
+  return TONE_TOKENS[containerTone(state)].text;
 }
 
 export function containerStatusBg(state: string) {
-  return TONE_BG[containerTone(state)];
+  return TONE_TOKENS[containerTone(state)].surface;
 }
 
 export function timeAgo(date: Date | string | null) {

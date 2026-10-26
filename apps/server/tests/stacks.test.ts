@@ -165,6 +165,26 @@ describe("GET /api/stacks/:name", () => {
     expect(data.composeRaw).toContain("nginx");
   });
 
+  it("returns deployment logs with ISO string timestamps", async () => {
+    const { stack } = await seedStack("wire-log-detail", BASIC_COMPOSE);
+    await db.insert(deploymentLogs).values({
+      stackId: stack.id,
+      action: "deploy",
+      status: "success",
+      output: "ok",
+    });
+
+    const res = await app.handle(
+      req("/api/stacks/wire-log-detail", { headers: { cookie } })
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      logs: Array<{ createdAt: string }>;
+    };
+    expect(data.logs.length).toBeGreaterThan(0);
+    expect(typeof data.logs[0].createdAt).toBe("string");
+  });
+
   it("returns 400 when the compose file is present but invalid", async () => {
     const { composePath } = await seedStack(
       "invalid-compose-detail",

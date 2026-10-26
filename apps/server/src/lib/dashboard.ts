@@ -6,7 +6,7 @@ import {
 } from "@laber/db";
 import { count, desc, eq } from "drizzle-orm";
 import { getCoreSnapshot } from "./core-stack";
-import { toWireLog } from "./stacks";
+import { toWireLog } from "./wire";
 
 export async function getDashboard() {
   const [stackCount, repoCount, deployedStacks, recentLogs, core] =

@@ -3,7 +3,6 @@ import { Button, Icon } from "@laber/ui";
 import {
   clearSecretEntry,
   isUnset,
-  maskedFromServer,
   undoSecretEntry,
   valueForSave,
   type SecrecyEntry,
@@ -28,7 +27,6 @@ export type SecretRow = SecrecyEntry & {
   name: string;
   filePath: string;
   services: string[];
-  secrecy: "secret";
 };
 
 function secretKeyOf(e: Pick<SecretRow, "name">): string {
@@ -37,7 +35,10 @@ function secretKeyOf(e: Pick<SecretRow, "name">): string {
 
 export function rowForSecret(s: SecretEntry): SecretRow {
   return {
-    ...maskedFromServer({ isSecret: true, hasValue: s.hasValue }),
+    value: "",
+    hadValue: s.hasValue,
+    dirty: false,
+    secrecy: "secret",
     name: s.name,
     filePath: s.filePath,
     services: s.services,

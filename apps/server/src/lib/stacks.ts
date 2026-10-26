@@ -16,6 +16,7 @@ import {
 } from "./compose-services";
 import { getStackAndRepo } from "./stack-context";
 import { getRepoDir } from "./config";
+import { toWireLog } from "./wire";
 
 export async function listStacks() {
   const [allStacks, envCounts] = await Promise.all([
@@ -48,14 +49,6 @@ export async function listStacks() {
     envVarCount: countByStackId.get(stack.id) ?? 0,
   }));
 }
-
-// Deployment-log rows leave the DB with Date timestamps, but the JSON
-// wire carries ISO strings; convert at the fetch boundary so Eden
-// infers the shape clients actually receive.
-export const toWireLog = (row: typeof deploymentLogs.$inferSelect) => ({
-  ...row,
-  createdAt: row.createdAt.toISOString(),
-});
 
 function loadComposeForDetail(composePath: string, repoId: string) {
   const loaded = loadCompose(composePath, { missing: "empty" });

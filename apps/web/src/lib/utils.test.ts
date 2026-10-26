@@ -36,6 +36,12 @@ describe("containerStatusBg", () => {
     );
   });
 
+  it("returns warning bg for stopped state", () => {
+    expect(containerStatusBg("stopped")).toBe(
+      "bg-warning/10 border-warning/20"
+    );
+  });
+
   it("returns danger bg for unknown state", () => {
     expect(containerStatusBg("unknown")).toBe(
       "bg-danger/10 border-danger/20"
