@@ -1,13 +1,9 @@
-# BUN_VERSION has no default; pass it from packageManager via scripts/bun-version.ts.
 ARG BUN_VERSION
 
 FROM oven/bun:${BUN_VERSION}-alpine AS base
 
 WORKDIR /app
 
-# ---- Prune the monorepo to the server runtime subgraph ----
-# out/json is self-contained: pruned package.jsons plus the bun lockfile,
-# bunfig.toml, and referenced patches.
 FROM base AS pruner
 
 RUN bun add -g turbo@^2
@@ -15,7 +11,6 @@ RUN bun add -g turbo@^2
 COPY . .
 RUN turbo prune @laber/server --docker
 
-# ---- Install only the pruned dependencies ----
 FROM base AS installer
 
 COPY --from=pruner /app/out/json/ .
@@ -23,7 +18,6 @@ RUN bun install --production --frozen-lockfile
 
 COPY --from=pruner /app/out/full/ .
 
-# ---- Production runner: server sources + runtime deps only ----
 FROM oven/bun:${BUN_VERSION}-alpine AS runner
 
 WORKDIR /app
@@ -39,9 +33,6 @@ ENV PORT=3001
 ENV DATABASE_PATH=/data/laber.db
 ENV DATA_DIR=/data
 
-# Migrations ship inside @laber/db (packages/db/drizzle); the server runs
-# them at boot via runMigrations() and fail-fasts on error. A fresh empty
-# /data volume is the normal start state.
 COPY --from=installer --chown=app:app /app/apps/server ./apps/server
 COPY --from=installer --chown=app:app /app/packages ./packages
 COPY --from=installer --chown=app:app /app/node_modules ./node_modules

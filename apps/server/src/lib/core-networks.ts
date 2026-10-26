@@ -1,12 +1,10 @@
 import { ValidationError } from "./errors";
 import { CORE_NETWORK } from "./core-identity";
 
-// Docker accepts more characters, but these are the ones compose can declare
-// as external names without ambiguity in YAML or CLI arguments.
+// Only these pass as external names without YAML or CLI ambiguity, though Docker accepts more.
 const VALID_NETWORK_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
-// Declaring these external either conflicts with port publishing or attaches
-// Traefik to a namespace Docker owns.
+// External use of these would clash with port publishing or attach Traefik to a Docker-owned namespace.
 const RESERVED_NETWORKS = new Set(["bridge", "default", "host", "none"]);
 
 function networkNameError(name: string): string | undefined {

@@ -1,6 +1,4 @@
 #!/bin/sh
-# Standalone image build. publish-image.yml is the canonical path; both
-# derive BUN_VERSION from packageManager via scripts/bun-version.ts.
 set -eu
 case "${1-}" in
   api) DOCKERFILE="apps/server/Dockerfile" ;;

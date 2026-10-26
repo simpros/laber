@@ -73,7 +73,7 @@ export default function RepositoryPage() {
         )}
       </div>
 
-      {/* One notice per action, so a stale failure can't hide behind a sibling's success. */}
+      {/* One notice per action so a stale failure can't hide behind a sibling's success. */}
       <MutationNotice
         mutation={addMutation}
         errorFallback="Failed to add repository"

@@ -20,6 +20,12 @@ function sseHeaders(): Record<string, string> {
   };
 }
 
+export function cancelQuietly(reader: {
+  cancel(): Promise<unknown>;
+}): void {
+  reader.cancel().catch(() => {});
+}
+
 export function sseResponse(
   start: (
     controller: ReadableStreamDefaultController<Uint8Array>,

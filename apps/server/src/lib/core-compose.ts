@@ -19,8 +19,7 @@ export function buildCoreCompose(config: CoreConfigShape): CoreCompose {
   const pollingInterval = config.pollingInterval ?? "30";
   const propagationTimeout = config.propagationTimeout ?? "300";
   const ttl = config.ttl ?? "1";
-  // Only the proxy joins the extra networks: the tunnel reaches stacks through
-  // it, and the companion only needs Cloudflare and the docker socket.
+  // Only the proxy joins the extra networks; the tunnel and companion need only the core network.
   const networks = [
     CORE_NETWORK,
     ...parseExtraNetworks(config.extraNetworks),

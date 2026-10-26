@@ -27,7 +27,6 @@ export async function countProjectContainers(
   return containers.filter((c) => c.state === "running").length;
 }
 
-// Fail-closed commit gate: an unreadable daemon refuses removal.
 export async function assertStackRemovable(stack: {
   name: string;
 }): Promise<void> {

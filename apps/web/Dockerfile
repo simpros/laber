@@ -1,13 +1,9 @@
-# BUN_VERSION has no default; pass it from packageManager via scripts/bun-version.ts.
 ARG BUN_VERSION
 
 FROM oven/bun:${BUN_VERSION}-alpine AS base
 
 WORKDIR /app
 
-# ---- Prune the monorepo to the web build subgraph ----
-# (@laber/web -> @laber/api-client -> @laber/server types, so the pruned
-# sources include the server for typechecking. Only build/ leaves the builder.)
 FROM base AS pruner
 
 RUN bun add -g turbo@^2
@@ -15,7 +11,6 @@ RUN bun add -g turbo@^2
 COPY . .
 RUN turbo prune @laber/web --docker
 
-# ---- Install pruned deps + build the SPA ----
 FROM base AS builder
 
 COPY --from=pruner /app/out/json/ .
@@ -25,7 +20,6 @@ COPY --from=pruner /app/out/full/ .
 
 RUN bun run build --filter=@laber/web
 
-# ---- Production runner: static files behind nginx ----
 FROM nginx:1.27-alpine AS runner
 
 COPY --from=builder /app/apps/web/build /usr/share/nginx/html

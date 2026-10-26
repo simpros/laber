@@ -169,7 +169,6 @@ export async function deployCore() {
       commitLive: true,
       envVars,
       projectName: CORE_PROJECT,
-      // Declared and ensured are the same set by construction.
       networks: Object.keys(compose.networks),
     },
   });
