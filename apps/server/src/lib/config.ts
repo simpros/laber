@@ -1,10 +1,12 @@
 import { resolveDataDir } from "@laber/db/paths";
 import { resolve } from "path";
 
-export const DATA_DIR = resolveDataDir();
+export function getDataDir() {
+  return resolveDataDir();
+}
 
 export function getRepoDir(repoId: string) {
-  return resolve(DATA_DIR, "repos", repoId);
+  return resolve(getDataDir(), "repos", repoId);
 }
 
 export function getComposePath(
@@ -12,9 +14,8 @@ export function getComposePath(
   relativePath: string,
   composeFile: string
 ) {
-  return resolve(DATA_DIR, "repos", repoId, relativePath, composeFile);
+  return resolve(getDataDir(), "repos", repoId, relativePath, composeFile);
 }
-
 
 // Three-state: null (or omitted) keeps, "" clears, string sets.
 export type ConfigValue = string | null;

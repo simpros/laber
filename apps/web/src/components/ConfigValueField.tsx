@@ -1,4 +1,4 @@
-import { MaskedSecretField } from "./MaskedSecretField";
+import { Icon } from "@laber/ui";
 import type { MaskedSecretState } from "@/lib/masked-secret";
 
 export function ConfigValueField({
@@ -11,8 +11,8 @@ export function ConfigValueField({
   onInput,
   onUndo,
   onClear,
-  keepPlaceholder,
-  editPlaceholder,
+  keepPlaceholder = "Leave empty to keep the current value…",
+  editPlaceholder = "Enter secret value…",
 }: {
   id?: string;
   name?: string;
@@ -20,36 +20,49 @@ export function ConfigValueField({
   entry: MaskedSecretState;
   placeholder?: string;
   inputClassName?: string;
-  keepPlaceholder?: string;
-  editPlaceholder?: string;
   onInput: (value: string) => void;
   onUndo?: () => void;
   onClear?: () => void;
+  keepPlaceholder?: string;
+  editPlaceholder?: string;
 }) {
-  if (isSecret) {
+  if (!isSecret) {
     return (
-      <MaskedSecretField
-        id={id}
-        name={name}
-        entry={entry}
-        onInput={onInput}
-        onUndo={onUndo}
-        onClear={onClear}
-        {...(keepPlaceholder ? { keepPlaceholder } : {})}
-        {...(editPlaceholder ? { editPlaceholder } : {})}
-      />
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          name={name}
+          type="text"
+          value={entry.value}
+          onChange={(e) => onInput(e.target.value)}
+          placeholder={placeholder}
+          className={inputClassName}
+        />
+        {entry.dirty && onUndo ? (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="text-text-muted hover:text-danger shrink-0 p-1 transition-colors"
+            aria-label="Undo changes"
+            title="Undo changes"
+          >
+            Undo
+          </button>
+        ) : null}
+      </div>
     );
   }
+  const keep = entry.hadValue && !entry.dirty;
   return (
     <div className="flex items-center gap-2">
       <input
         id={id}
         name={name}
-        type="text"
+        type="password"
         value={entry.value}
         onChange={(e) => onInput(e.target.value)}
-        placeholder={placeholder}
-        className={inputClassName}
+        placeholder={keep ? keepPlaceholder : editPlaceholder}
+        className="flex-1 font-mono text-sm"
       />
       {entry.dirty && onUndo ? (
         <button
@@ -59,7 +72,25 @@ export function ConfigValueField({
           aria-label="Undo changes"
           title="Undo changes"
         >
-          Undo
+          <Icon>
+            <path
+              d="M2.5 2v4.5h4.5M2.87 8a5.5 5.5 0 1 0 1.01-3.25"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Icon>
+        </button>
+      ) : entry.hadValue && onClear ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-text-muted hover:text-danger shrink-0 p-1 text-xs transition-colors"
+          title="Clear stored value"
+        >
+          Clear
         </button>
       ) : null}
     </div>

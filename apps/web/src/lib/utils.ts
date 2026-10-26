@@ -1,3 +1,9 @@
+export function isRecord(
+  value: unknown
+): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 export function statusColor(state: string) {
   if (state === "running") return "text-success";
   if (state === "exited" || state === "stopped") return "text-warning";
@@ -8,16 +14,6 @@ export function containerStatusBg(state: string) {
   if (state === "running") return "bg-success/10 border-success/20";
   if (state === "exited") return "bg-warning/10 border-warning/20";
   return "bg-danger/10 border-danger/20";
-}
-
-export function statusBadge(status: string) {
-  const map: Record<string, string> = {
-    deployed: "bg-success/10 text-success",
-    stopped: "bg-warning/10 text-warning",
-    error: "bg-danger/10 text-danger",
-    discovered: "bg-surface-3 text-text-secondary",
-  };
-  return map[status] ?? map.discovered;
 }
 
 export function timeAgo(date: Date | string | null) {

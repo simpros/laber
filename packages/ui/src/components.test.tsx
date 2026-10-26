@@ -25,6 +25,25 @@ describe("StatusBadge", () => {
       cleanup();
     }
   });
+
+  it("maps stack tones onto the same scale", () => {
+    try {
+      render(<StatusBadge status="deployed" />);
+      expect(screen.getByText("deployed").className).toContain(
+        "text-success"
+      );
+    } finally {
+      cleanup();
+    }
+    try {
+      render(<StatusBadge status="discovered" />);
+      expect(screen.getByText("discovered").className).toContain(
+        "text-text-secondary"
+      );
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe("Icon", () => {

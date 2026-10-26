@@ -8,8 +8,6 @@ type NoticeMutation = {
   isPending: boolean;
   isError: boolean;
   isSuccess: boolean;
-  dataUpdatedAt?: number;
-  errorUpdatedAt?: number;
 };
 
 export type { NoticeMutation };
@@ -76,23 +74,12 @@ function LinkedNotice({
 export function MutationNotice({
   mutation,
   errorFallback,
-  onViewActivity,
   linkActivity,
 }: {
   mutation: NoticeMutation;
   errorFallback: string;
-  onViewActivity?: () => void;
   linkActivity?: boolean;
 }) {
-  if (onViewActivity) {
-    return (
-      <NoticeBody
-        mutation={mutation}
-        errorFallback={errorFallback}
-        onViewActivity={onViewActivity}
-      />
-    );
-  }
   if (linkActivity) {
     return <LinkedNotice mutation={mutation} errorFallback={errorFallback} />;
   }

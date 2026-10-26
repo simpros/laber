@@ -6,8 +6,10 @@ export interface StatusBadgeProps {
 }
 
 function statusColorClass(s: string): string {
-  if (s === "success") return "bg-success/10 text-success";
+  if (s === "success" || s === "deployed")
+    return "bg-success/10 text-success";
   if (s === "error") return "bg-danger/10 text-danger";
+  if (s === "discovered") return "bg-surface-3 text-text-secondary";
   return "bg-warning/10 text-warning";
 }
 

@@ -8,8 +8,6 @@ function stub(overrides: Partial<NoticeMutation> = {}): NoticeMutation {
     isPending: false,
     isError: false,
     isSuccess: false,
-    dataUpdatedAt: 0,
-    errorUpdatedAt: 0,
     ...overrides,
   };
 }
