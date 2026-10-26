@@ -5,6 +5,4 @@ export type {
   ActivityStatus,
 } from "./lib/activity";
 export type { ContainerInfo } from "./lib/types";
-import type { stacks } from "@laber/db";
-
-export type StackStatus = (typeof stacks.$inferSelect)["status"];
+export type { StackStatus } from "@laber/db";
