@@ -2,8 +2,7 @@ import { StatusBadge, type Tone } from "@laber/ui";
 import {
   chromeIsSecret,
   secretStatus,
-  type MaskedSecretState,
-  type SecrecyState,
+  type SecrecyEntry,
   type SecretStatus,
 } from "@/lib/masked-secret";
 
@@ -14,11 +13,7 @@ const META: Record<SecretStatus, { tone: Tone; label: string }> = {
   "will-clear": { tone: "warning", label: "will clear" },
 };
 
-export default function SecretBadge({
-  entry,
-}: {
-  entry: MaskedSecretState & SecrecyState;
-}) {
+export default function SecretBadge({ entry }: { entry: SecrecyEntry }) {
   if (!chromeIsSecret(entry)) return null;
   const meta = META[secretStatus(entry)];
   return (

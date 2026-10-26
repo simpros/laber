@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Card, Icon, StatusBadge } from "@laber/ui";
-import { stackTone } from "@/lib/utils";
+import { stackTone } from "@/lib/status-tone";
 import { useStacks } from "@/lib/queries/stacks";
 import QueryStatus from "@/components/QueryStatus";
 

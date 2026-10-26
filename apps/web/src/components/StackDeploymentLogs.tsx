@@ -1,18 +1,11 @@
 import { StatusBadge } from "@laber/ui";
-import { logTone, type LogStatus } from "@/lib/utils";
-
-type LogEntry = {
-  id: string;
-  status: LogStatus;
-  action: string;
-  output: string | null;
-  createdAt: Date | string | null;
-};
+import { logTone } from "@/lib/status-tone";
+import type { StackDeploymentLog } from "@/lib/queries/stacks";
 
 export default function StackDeploymentLogs({
   logs,
 }: {
-  logs: LogEntry[];
+  logs: StackDeploymentLog[];
 }) {
   if (logs.length === 0) {
     return (

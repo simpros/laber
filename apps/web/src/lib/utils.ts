@@ -1,5 +1,3 @@
-import type { Tone } from "@laber/ui";
-
 export function isRecord(
   value: unknown
 ): value is Record<string, unknown> {
@@ -17,25 +15,6 @@ export function containerStatusBg(state: string) {
   if (state === "exited") return "bg-warning/10 border-warning/20";
   return "bg-danger/10 border-danger/20";
 }
-
-export type StackStatus = "discovered" | "deployed" | "stopped" | "error";
-export type LogStatus = "running" | "success" | "error";
-
-const STACK_TONE: Record<StackStatus, Tone> = {
-  discovered: "neutral",
-  deployed: "success",
-  stopped: "warning",
-  error: "danger",
-};
-
-const LOG_TONE: Record<LogStatus, Tone> = {
-  running: "warning",
-  success: "success",
-  error: "danger",
-};
-
-export const stackTone = (status: StackStatus): Tone => STACK_TONE[status];
-export const logTone = (status: LogStatus): Tone => LOG_TONE[status];
 
 export function timeAgo(date: Date | string | null) {
   if (!date) return "never";

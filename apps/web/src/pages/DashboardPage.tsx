@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Card, CardHeader, StatusBadge } from "@laber/ui";
-import { statusColor, logTone, timeAgo } from "@/lib/utils";
+import { statusColor, timeAgo } from "@/lib/utils";
+import { logTone } from "@/lib/status-tone";
 import { useDashboard } from "@/lib/queries/dashboard";
 import QueryStatus from "@/components/QueryStatus";
 

@@ -7,10 +7,21 @@ type NoticeMutation = {
   error: unknown;
   isPending: boolean;
   isError: boolean;
-  isSuccess: boolean;
 };
 
-export function MutationNotice({
+export function noticeFor(
+  mutation: NoticeMutation
+):
+  | { kind: "hidden" }
+  | { kind: "success"; text: string }
+  | { kind: "error"; error: unknown } {
+  if (mutation.isPending) return { kind: "hidden" };
+  if (mutation.data) return { kind: "success", text: mutation.data };
+  if (mutation.isError) return { kind: "error", error: mutation.error };
+  return { kind: "hidden" };
+}
+
+function MutationNotice({
   mutation,
   errorFallback,
   linkActivity,
@@ -20,11 +31,12 @@ export function MutationNotice({
   linkActivity?: boolean;
 }) {
   const { setOpen } = useActivity();
-  if (mutation.isPending) return null;
-  if (mutation.data) {
+  const notice = noticeFor(mutation);
+  if (notice.kind === "hidden") return null;
+  if (notice.kind === "success") {
     return (
       <Alert variant="success">
-        {mutation.data}{" "}
+        {notice.text}{" "}
         {linkActivity && (
           <button
             type="button"
@@ -37,14 +49,11 @@ export function MutationNotice({
       </Alert>
     );
   }
-  if (mutation.isError) {
-    return (
-      <Alert variant="error">
-        {toErrorMessage(mutation.error, errorFallback)}
-      </Alert>
-    );
-  }
-  return null;
+  return (
+    <Alert variant="error">
+      {toErrorMessage(notice.error, errorFallback)}
+    </Alert>
+  );
 }
 
 export default MutationNotice;
