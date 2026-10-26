@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   stackIsRunning,
@@ -24,6 +25,21 @@ const tabs = [
 ] as const;
 
 export type StackTab = (typeof tabs)[number]["id"];
+
+// Editors stay mounted so drafts survive tab switches.
+function PersistedPanel({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div hidden={!active} inert={!active}>
+      {children}
+    </div>
+  );
+}
 
 export default function StackDetailPage({
   name,
@@ -108,29 +124,29 @@ export default function StackDetailPage({
           services={data.services}
         />
       )}
-      <div hidden={tab !== "env"} inert={tab !== "env"}>
+      <PersistedPanel active={tab === "env"}>
         <StackEnvEditor
           key={name}
           envVars={data.envVars}
           stackName={name}
           detectedEnvVars={data.detectedEnvVars}
         />
-      </div>
-      <div hidden={tab !== "secrets"} inert={tab !== "secrets"}>
+      </PersistedPanel>
+      <PersistedPanel active={tab === "secrets"}>
         <StackSecretsEditor
           key={name}
           secrets={data.secrets}
           stackName={name}
         />
-      </div>
-      <div hidden={tab !== "compose"} inert={tab !== "compose"}>
+      </PersistedPanel>
+      <PersistedPanel active={tab === "compose"}>
         <StackComposeView
           key={name}
           content={data.composeRaw}
           fileName={data.stack.composeFile}
           stackName={name}
         />
-      </div>
+      </PersistedPanel>
       {tab === "logs" && <StackDeploymentLogs logs={data.logs} />}
         </div>
         );

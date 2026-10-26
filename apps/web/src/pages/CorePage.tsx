@@ -259,6 +259,7 @@ export default function CorePage() {
 
           <CoreConfigForm key="core" snapshot={data} />
 
+          {/* -mt-4 cancels the parent stack spacing so the deploy toolbar sits closer. */}
           <div className="-mt-4 flex justify-end">
             <LifecycleToolbar
               actions={[CORE_DEPLOY_ACTION]}

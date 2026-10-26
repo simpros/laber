@@ -12,6 +12,7 @@ type SecretFile = {
   value: string;
 };
 
+// Applies the composeBytes snapshot exactly: networks → up → Traefik attach → commit.
 type DeployOptions = {
   composePath: string;
   composeBytes: string;

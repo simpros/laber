@@ -73,6 +73,7 @@ export function isUnset(entry: MaskedSecretState): boolean {
   return entry.dirty ? entry.value === "" : !entry.hadValue;
 }
 
+// Null means keep the stored value; anything else replaces it.
 export function valueForSave(entry: MaskedSecretState): string | null {
   return !entry.dirty && entry.hadValue ? null : entry.value;
 }

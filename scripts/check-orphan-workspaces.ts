@@ -8,6 +8,7 @@ const MANIFEST_DEPENDENCY_FIELDS = [
   "peerDependencies",
 ] as const;
 
+// apps/* are deployment roots, never dependents, so only packages/* can be orphaned.
 const SCANNED_PARENTS = ["packages"];
 
 interface WorkspaceManifest {

@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import * as v from "valibot";
 import { getStackLogSnapshot, followStackLogs } from "../lib/stack-logs";
-import { sseResponse, encodeEvent } from "../lib/sse";
+import { sseResponse, encodeEvent, cancelQuietly } from "../lib/sse";
 
 const logsQuerySchema = v.object({
   follow: v.optional(v.string()),
@@ -20,7 +20,7 @@ export const logRoutes = new Elysia().get(
     return sseResponse(async (controller, onCleanup) => {
       const reader = stream.getReader();
       onCleanup(() => {
-        reader.cancel().catch(() => {});
+        cancelQuietly(reader);
       });
       try {
         while (true) {
