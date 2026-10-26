@@ -26,7 +26,11 @@ export async function resolveStackDeployInputsFor(
   const envMap: Record<string, string> = {};
   for (const ev of envVars) envMap[ev.key] = ev.value;
 
-  const { raw, doc, secrets: defs } = loadCompose(composePath, {
+  const {
+    raw,
+    doc,
+    secrets: defs,
+  } = loadCompose(composePath, {
     missing: "error",
     errorPrefix: "Cannot deploy",
   });
@@ -60,7 +64,8 @@ export async function resolveStackDeployInputsFor(
       composePath,
       envVars: envMap,
       secretFiles,
-      networkName,
+      networks: networkName ? [networkName] : [],
+      attachTraefikTo: networkName,
       projectName: stack.name,
     },
   };

@@ -1,5 +1,25 @@
+import {
+  assertExtraNetworks,
+  formatExtraNetworks,
+  parseExtraNetworks,
+} from "./core-networks";
+
+type CoreKeyDef = {
+  key: string;
+  prop: string;
+  secret: boolean;
+  required: boolean;
+  // Validates and canonicalises the stored row; load and save both apply it.
+  normalize?: (raw: string) => string;
+};
+
 export const CORE_KEYS = [
-  { key: "ROOT_DOMAIN", prop: "rootDomain", secret: false, required: true },
+  {
+    key: "ROOT_DOMAIN",
+    prop: "rootDomain",
+    secret: false,
+    required: true,
+  },
   {
     key: "CF_DNS_API_TOKEN",
     prop: "cfDnsApiToken",
@@ -8,9 +28,19 @@ export const CORE_KEYS = [
   },
   { key: "ACME_EMAIL", prop: "acmeEmail", secret: false, required: false },
   { key: "LOG_LEVEL", prop: "logLevel", secret: false, required: false },
-  { key: "TUNNEL_TOKEN", prop: "tunnelToken", secret: true, required: false },
+  {
+    key: "TUNNEL_TOKEN",
+    prop: "tunnelToken",
+    secret: true,
+    required: false,
+  },
   { key: "ZONE_ID", prop: "zoneId", secret: true, required: false },
-  { key: "HTTP_TIMEOUT", prop: "httpTimeout", secret: false, required: false },
+  {
+    key: "HTTP_TIMEOUT",
+    prop: "httpTimeout",
+    secret: false,
+    required: false,
+  },
   {
     key: "POLLING_INTERVAL",
     prop: "pollingInterval",
@@ -24,7 +54,17 @@ export const CORE_KEYS = [
     required: false,
   },
   { key: "TTL", prop: "ttl", secret: false, required: false },
-] as const;
+  {
+    key: "EXTRA_NETWORKS",
+    prop: "extraNetworks",
+    secret: false,
+    required: false,
+    normalize: (raw: string) => {
+      assertExtraNetworks(raw);
+      return formatExtraNetworks(parseExtraNetworks(raw));
+    },
+  },
+] as const satisfies readonly CoreKeyDef[];
 
 export type CoreKey = (typeof CORE_KEYS)[number]["key"];
 export type CoreConfigProp = (typeof CORE_KEYS)[number]["prop"];

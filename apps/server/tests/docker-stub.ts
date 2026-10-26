@@ -27,7 +27,7 @@ const defaults = {
     tail?: number;
     since?: number;
   }) => Promise<ReadableStream<string>>,
-  ensureNetwork: async (_networkName: string): Promise<void> => {},
+  ensureNetwork: async (_networkName: string): Promise<boolean> => false,
   connectContainerToNetwork: async (
     _containerId: string,
     _networkName: string
