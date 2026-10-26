@@ -58,8 +58,14 @@ function exemptionReason(manifest: WorkspaceManifest): string | undefined {
 
 const rootManifest = (await Bun.file(
   join(ROOT, "package.json")
-).json()) as WorkspaceManifest & { workspaces: string[] };
-const workspaces = await expandWorkspaces(rootManifest.workspaces);
+).json()) as WorkspaceManifest & {
+  workspaces: string[] | { packages: string[] };
+};
+// Catalogs require Bun's object form of `workspaces`.
+const workspacePatterns = Array.isArray(rootManifest.workspaces)
+  ? rootManifest.workspaces
+  : rootManifest.workspaces.packages;
+const workspaces = await expandWorkspaces(workspacePatterns);
 const referenced = new Set<string>();
 for (const manifest of [
   rootManifest,

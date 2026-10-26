@@ -3,10 +3,15 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.4.4",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "@types/bun": "^1.4.4"
+    }
+  },
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
@@ -24,19 +29,19 @@
     "auth:generate": "turbo run auth:generate"
   },
   "devDependencies": {
-    "@eslint/compat": "^2.0.2",
-    "@happy-dom/global-registrator": "^20.7.0",
+    "@eslint/compat": "^2.1.1",
+    "@happy-dom/global-registrator": "^20.14.6",
     "@laber/eslint-config": "workspace:*",
-    "@testing-library/svelte": "^5.3.1",
-    "@types/bun": "^1.3.10",
+    "@testing-library/svelte": "^5.4.2",
+    "@types/bun": "catalog:",
     "eslint": "10.3.0",
-    "eslint-plugin-svelte": "^3.0.0",
-    "happy-dom": "^20.7.0",
-    "prettier": "^3.8.1",
-    "prettier-plugin-svelte": "^3.4.1",
+    "eslint-plugin-svelte": "^3.23.1",
+    "happy-dom": "^20.14.6",
+    "prettier": "^3.9.10",
+    "prettier-plugin-svelte": "^3.5.2",
     "prettier-plugin-tailwindcss": "0.8.0",
-    "svelte": "^5.53.6",
-    "turbo": "^2.4.0",
+    "svelte": "^5.57.2",
+    "turbo": "^2.11.10",
     "typescript": "^5.9.3"
   },
   "dependencies": {},

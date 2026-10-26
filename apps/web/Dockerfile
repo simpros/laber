@@ -1,6 +1,7 @@
 ARG COMMIT_SHA=unknown
+ARG BUN_VERSION
 
-FROM oven/bun:1.3.13-alpine AS base
+FROM oven/bun:${BUN_VERSION}-alpine AS base
 
 WORKDIR /app
 
