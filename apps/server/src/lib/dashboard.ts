@@ -6,6 +6,7 @@ import {
 } from "@laber/db";
 import { count, desc, eq } from "drizzle-orm";
 import { getCoreSnapshot } from "./core-stack";
+import { toWireLog } from "./stacks";
 
 export async function getDashboard() {
   const [stackCount, repoCount, deployedStacks, recentLogs, core] =
@@ -32,6 +33,6 @@ export async function getDashboard() {
     },
     coreConfigured: core.configured,
     coreServices: core.services,
-    recentLogs,
+    recentLogs: recentLogs.map(toWireLog),
   };
 }

@@ -49,6 +49,14 @@ export async function listStacks() {
   }));
 }
 
+// Deployment-log rows leave the DB with Date timestamps, but the JSON
+// wire carries ISO strings; convert at the fetch boundary so Eden
+// infers the shape clients actually receive.
+export const toWireLog = (row: typeof deploymentLogs.$inferSelect) => ({
+  ...row,
+  createdAt: row.createdAt.toISOString(),
+});
+
 function loadComposeForDetail(composePath: string, repoId: string) {
   const loaded = loadCompose(composePath, { missing: "empty" });
   if (!loaded.doc) {
@@ -111,7 +119,7 @@ export async function getStackDetail(name: string) {
       services: ds.services,
       hasValue: (secretsByName.get(ds.name)?.value ?? "") !== "",
     })),
-    logs,
+    logs: logs.map(toWireLog),
     containers,
     services,
     detectedEnvVars,

@@ -1,19 +1,44 @@
+import type { StatusTone } from "@laber/ui";
+
 export function isRecord(
   value: unknown
 ): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+// Container states are a different domain from stack/activity statuses,
+// so they get their own state→tone map; the tone→class tables below are
+// the single place those tones turn into classes.
+const CONTAINER_TONE: Record<string, StatusTone> = {
+  running: "success",
+  exited: "warning",
+  stopped: "warning",
+};
+
+function containerTone(state: string): StatusTone {
+  return CONTAINER_TONE[state] ?? "danger";
+}
+
+const TONE_TEXT: Record<StatusTone, string> = {
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+  neutral: "text-text-secondary",
+};
+
+const TONE_BG: Record<StatusTone, string> = {
+  success: "bg-success/10 border-success/20",
+  warning: "bg-warning/10 border-warning/20",
+  danger: "bg-danger/10 border-danger/20",
+  neutral: "bg-surface-3 border-border",
+};
+
 export function statusColor(state: string) {
-  if (state === "running") return "text-success";
-  if (state === "exited" || state === "stopped") return "text-warning";
-  return "text-danger";
+  return TONE_TEXT[containerTone(state)];
 }
 
 export function containerStatusBg(state: string) {
-  if (state === "running") return "bg-success/10 border-success/20";
-  if (state === "exited") return "bg-warning/10 border-warning/20";
-  return "bg-danger/10 border-danger/20";
+  return TONE_BG[containerTone(state)];
 }
 
 export function timeAgo(date: Date | string | null) {

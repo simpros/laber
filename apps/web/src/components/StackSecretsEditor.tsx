@@ -28,6 +28,7 @@ export type SecretRow = SecrecyEntry & {
   name: string;
   filePath: string;
   services: string[];
+  secrecy: "secret";
 };
 
 function secretKeyOf(e: Pick<SecretRow, "name">): string {

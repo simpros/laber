@@ -28,6 +28,15 @@ export function secretStatus(entry: MaskedSecretState): SecretStatus {
   return entry.hadValue ? "set" : "unset";
 }
 
+export function maskedFromServer(opts: {
+  isSecret: true,
+  hasValue?: boolean,
+}): MaskedSecretState & { secrecy: "secret" };
+export function maskedFromServer(opts: {
+  isSecret: boolean,
+  value?: string,
+  hasValue?: boolean,
+}): SecrecyEntry;
 export function maskedFromServer({
   isSecret,
   value,
