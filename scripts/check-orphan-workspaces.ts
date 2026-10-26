@@ -14,6 +14,7 @@ const SCANNED_PARENTS = ["packages"];
 
 interface WorkspaceManifest {
   name?: unknown;
+  workspaces?: unknown;
   laber?: { allowOrphan?: unknown };
   dependencies?: Record<string, unknown>;
   devDependencies?: Record<string, unknown>;
@@ -56,16 +57,23 @@ function exemptionReason(manifest: WorkspaceManifest): string | undefined {
   return typeof reason === "string" ? reason : undefined;
 }
 
+// Catalogs require Bun's object form of `workspaces`, where the
+// globs are nested under `packages`.
+function workspacePatterns(workspaces: unknown): string[] {
+  const patterns = Array.isArray(workspaces)
+    ? workspaces
+    : (workspaces as { packages?: unknown } | null)?.packages;
+  if (!Array.isArray(patterns))
+    throw new Error("package.json#workspaces must list workspace globs");
+  return patterns.filter((p): p is string => typeof p === "string");
+}
+
 const rootManifest = (await Bun.file(
   join(ROOT, "package.json")
-).json()) as WorkspaceManifest & {
-  workspaces: string[] | { packages: string[] };
-};
-// Catalogs require Bun's object form of `workspaces`.
-const workspacePatterns = Array.isArray(rootManifest.workspaces)
-  ? rootManifest.workspaces
-  : rootManifest.workspaces.packages;
-const workspaces = await expandWorkspaces(workspacePatterns);
+).json()) as WorkspaceManifest;
+const workspaces = await expandWorkspaces(
+  workspacePatterns(rootManifest.workspaces)
+);
 const referenced = new Set<string>();
 for (const manifest of [
   rootManifest,

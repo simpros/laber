@@ -19,6 +19,6 @@
     "@laber/eslint-config": "workspace:*",
     "@types/bun": "catalog:",
     "elysia": "^1.4.0",
-    "typescript": "5.9.3"
+    "typescript": "catalog:"
   }
 }
