@@ -1,13 +1,17 @@
 import "../setup";
 import { describe, it, expect } from "bun:test";
-import { getCoreComposeContent } from "../../src/lib/core-compose";
+import { buildCoreCompose } from "../../src/lib/core-compose";
+import { CORE_NETWORK } from "../../src/lib/core-identity";
 import type { CoreConfig } from "../../src/lib/core-stack";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 const minimalConfig: CoreConfig = {
   rootDomain: "example.com",
   cfDnsApiToken: "test-token-123",
 };
+
+const getCoreComposeContent = (config: CoreConfig) =>
+  stringify(buildCoreCompose(config));
 
 describe("getCoreComposeContent", () => {
   describe("base config with minimal required fields", () => {
@@ -615,6 +619,75 @@ describe("getCoreComposeContent", () => {
       const result = getCoreComposeContent(config);
       const parsed = parse(result);
       expect(parsed.services["reverse-proxy"]).toBeDefined();
+    });
+  });
+
+  describe("extra networks", () => {
+    const extraConfig: CoreConfig = {
+      ...minimalConfig,
+      extraNetworks: "auth, monitor",
+    };
+
+    it("declares each network external and attaches only the proxy", () => {
+      const parsed = parse(
+        getCoreComposeContent({
+          ...extraConfig,
+          tunnelToken: "tok",
+          zoneId: "zone",
+        })
+      );
+      expect(parsed.services["reverse-proxy"].networks).toEqual([
+        "main",
+        "auth",
+        "monitor",
+      ]);
+      expect(Object.keys(parsed.networks)).toEqual([
+        "main",
+        "auth",
+        "monitor",
+      ]);
+      for (const name of ["main", "auth", "monitor"]) {
+        expect(parsed.networks[name]).toEqual({ name, external: true });
+      }
+      expect(parsed.services.tunnel.networks).toEqual([CORE_NETWORK]);
+      expect(parsed.services["cloudflare-companion"].networks).toEqual([
+        CORE_NETWORK,
+      ]);
+    });
+
+    it("keeps the docker provider pin on the core network", () => {
+      const parsed = parse(getCoreComposeContent(extraConfig));
+      expect(parsed.services["reverse-proxy"].command).toContain(
+        `--providers.docker.network=${CORE_NETWORK}`
+      );
+    });
+
+    it("generates exactly the default output for an empty list", () => {
+      expect(
+        getCoreComposeContent({ ...minimalConfig, extraNetworks: "" })
+      ).toBe(getCoreComposeContent(minimalConfig));
+      expect(
+        Object.keys(parse(getCoreComposeContent(minimalConfig)).networks)
+      ).toEqual([CORE_NETWORK]);
+    });
+
+    it("normalizes duplicates and main out of the list", () => {
+      const parsed = parse(
+        getCoreComposeContent({
+          ...minimalConfig,
+          extraNetworks: " auth, auth, main, monitor ",
+        })
+      );
+      expect(parsed.services["reverse-proxy"].networks).toEqual([
+        "main",
+        "auth",
+        "monitor",
+      ]);
+      expect(Object.keys(parsed.networks)).toEqual([
+        "main",
+        "auth",
+        "monitor",
+      ]);
     });
   });
 });

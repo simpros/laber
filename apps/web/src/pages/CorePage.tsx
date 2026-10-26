@@ -33,9 +33,10 @@ import QueryStatus from "@/components/QueryStatus";
 import LifecycleToolbar from "@/components/LifecycleToolbar";
 import ConfigValueField from "@/components/ConfigValueField";
 
-type FieldState = MaskedSecretState & SecrecyState & {
-  key: CoreKey;
-};
+type FieldState = MaskedSecretState &
+  SecrecyState & {
+    key: CoreKey;
+  };
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
 
@@ -66,7 +67,7 @@ function coreKeyOf(e: Pick<FieldState, "key">): string {
 function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
   const serverValues = useMemo(
     () => fieldStatesFor(snapshot.config),
-    [snapshot.config],
+    [snapshot.config]
   );
   const {
     entries: fields,
@@ -74,7 +75,10 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
     updateByKey,
     saveMutation,
     handleSave,
-  } = useMaskedListEditor<FieldState, Partial<Record<CoreKey, string | null>>>({
+  } = useMaskedListEditor<
+    FieldState,
+    Partial<Record<CoreKey, string | null>>
+  >({
     init: () => fieldStatesFor(snapshot.config),
     syncValues: serverValues,
     keyOf: coreKeyOf,
@@ -91,13 +95,16 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
 
   const byKey = useMemo(
     () => new Map(fields.map((f) => [f.key, f] as const)),
-    [fields],
+    [fields]
   );
 
   return (
     <form onSubmit={handleSave}>
       <div className="mb-6">
-        <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
+        <MutationNotice
+          mutation={saveMutation}
+          errorFallback="Save failed"
+        />
       </div>
       <div className="space-y-6">
         {groups.map((group) => (
@@ -145,8 +152,8 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                               ? undoSecretEntry(field)
                               : undoPlainEntry(
                                   field,
-                                  snapshot.config[keyDef.key]?.value ?? "",
-                                ),
+                                  snapshot.config[keyDef.key]?.value ?? ""
+                                )
                           )
                         }
                         onClear={
@@ -154,11 +161,16 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                             ? () =>
                                 updateByKey(
                                   keyDef.key,
-                                  clearSecretEntry(field),
+                                  clearSecretEntry(field)
                                 )
                             : undefined
                         }
                       />
+                      {"hint" in keyDef ? (
+                        <p className="text-text-muted mt-1 text-xs">
+                          {keyDef.hint}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 );
