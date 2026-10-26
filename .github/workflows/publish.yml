@@ -10,21 +10,21 @@ jobs:
   api:
     if: startsWith(github.ref, 'refs/tags/api@')
     uses: ./.github/workflows/publish-image.yml
+    permissions:
+      contents: read
+      packages: write
     with:
       app: api
-      tag-prefix: api
       package-path: apps/server/package.json
       dockerfile: apps/server/Dockerfile
-      image-suffix: api
-    secrets: inherit
 
   web:
     if: startsWith(github.ref, 'refs/tags/web@')
     uses: ./.github/workflows/publish-image.yml
+    permissions:
+      contents: read
+      packages: write
     with:
       app: web
-      tag-prefix: web
       package-path: apps/web/package.json
       dockerfile: apps/web/Dockerfile
-      image-suffix: web
-    secrets: inherit

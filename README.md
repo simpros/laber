@@ -6,7 +6,7 @@ Homelab stack manager: an **Elysia API** (`apps/server`) plus a **React SPA**
 
 ## Quickstart (dev, zero external services)
 
-Requirements: Bun 1.3.13.
+Requirements: Bun 1.4.4.
 
 ```sh
 bun install
@@ -34,9 +34,9 @@ the first admin, then `/login`.
 
 ## Environment
 
-SQLite only. `.env.example` is the full list — the defaults below live in
-code (`packages/db/src/paths.ts`, `apps/server/src/index.ts`,
-`apps/web/vite.config.ts`) and fall back when unset:
+SQLite only. `.env.example` is the full list; when a value is unset,
+the default in code applies (`packages/db/src/paths.ts`,
+`apps/server/src/index.ts`, `apps/web/vite.config.ts`):
 
 - `DATABASE_PATH` / `DATA_DIR` — SQLite file and data dir.
 - `BETTER_AUTH_SECRET` (required), `BETTER_AUTH_BASE_URL`.
@@ -56,6 +56,7 @@ bun run test:e2e   # temp SQLite DB in apps/web/tests/.data, no external service
 
 ```sh
 export BETTER_AUTH_SECRET=...   # required
+export BUN_VERSION=$(bun scripts/bun-version.ts)   # image builds take no default
 docker compose -f docker-compose.prod.yml up --build
 ```
 

@@ -1,4 +1,8 @@
-FROM oven/bun:1.3.13-alpine AS base
+# BUN_VERSION comes from packageManager via publish.yml / CI, or
+# scripts/build-server-image.sh for a local build.
+ARG BUN_VERSION
+
+FROM oven/bun:${BUN_VERSION}-alpine AS base
 
 WORKDIR /app
 
@@ -21,7 +25,7 @@ RUN bun install --production --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 
 # ---- Production runner: server sources + runtime deps only ----
-FROM oven/bun:1.3.13-alpine AS runner
+FROM oven/bun:${BUN_VERSION}-alpine AS runner
 
 WORKDIR /app
 

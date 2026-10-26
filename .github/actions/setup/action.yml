@@ -11,3 +11,11 @@ runs:
     - name: Install dependencies
       shell: bash
       run: bun install --frozen-lockfile
+
+    - name: Verify Bun toolchain
+      shell: bash
+      run: |
+        BUN=$(bun scripts/bun-version.ts)
+        echo "bun $BUN ($(bun --version))"
+        test "$(bun --version)" = "$BUN"
+        test "$(bun scripts/bun-version.ts --catalog @types/bun)" = "$BUN"
