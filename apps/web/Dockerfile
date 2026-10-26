@@ -1,4 +1,3 @@
-ARG COMMIT_SHA=unknown
 # BUN_VERSION comes from packageManager via publish.yml, or
 # scripts/build-web-image.sh for a local build.
 ARG BUN_VERSION
@@ -25,16 +24,10 @@ RUN bun install --frozen-lockfile
 
 COPY --from=pruner /app/out/full/ .
 
-ARG COMMIT_SHA
-ENV VITE_COMMIT_SHA=${COMMIT_SHA}
-
 RUN bun run build --filter=@laber/web
 
 # ---- Production runner: static files behind nginx ----
 FROM nginx:1.27-alpine AS runner
-
-ARG COMMIT_SHA
-ENV COMMIT_SHA=${COMMIT_SHA}
 
 COPY --from=builder /app/apps/web/build /usr/share/nginx/html
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf

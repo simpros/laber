@@ -18,16 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Verify Bun toolchain
-        run: |
-          BUN=$(bun scripts/bun-version.ts)
-          test "$(bun --version)" = "$BUN"
-          test "$(bun scripts/bun-version.ts --catalog @types/bun)" = "$BUN"
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Check for orphan workspaces
         run: bun run deps:orphans
@@ -41,10 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Type-check
         run: bun run check
@@ -55,10 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Run unit & component tests
         run: bun run test
@@ -69,10 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Build
         run: bun run build
@@ -98,11 +80,7 @@ jobs:
         # does not ship it.
         run: apt-get update && apt-get install -y unzip
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Download SPA build from build job
         uses: actions/download-artifact@v4
@@ -129,7 +107,6 @@ jobs:
   docker:
     name: Build images (${{ matrix.name }})
     runs-on: ubuntu-latest
-    needs: build
     strategy:
       matrix:
         include:
@@ -152,3 +129,5 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: false
           tags: ${{ matrix.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

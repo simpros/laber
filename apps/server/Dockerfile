@@ -1,5 +1,3 @@
-ARG COMMIT_SHA=unknown
-
 FROM oven/bun:1.3.13-alpine AS base
 
 WORKDIR /app
@@ -18,14 +16,12 @@ RUN turbo prune @laber/server --docker
 FROM base AS installer
 
 COPY --from=pruner /app/out/json/ .
-RUN bun install --frozen-lockfile
+RUN bun install --production --frozen-lockfile
 
 COPY --from=pruner /app/out/full/ .
 
 # ---- Production runner: server sources + runtime deps only ----
 FROM oven/bun:1.3.13-alpine AS runner
-
-ARG COMMIT_SHA
 
 WORKDIR /app
 
@@ -37,7 +33,6 @@ USER app
 
 ENV NODE_ENV=production
 ENV PORT=3001
-ENV COMMIT_SHA=${COMMIT_SHA}
 ENV DATABASE_PATH=/data/laber.db
 ENV DATA_DIR=/data
 

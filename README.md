@@ -34,16 +34,13 @@ the first admin, then `/login`.
 
 ## Environment
 
-See `.env.example`. SQLite only:
+SQLite only. `.env.example` is the full list — the defaults below live in
+code (`packages/db/src/paths.ts`, `apps/server/src/index.ts`,
+`apps/web/vite.config.ts`) and fall back when unset:
 
-| Var                    | Default                                                   | Used by                      |
-| ---------------------- | --------------------------------------------------------- | ---------------------------- |
-| `DATABASE_PATH`        | `<DATA_DIR>/laber.db`                                     | api, `drizzle-kit`           |
-| `DATA_DIR`             | `./data`                                                  | api (repos + DB dir)         |
-| `BETTER_AUTH_SECRET`   | — (required)                                              | api                          |
-| `BETTER_AUTH_BASE_URL` | dev `http://localhost:5173`, prod `http://localhost:3000` | api                          |
-| `PORT`                 | `3001`                                                    | api                          |
-| `LABER_API_URL`        | `http://localhost:3001`                                   | web dev/preview `/api` proxy |
+- `DATABASE_PATH` / `DATA_DIR` — SQLite file and data dir.
+- `BETTER_AUTH_SECRET` (required), `BETTER_AUTH_BASE_URL`.
+- `PORT` (api), `LABER_API_URL` (web dev/preview `/api` proxy).
 
 ## Verification
 
