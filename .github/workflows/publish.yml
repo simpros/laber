@@ -1,17 +1,31 @@
-name: Publish Docker Image
+name: Publish Docker Images
 
 on:
   push:
     tags:
+      - "api@*"
       - "web@*"
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   publish:
-    name: Build & Push
+    name: Build & Push ${{ matrix.app }}
+    strategy:
+      matrix:
+        include:
+          - app: api
+            tag-prefix: api
+            package-path: apps/server/package.json
+            dockerfile: apps/server/Dockerfile
+            image-suffix: api
+          - app: web
+            tag-prefix: web
+            package-path: apps/web/package.json
+            dockerfile: apps/web/Dockerfile
+            image-suffix: web
+    if: startsWith(github.ref, format('refs/tags/{0}@', matrix.tag-prefix))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,14 +37,14 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          TAG="${GITHUB_REF#refs/tags/web@}"
+          TAG="${GITHUB_REF#refs/tags/${{ matrix.tag-prefix }}@}"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check if this is the highest version
         id: latest
         run: |
           CURRENT="${{ steps.version.outputs.version }}"
-          HIGHEST=$(git tag -l 'web@*' | sed 's/^web@//' | sort -V | tail -1)
+          HIGHEST=$(git tag -l '${{ matrix.tag-prefix }}@*' | sed 's/^${{ matrix.tag-prefix }}@//' | sort -V | tail -1)
           if [ "$CURRENT" = "$HIGHEST" ]; then
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
           else
@@ -39,10 +53,10 @@ jobs:
 
       - name: Verify version matches package.json
         run: |
-          PKG_VERSION=$(jq -r '.version' apps/web/package.json)
+          PKG_VERSION=$(jq -r '.version' ${{ matrix.package-path }})
           TAG_VERSION="${{ steps.version.outputs.version }}"
           if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag version ($TAG_VERSION) does not match apps/web/package.json version ($PKG_VERSION)"
+            echo "::error::Tag version ($TAG_VERSION) does not match ${{ matrix.package-path }} version ($PKG_VERSION)"
             exit 1
           fi
 
@@ -69,7 +83,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-${{ matrix.image-suffix }}
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest,enable=${{ steps.latest.outputs.is_latest }}
@@ -78,7 +92,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/web/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           build-args: |
             COMMIT_SHA=${{ github.sha }}
