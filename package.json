@@ -27,7 +27,7 @@
     "db:push": "turbo run db:push",
     "db:studio": "turbo run db:studio",
     "deps:orphans": "bun scripts/check-orphan-workspaces.ts",
-    "test": "turbo run test",
+    "test": "turbo run test && bun test scripts/",
     "test:e2e": "turbo run test:e2e",
     "auth:generate": "turbo run auth:generate"
   },

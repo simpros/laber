@@ -19,7 +19,7 @@ Run from the repo root unless noted:
 - `bun run deps:orphans` — fail on workspace packages no manifest declares.
 - `bun run test` — unit/integration (`bun test` per package; server tests need ~60s timeout).
 - `bun run test:e2e` — Playwright against a temp SQLite DB (`apps/web/tests/.data`); builds the SPA locally if `apps/web/build/` is missing, but CI must supply the build artifact (`build` job uploads `web-build`).
-- `docker compose -f docker-compose.prod.yml up --build` — prod parity (needs `BETTER_AUTH_SECRET`; API auto-migrates a fresh volume).
+- `BUN_VERSION=$(bun scripts/bun-version.ts) BETTER_AUTH_SECRET=... docker compose -f docker-compose.prod.yml up --build` — prod parity (API auto-migrates a fresh volume).
 - `bun run format` / `bun run format:check` — Prettier (2-space, double quotes, print width 75).
 - `bun run db:generate` / `db:migrate` / `db:push` / `db:studio` — Drizzle Kit via `@laber/db`.
 - Package-scoped: `bun run --filter <pkg> <task>` or `cd apps/server && bun test <file>`.
@@ -44,7 +44,7 @@ Run from the repo root unless noted:
 - `bun run lint`, `bun run check`, `bun run test`, `bun run build` green.
 - E2E green with SQLite only (`bun run test:e2e`).
 - `grep -rni postgres apps packages docker-compose.prod.yml .github` shows no services/deps/env/docs (test fixtures using a `postgres:` image string as sample compose data are fine).
-- `docker compose -f docker-compose.prod.yml up --build` serves api + web with a persistent SQLite volume; the API boots clean from an empty volume.
+- `BUN_VERSION=$(bun scripts/bun-version.ts) BETTER_AUTH_SECRET=... docker compose -f docker-compose.prod.yml up --build` serves api + web with a persistent SQLite volume; the API boots clean from an empty volume.
 
 ## Agent skills
 

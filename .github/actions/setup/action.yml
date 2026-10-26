@@ -18,4 +18,3 @@ runs:
         BUN=$(bun scripts/bun-version.ts)
         echo "bun $BUN ($(bun --version))"
         test "$(bun --version)" = "$BUN"
-        test "$(bun scripts/bun-version.ts --catalog @types/bun)" = "$BUN"
