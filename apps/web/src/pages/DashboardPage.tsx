@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { Card, CardHeader, StatusBadge } from "@laber/ui";
-import { statusColor, statusTone, timeAgo } from "@/lib/utils";
+import { Card, CardHeader } from "@laber/ui";
+import { statusColor, timeAgo } from "@/lib/utils";
 import { useDashboard } from "@/lib/queries/dashboard";
+import StatusBadge from "@/components/StatusBadge";
 import QueryStatus from "@/components/QueryStatus";
 
 export default function DashboardPage() {
@@ -101,10 +102,7 @@ export default function DashboardPage() {
                         key={log.id}
                         className="flex items-center gap-3 text-sm"
                       >
-                        <StatusBadge
-                          status={log.status}
-                          tone={statusTone(log.status)}
-                        />
+                        <StatusBadge status={log.status} />
                         <span className="text-text-secondary">
                           {log.isCore
                             ? "core"

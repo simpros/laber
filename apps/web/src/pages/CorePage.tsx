@@ -142,6 +142,9 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                         id={keyDef.key}
                         name={keyDef.key}
                         entry={field}
+                        placeholder={
+                          keyDef.secret ? undefined : keyDef.placeholder
+                        }
                         onInput={(value) => touchByKey(keyDef.key, value)}
                         onUndo={() =>
                           updateByKey(
@@ -157,12 +160,6 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                         onClear={() =>
                           updateByKey(keyDef.key, clearSecretEntry(field))
                         }
-                        {...(chromeIsSecret(field)
-                          ? { isSecret: true as const }
-                          : {
-                              isSecret: false as const,
-                              placeholder: keyDef.placeholder,
-                            })}
                       />
                       {"hint" in keyDef ? (
                         <p className="text-text-muted mt-1 text-xs">

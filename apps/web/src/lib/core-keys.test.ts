@@ -30,10 +30,14 @@ describe("CORE_KEYS", () => {
     expect(token?.secret).toBe(true);
   });
 
-  it("every key has a non-empty label and placeholder", () => {
+  it("every key has a non-empty label, and plain keys have a placeholder", () => {
     for (const entry of CORE_KEYS) {
       expect(entry.label.length).toBeGreaterThan(0);
-      expect(entry.placeholder.length).toBeGreaterThan(0);
+      if (entry.secret) {
+        expect("placeholder" in entry).toBe(false);
+      } else {
+        expect(entry.placeholder.length).toBeGreaterThan(0);
+      }
     }
   });
 

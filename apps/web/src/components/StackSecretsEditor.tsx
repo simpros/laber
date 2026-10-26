@@ -108,7 +108,6 @@ export default function StackSecretsEditor({
             </div>
 
             <ConfigValueField
-              isSecret
               entry={entry}
               onInput={(value) => touch(i, value)}
               onUndo={() => update(i, undoSecretEntry(entry))}
@@ -125,7 +124,10 @@ export default function StackSecretsEditor({
         ))}
       </div>
 
-      <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
+      <MutationNotice
+        mutation={saveMutation}
+        errorFallback="Save failed"
+      />
 
       <div className="mt-4">
         <Button

@@ -1,13 +1,9 @@
-import { StatusBadge } from "@laber/ui";
-import { statusTone } from "@/lib/utils";
+import StatusBadge from "@/components/StatusBadge";
+import type { useStackDetail } from "@/lib/queries/stacks";
 
-type LogEntry = {
-  id: string;
-  status: string;
-  action: string;
-  output: string | null;
-  createdAt: Date | string | null;
-};
+type LogEntry = NonNullable<
+  ReturnType<typeof useStackDetail>["data"]
+>["logs"][number];
 
 export default function StackDeploymentLogs({
   logs,
@@ -27,10 +23,7 @@ export default function StackDeploymentLogs({
           className="bg-surface-2 border-border rounded-lg border px-4 py-3"
         >
           <div className="flex items-center gap-3 text-sm">
-            <StatusBadge
-              status={log.status}
-              tone={statusTone(log.status)}
-            />
+            <StatusBadge status={log.status} />
             <span className="text-text-secondary font-mono">
               {log.action}
             </span>
