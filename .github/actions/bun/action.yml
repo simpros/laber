@@ -1,0 +1,19 @@
+name: Set up Bun from the packageManager pin
+description: Install the packageManager-pinned Bun and expose the resolved version.
+
+outputs:
+  version:
+    description: Bun version pinned by packageManager in package.json.
+    value: ${{ steps.resolve.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: package.json
+
+    - name: Resolve Bun version
+      id: resolve
+      shell: bash
+      run: echo "version=$(bun scripts/bun-version.ts)" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,68 @@
+# laber
+
+Homelab stack manager: an **Elysia API** (`apps/server`) plus a **React SPA**
+(`apps/web`), sharing a typed Eden client (`packages/api-client`) and a
+**SQLite-only** Drizzle store (`packages/db`).
+
+## Quickstart (dev, zero external services)
+
+Requirements: Bun (pinned by `packageManager` in `package.json`).
+
+```sh
+bun install
+cp .env.example .env   # then set BETTER_AUTH_SECRET
+bun run dev            # api on :3001, web on :5173 (/api proxied to the api)
+```
+
+Open the web dev server; on a fresh database you land on `/setup` to create
+the first admin, then `/login`.
+
+## Layout
+
+- `apps/server` — Bun + Elysia API. `bun run dev` in the package runs
+  `src/index.ts` (migrations + listen on `PORT`, default 3001). One Docker
+  image (`apps/server/Dockerfile`): Bun runtime, `packages/db/drizzle`
+  baked in, `/data` volume; boots clean from an empty volume.
+- `apps/web` — Vite + React 19 SPA (TanStack Router/Query, Tailwind v4).
+  `bun run dev` / `bun run build` / `bun run preview` (`:3000`). One Docker
+  image (`apps/web/Dockerfile` + `nginx.conf`): static `build/` behind
+  nginx, `/api/*` proxied to `http://api:3001`.
+- `packages/db` — Drizzle + `bun-sqlite`, migrations in `packages/db/drizzle`.
+- `packages/api-client` — typed Eden client over the server's app type.
+- `packages/auth`, `packages/ui`, `packages/logging` — shared auth, React
+  components, logging.
+
+## Environment
+
+SQLite only. `.env.example` is the full list; when a value is unset,
+the default in code applies (`packages/db/src/paths.ts`,
+`apps/server/src/index.ts`, `apps/web/vite.config.ts`):
+
+- `DATABASE_PATH` / `DATA_DIR` — SQLite file and data dir.
+- `BETTER_AUTH_SECRET` (required), `BETTER_AUTH_BASE_URL`.
+- `PORT` (api), `LABER_API_URL` (web dev/preview `/api` proxy).
+
+## Verification
+
+```sh
+bun run lint
+bun run verify:toolchain
+bun run check
+bun run test
+bun run build
+bun run test:e2e   # temp SQLite DB in apps/web/tests/.data, no external services
+```
+
+## Prod (Docker)
+
+```sh
+export BETTER_AUTH_SECRET=...   # required
+export BUN_VERSION=$(bun scripts/bun-version.ts)   # image builds take no default
+docker compose -f docker-compose.prod.yml up --build
+```
+
+- Web on `http://localhost:3000`, API on `http://localhost:3001`
+  (also reachable at `/api/*` through the web origin).
+- SQLite lives in the `laber_data` volume (`/data/laber.db`); the API runs
+  migrations automatically, so an empty volume is the normal first boot.
+- The API needs `/var/run/docker.sock` to manage stacks.

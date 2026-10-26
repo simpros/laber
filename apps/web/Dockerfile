@@ -1,52 +1,37 @@
-ARG COMMIT_SHA=unknown
-# BUN_VERSION comes from packageManager via publish.yml, or
-# scripts/build-web-image.sh for a local build.
+# BUN_VERSION has no default; pass it from packageManager via scripts/bun-version.ts.
 ARG BUN_VERSION
 
 FROM oven/bun:${BUN_VERSION}-alpine AS base
 
 WORKDIR /app
 
-FROM base AS prepare
+# ---- Prune the monorepo to the web build subgraph ----
+# (@laber/web -> @laber/api-client -> @laber/server types, so the pruned
+# sources include the server for typechecking. Only build/ leaves the builder.)
+FROM base AS pruner
 
 RUN bun add -g turbo@^2
 
 COPY . .
 RUN turbo prune @laber/web --docker
 
+# ---- Install pruned deps + build the SPA ----
 FROM base AS builder
 
-COPY --from=prepare /app/out/json/ .
-COPY --from=prepare /app/bun.lock ./bun.lock
+COPY --from=pruner /app/out/json/ .
 RUN bun install --frozen-lockfile
 
-COPY --from=prepare /app/out/full/ .
+COPY --from=pruner /app/out/full/ .
+
 RUN bun run build --filter=@laber/web
 
-FROM base AS runner
+# ---- Production runner: static files behind nginx ----
+FROM nginx:1.27-alpine AS runner
 
-ARG COMMIT_SHA
+COPY --from=builder /app/apps/web/build /usr/share/nginx/html
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
-RUN apk add --no-cache curl git openssh-client docker-cli docker-cli-compose && \
-    addgroup --system --gid 1001 app && \
-    adduser --system --uid 1001 -G app app && \
-    mkdir -p /data && chown app:app /data
-USER app
-
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV COMMIT_SHA=${COMMIT_SHA}
-ENV DATABASE_PATH=/data/laber.db
-ENV DATA_DIR=/data
-
-COPY --from=builder --chown=app:app /app/apps/web/build ./
-COPY --from=builder --chown=app:app /app/packages/db/drizzle ./server/drizzle
-
-VOLUME /data
-
-EXPOSE 3000/tcp
+EXPOSE 80/tcp
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-CMD ["bun", "run", "index.js"]
+  CMD wget -qO- http://localhost:80/health || exit 1

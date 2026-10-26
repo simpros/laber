@@ -17,13 +17,13 @@
     "test": "bun test ./**/*.test.ts --timeout 60000"
   },
   "dependencies": {
+    "drizzle-orm": "1.0.0-beta.16-ea816b6",
     "nanoid": "^5.1.6"
   },
   "devDependencies": {
     "@laber/eslint-config": "workspace:*",
     "@types/bun": "catalog:",
     "drizzle-kit": "1.0.0-beta.16-ea816b6",
-    "drizzle-orm": "1.0.0-beta.16-ea816b6",
     "typescript": "catalog:"
   }
 }

@@ -18,6 +18,8 @@ Run from the repo root unless noted:
 - `bun run build` / `bun run check` (`tsc --noEmit`) / `bun run lint` (`eslint`) — per-package via Turbo, plus `scripts/` at the root.
 - `bun run deps:orphans` — fail on workspace packages no manifest declares.
 - `bun run test` — unit/integration (`bun test` per package; server tests need ~60s timeout).
+- `bun run test:e2e` — Playwright against a temp SQLite DB (`apps/web/tests/.data`); builds the SPA locally if `apps/web/build/` is missing, but CI must supply the build artifact (`build` job uploads `web-build`).
+- `BUN_VERSION=$(bun scripts/bun-version.ts) BETTER_AUTH_SECRET=... docker compose -f docker-compose.prod.yml up --build` — prod parity (API auto-migrates a fresh volume).
 - `bun run format` / `bun run format:check` — Prettier (2-space, double quotes, print width 75).
 - `bun run db:generate` / `db:migrate` / `db:push` / `db:studio` — Drizzle Kit via `@laber/db`.
 - Package-scoped: `bun run --filter <pkg> <task>` or `cd apps/server && bun test <file>`.
@@ -28,6 +30,7 @@ Run from the repo root unless noted:
 - `apps/server/src/routes/` — Elysia route modules mounted by `src/app.ts`.
 - `apps/server/tests/` — `bun test` suites plus `docker-stub.ts` / `helpers.ts` / `setup.ts`.
 - `apps/web/src/` — `components/`, `lib/` (+ `lib/queries/`), `pages/`, `router.tsx`, `main.tsx`.
+- `apps/server/Dockerfile` / `apps/web/Dockerfile` (`nginx.conf`) — per-app images; `docker-compose.prod.yml` runs api + web on a persistent SQLite volume.
 - `packages/` — `api-client`, `auth`, `db` (schema/client/migrate), `ui`, `logging`, plus shared `eslint-config`.
 
 ## Style
@@ -35,6 +38,14 @@ Run from the repo root unless noted:
 - Prettier is the formatter; `@laber/eslint-config` (eslint + typescript-eslint + `consistent-type-imports`, no unused vars) is the linter.
 - TypeScript `strict`; prefer `import type` for type-only imports.
 - Comments state the why only. See `docs/agents/comment-style.md` — no ticket/issue/PR/people refs, no history narration, no commented-out code, one line beats three.
+
+## Verification
+
+- `bun run lint`, `bun run check`, `bun run test`, `bun run build` green.
+- `bun run verify:toolchain` — the `packageManager` Bun pin matches every Dockerfile and workflow reference.
+- E2E green with SQLite only (`bun run test:e2e`).
+- `grep -rni postgres apps packages docker-compose.prod.yml .github` shows no services/deps/env/docs (test fixtures using a `postgres:` image string as sample compose data are fine).
+- `BUN_VERSION=$(bun scripts/bun-version.ts) BETTER_AUTH_SECRET=... docker compose -f docker-compose.prod.yml up --build` serves api + web with a persistent SQLite volume; the API boots clean from an empty volume.
 
 ## Agent skills
 

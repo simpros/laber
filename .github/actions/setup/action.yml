@@ -1,0 +1,19 @@
+name: Setup repo with Bun
+description: Install the packageManager-pinned Bun and project dependencies.
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/bun
+      id: bun
+
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    - name: Verify Bun toolchain
+      shell: bash
+      run: |
+        BUN=${{ steps.bun.outputs.version }}
+        echo "bun $BUN ($(bun --version))"
+        test "$(bun --version)" = "$BUN"
