@@ -46,3 +46,46 @@ describe("errorDetails", () => {
     expect(errorDetails({ code: 1 })).toBe('{"code":1}');
   });
 });
+
+describe("formatter", () => {
+  function capture(method: "info" | "warn", fn: () => void): string {
+    const lines: string[] = [];
+    const original = console[method];
+    console[method] = (...args: unknown[]) => {
+      lines.push(args.map((arg) => String(arg)).join(" "));
+    };
+    try {
+      fn();
+    } finally {
+      console[method] = original;
+    }
+    return lines.join("\n");
+  }
+
+  function occurrences(haystack: string, needle: string): number {
+    return haystack.split(needle).length - 1;
+  }
+
+  it("renders an interpolated property exactly once", () => {
+    const output = capture("warn", () => {
+      getLogger("test").warn("hello {name}", { name: "world" });
+    });
+    expect(occurrences(output, "world")).toBe(1);
+  });
+
+  it("renders escaped braces literally without a property suffix", () => {
+    const output = capture("info", () => {
+      getLogger("test").info("literal {{q}}", { q: 1 });
+    });
+    expect(output).toContain("literal {q}");
+    expect(output).not.toContain("q=");
+  });
+
+  it("renders nested paths once without duplicating the property", () => {
+    const output = capture("info", () => {
+      getLogger("test").info("nested {u.id}", { u: { id: 7 } });
+    });
+    expect(output).toContain("nested 7");
+    expect(output).not.toContain("u=");
+  });
+});

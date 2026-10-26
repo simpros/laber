@@ -1,10 +1,9 @@
 import { Elysia } from "elysia";
 import { auth } from "@laber/auth";
-import { db, user } from "@laber/db";
-import { count } from "drizzle-orm";
 import { DomainError, type DomainErrorKind } from "./lib/errors";
 import { getSessionUser } from "./lib/auth";
 import { dashboardRoutes } from "./routes/dashboard";
+import { healthRoutes } from "./routes/health";
 import { setupRoutes } from "./routes/setup";
 import { stackRoutes } from "./routes/stacks";
 import { coreRoutes } from "./routes/core";
@@ -29,15 +28,7 @@ async function requireSession({
 
 export function createApp() {
   const app = new Elysia()
-    .get("/health", async ({ set }) => {
-      try {
-        await db.select({ count: count() }).from(user);
-      } catch {
-        set.status = 503;
-        return { status: "error" as const };
-      }
-      return { status: "ok" as const };
-    })
+    .use(healthRoutes)
     .onError(({ code, error, set }) => {
       if (error instanceof DomainError) {
         const statusByKind: Record<DomainErrorKind, number> = {
