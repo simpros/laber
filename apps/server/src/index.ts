@@ -1,15 +1,14 @@
 import { runMigrations } from "@laber/db";
-import { configureLogging, getLogger } from "@laber/logging";
+import { errorDetails, getLogger } from "@laber/logging";
 import { app } from "./app";
 
-await configureLogging();
-const logger = getLogger(["laber", "server"]);
+const logger = getLogger("server");
 
 try {
   runMigrations();
 } catch (err) {
-  logger.error("Failed to run database migrations", {
-    error: String(err),
+  logger.error("Failed to run database migrations: {error}", {
+    error: errorDetails(err),
   });
   process.exit(1);
 }

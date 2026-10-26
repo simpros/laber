@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, deploymentLogs, stacks } from "@laber/db";
-import { getLogger } from "@laber/logging";
+import { errorDetails, getLogger } from "@laber/logging";
 import { createActivity, appendOutput, finishActivity } from "./activity";
 import type { Activity } from "./activity";
 import { ActionFailedError } from "./errors";
@@ -10,7 +10,7 @@ export type ActionIdentity =
   | { kind: "stack-log"; stackId: string }
   | { kind: "core" };
 
-const logger = getLogger(["laber", "server", "actions"]);
+const logger = getLogger("server", "actions");
 
 async function recordActionOutcome(options: {
   activityId: string;
@@ -137,8 +137,8 @@ export async function runLoggedAction<T>(
         result: { success: false, output: outcome.transcript },
       });
     } catch (persistError) {
-      logger.error("Failed to persist action outcome", {
-        error: String(persistError),
+      logger.error("Failed to persist action outcome: {error}", {
+        error: errorDetails(persistError),
       });
     }
     if (outcome.error instanceof ActionFailedError) {

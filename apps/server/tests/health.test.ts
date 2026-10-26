@@ -1,3 +1,4 @@
+import "./setup";
 import { describe, expect, it } from "bun:test";
 import { app } from "../src/app";
 import { req } from "./helpers";

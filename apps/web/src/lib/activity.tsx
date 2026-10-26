@@ -12,7 +12,7 @@ import type { Activity, ActivityEvent } from "@laber/api-client";
 import { getLogger } from "@laber/logging";
 import { isRecord } from "./utils";
 
-const logger = getLogger(["laber", "web", "activity"]);
+const logger = getLogger("web", "activity");
 
 interface ActivityContextValue {
   activities: Activity[];
@@ -112,13 +112,13 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       try {
         parsed = JSON.parse(raw.data);
       } catch {
-        logger.warn("Ignoring malformed activity frame", {
+        logger.warn("Ignoring malformed activity frame: {data}", {
           data: raw.data,
         });
         return;
       }
       if (!isActivityEvent(parsed)) {
-        logger.warn("Ignoring unknown activity event shape", {
+        logger.warn("Ignoring unknown activity event shape: {data}", {
           data: raw.data,
         });
         return;
