@@ -12,30 +12,25 @@ type NoticeMutation = {
 
 export type { NoticeMutation };
 
-export function shouldHideNotice(
-  mutation: Pick<NoticeMutation, "isPending">
-): boolean {
-  return mutation.isPending;
-}
-
-function NoticeBody({
+export function MutationNotice({
   mutation,
   errorFallback,
-  onViewActivity,
+  linkActivity,
 }: {
   mutation: NoticeMutation;
   errorFallback: string;
-  onViewActivity?: () => void;
+  linkActivity?: boolean;
 }) {
-  if (shouldHideNotice(mutation)) return null;
+  const { setOpen } = useActivity();
+  if (mutation.isPending) return null;
   if (mutation.data) {
     return (
       <Alert variant="success">
         {mutation.data}{" "}
-        {onViewActivity && (
+        {linkActivity && (
           <button
             type="button"
-            onClick={onViewActivity}
+            onClick={() => setOpen(true)}
             className="underline underline-offset-2"
           >
             View activity
@@ -52,25 +47,6 @@ function NoticeBody({
     );
   }
   return null;
-}
-
-export function MutationNotice({
-  mutation,
-  errorFallback,
-  linkActivity,
-}: {
-  mutation: NoticeMutation;
-  errorFallback: string;
-  linkActivity?: boolean;
-}) {
-  const { setOpen } = useActivity();
-  return (
-    <NoticeBody
-      mutation={mutation}
-      errorFallback={errorFallback}
-      onViewActivity={linkActivity ? () => setOpen(true) : undefined}
-    />
-  );
 }
 
 export default MutationNotice;

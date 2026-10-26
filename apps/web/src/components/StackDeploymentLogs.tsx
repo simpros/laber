@@ -1,17 +1,10 @@
-import { StatusBadge } from "@laber/ui";
-
-type LogEntry = {
-  id: string;
-  status: string;
-  action: string;
-  output: string | null;
-  createdAt: Date | string | null;
-};
+import StatusBadge from "@/components/StatusBadge";
+import type { StackDeploymentLog } from "@/lib/queries/stacks";
 
 export default function StackDeploymentLogs({
   logs,
 }: {
-  logs: LogEntry[];
+  logs: StackDeploymentLog[];
 }) {
   if (logs.length === 0) {
     return (

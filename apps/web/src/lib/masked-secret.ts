@@ -11,6 +11,8 @@ export type SecrecyState = {
   secrecy: Secrecy;
 };
 
+export type SecrecyEntry = MaskedSecretState & SecrecyState;
+
 export function chromeIsSecret(row: SecrecyState): boolean {
   return row.secrecy !== "plain";
 }
@@ -34,7 +36,7 @@ export function maskedFromServer({
   isSecret: boolean;
   value?: string;
   hasValue?: boolean;
-}): MaskedSecretState & SecrecyState {
+}): SecrecyEntry {
   return isSecret
     ? { value: "", hadValue: hasValue ?? false, dirty: false, secrecy: "secret" }
     : { value: value ?? "", hadValue: false, dirty: false, secrecy: "plain" };
@@ -47,7 +49,7 @@ export function touchEntry<T extends MaskedSecretState>(
   return { ...entry, value, dirty: true };
 }
 
-export function undoSecretEntry<T extends MaskedSecretState & SecrecyState>(
+export function undoSecretEntry<T extends SecrecyEntry>(
   entry: T,
 ): T {
   return {
@@ -86,7 +88,7 @@ export function markSaved(entry: MaskedSecretState): MaskedSecretState {
   };
 }
 
-export function setRowSecret<T extends MaskedSecretState & SecrecyState>(
+export function setRowSecret<T extends SecrecyEntry>(
   row: T,
   next: boolean,
 ): T {
@@ -103,7 +105,7 @@ export function setRowSecret<T extends MaskedSecretState & SecrecyState>(
   return { ...row, secrecy: "plain" };
 }
 
-export function markMixedSaved<T extends MaskedSecretState & SecrecyState>(
+export function markMixedSaved<T extends SecrecyEntry>(
   entry: T,
 ): T {
   return chromeIsSecret(entry)
@@ -111,7 +113,7 @@ export function markMixedSaved<T extends MaskedSecretState & SecrecyState>(
     : { ...entry, dirty: false };
 }
 
-export function mergeServerEntries<T extends MaskedSecretState & SecrecyState>(
+export function mergeServerEntries<T extends SecrecyEntry>(
   local: T[],
   server: T[],
   keyOf: (entry: T) => string,

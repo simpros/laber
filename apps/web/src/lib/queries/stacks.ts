@@ -17,6 +17,10 @@ export function useStackDetail(name: string) {
   });
 }
 
+export type StackDeploymentLog = NonNullable<
+  ReturnType<typeof useStackDetail>["data"]
+>["logs"][number];
+
 export type StackAction = "deploy" | "stop" | "restart" | "pull";
 
 function stackEndpoints(name: string) {

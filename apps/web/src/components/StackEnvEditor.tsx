@@ -10,8 +10,7 @@ import {
   undoSecretEntry,
   valueForSave,
   wireIsSecret,
-  type MaskedSecretState,
-  type Secrecy,
+  type SecrecyEntry,
 } from "@/lib/masked-secret";
 import { useMaskedListEditor } from "@/lib/use-masked-list-editor";
 import { stackEnvSave, type StackEnvPayload } from "@/lib/queries/stacks";
@@ -26,10 +25,9 @@ export type EnvEntry = {
   hasValue: boolean;
 };
 
-export type EnvRow = MaskedSecretState & {
+export type EnvRow = SecrecyEntry & {
   id: string;
   key: string;
-  secrecy: Secrecy;
 };
 
 export function rowForEnv(entry: EnvEntry): EnvRow {
@@ -72,34 +70,28 @@ export default function StackEnvEditor({
   detectedEnvVars?: string[];
 }) {
   const serverValues = useMemo(() => envVars.map(rowForEnv), [envVars]);
-  const {
-    entries,
-    setEntries,
-    update,
-    touch,
-    saveMutation,
-    handleSave,
-  } = useMaskedListEditor<EnvRow, StackEnvPayload>({
-    init: () => envVars.map(rowForEnv),
-    syncValues: serverValues,
-    keyOf: envKeyOf,
-    toPayload: (rows) =>
-      rows.map((entry) => ({
-        key: entry.key,
-        value: valueForSave(entry),
-        isSecret: wireIsSecret(entry),
-      })),
-    save: stackEnvSave(stackName),
-    fold: markMixedSaved,
-  });
+  const { entries, setEntries, update, touch, saveMutation, handleSave } =
+    useMaskedListEditor<EnvRow, StackEnvPayload>({
+      init: () => envVars.map(rowForEnv),
+      syncValues: serverValues,
+      keyOf: envKeyOf,
+      toPayload: (rows) =>
+        rows.map((entry) => ({
+          key: entry.key,
+          value: valueForSave(entry),
+          isSecret: wireIsSecret(entry),
+        })),
+      save: stackEnvSave(stackName),
+      fold: markMixedSaved,
+    });
 
   const serverByKey = useMemo(
     () => new Map(serverValues.map((e) => [e.key, e])),
-    [serverValues],
+    [serverValues]
   );
 
   const missingVars = detectedEnvVars.filter(
-    (name) => !entries.some((e) => e.key === name),
+    (name) => !entries.some((e) => e.key === name)
   );
 
   function addEnvVar() {
@@ -111,7 +103,10 @@ export default function StackEnvEditor({
   }
 
   function addAllMissing() {
-    setEntries((prev) => [...prev, ...missingVars.map((name) => blankRow(name))]);
+    setEntries((prev) => [
+      ...prev,
+      ...missingVars.map((name) => blankRow(name)),
+    ]);
   }
 
   function removeEnvVar(index: number) {
@@ -150,7 +145,6 @@ export default function StackEnvEditor({
               />
               <div className="flex-1">
                 <ConfigValueField
-                  isSecret={chromeIsSecret(entry)}
                   entry={entry}
                   inputClassName="w-full font-mono text-xs"
                   placeholder="value"
@@ -201,7 +195,10 @@ export default function StackEnvEditor({
       </div>
 
       <div className="mt-2">
-        <MutationNotice mutation={saveMutation} errorFallback="Save failed" />
+        <MutationNotice
+          mutation={saveMutation}
+          errorFallback="Save failed"
+        />
       </div>
 
       <div className="mt-4 flex gap-2">

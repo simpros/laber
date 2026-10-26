@@ -6,7 +6,9 @@ export type ApiClient = Treaty.Create<App>;
 export type {
   Activity,
   ActivityEvent,
+  ActivityStatus,
   ContainerInfo,
+  StackStatus,
 } from "@laber/server/api-type";
 
 export type ApiClientOptions = {

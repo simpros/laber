@@ -1,10 +1,13 @@
 import { Icon } from "@laber/ui";
-import type { MaskedSecretState } from "@/lib/masked-secret";
+import {
+  chromeIsSecret,
+  type MaskedSecretState,
+  type SecrecyEntry,
+} from "@/lib/masked-secret";
 
 export function ConfigValueField({
   id,
   name,
-  isSecret,
   entry,
   placeholder,
   inputClassName = "w-full font-mono text-sm",
@@ -16,8 +19,7 @@ export function ConfigValueField({
 }: {
   id?: string;
   name?: string;
-  isSecret: boolean;
-  entry: MaskedSecretState;
+  entry: SecrecyEntry;
   placeholder?: string;
   inputClassName?: string;
   onInput: (value: string) => void;
@@ -26,6 +28,7 @@ export function ConfigValueField({
   keepPlaceholder?: string;
   editPlaceholder?: string;
 }) {
+  const isSecret = chromeIsSecret(entry);
   const keep = isSecret && entry.hadValue && !entry.dirty;
 
   return (
@@ -37,11 +40,7 @@ export function ConfigValueField({
         value={entry.value}
         onChange={(e) => onInput(e.target.value)}
         placeholder={
-          isSecret
-            ? keep
-              ? keepPlaceholder
-              : editPlaceholder
-            : placeholder
+          keep ? keepPlaceholder : isSecret ? editPlaceholder : placeholder
         }
         className={inputClassName}
       />

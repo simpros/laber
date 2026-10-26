@@ -9,16 +9,23 @@ export const CORE_KEY_GROUPS: Record<
   companion: { label: "Cloudflare Companion", optional: true },
 };
 
-type CoreKeyEntry = {
+type CoreKeyBase = {
   key: string;
   prop: string;
   label: string;
-  secret: boolean;
   required: boolean;
-  placeholder: string;
   group: CoreKeyGroup;
   hint?: string;
 };
+
+export type CoreKeyEntry =
+  | (CoreKeyBase & { secret: false; placeholder: string })
+  | (CoreKeyBase & { secret: true; placeholder?: never });
+
+// Placeholder is plain-only by construction; secret keys resolve to none.
+export function coreKeyPlaceholder(key: CoreKeyEntry): string | undefined {
+  return key.secret ? undefined : key.placeholder;
+}
 
 export const CORE_KEYS = [
   {
@@ -36,7 +43,6 @@ export const CORE_KEYS = [
     label: "Cloudflare DNS API Token",
     secret: true,
     required: true,
-    placeholder: "Your CF API token",
     group: "proxy",
   },
   {
@@ -76,7 +82,6 @@ export const CORE_KEYS = [
     label: "Tunnel Token",
     secret: true,
     required: false,
-    placeholder: "Your tunnel token",
     group: "tunnel",
   },
   {
@@ -85,7 +90,6 @@ export const CORE_KEYS = [
     label: "Zone ID",
     secret: true,
     required: false,
-    placeholder: "Your CF Zone ID",
     group: "companion",
   },
   {
