@@ -23,7 +23,7 @@ export function noticeFor(
   return { kind: "hidden" };
 }
 
-function MutationNotice({
+export function MutationNotice({
   mutation,
   errorFallback,
   linkActivity,

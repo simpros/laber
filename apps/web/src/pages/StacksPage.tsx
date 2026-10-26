@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { Card, Icon, StatusBadge } from "@laber/ui";
-import { stackTone } from "@/lib/status-tone";
+import { Card, Icon } from "@laber/ui";
 import { useStacks } from "@/lib/queries/stacks";
+import StatusBadge from "@/components/StatusBadge";
 import QueryStatus from "@/components/QueryStatus";
 
 export default function StacksPage() {
@@ -49,11 +49,9 @@ export default function StacksPage() {
                       </p>
                     </div>
                     <StatusBadge
-                      tone={stackTone(stack.status)}
+                      status={stack.status}
                       className="rounded-full px-2"
-                    >
-                      {stack.status}
-                    </StatusBadge>
+                    />
                   </div>
 
                   <div className="text-text-muted mt-4 flex items-center gap-3 text-xs">

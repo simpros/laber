@@ -147,19 +147,12 @@ export default function StackEnvEditor({
                 <ConfigValueField
                   entry={entry}
                   inputClassName="w-full font-mono text-xs"
+                  placeholder="value"
+                  keepPlaceholder="Hidden — leave empty to keep"
+                  editPlaceholder="value"
                   onInput={(value) => touch(i, value)}
                   onUndo={() => undoRow(i)}
                   onClear={() => update(i, clearSecretEntry(entry))}
-                  {...(chromeIsSecret(entry)
-                    ? {
-                        isSecret: true as const,
-                        keepPlaceholder: "Hidden — leave empty to keep",
-                        editPlaceholder: "value",
-                      }
-                    : {
-                        isSecret: false as const,
-                        placeholder: "value",
-                      })}
                 />
               </div>
               {isDetected && (
