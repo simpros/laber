@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import type { CoreKey } from "@laber/api-client";
 import { api, unwrap } from "@/lib/api";
-import type { CoreKey } from "@/lib/core-keys";
 import { queryKeys, useLifecycleAction } from "./actions";
 import type { LifecycleActionItem } from "./actions";
 

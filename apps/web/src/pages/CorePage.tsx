@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { Card, CardHeader, Button } from "@laber/ui";
+import type { CoreKey } from "@laber/api-client";
 import { statusColor } from "@/lib/utils";
 import {
-  CORE_KEYS,
   CORE_KEY_GROUPS,
-  type CoreKey,
+  CORE_KEY_META,
   type CoreKeyGroup,
-} from "@/lib/core-keys";
+} from "@/lib/core-key-meta";
 import {
   chromeIsSecret,
   clearSecretEntry,
@@ -38,22 +38,26 @@ type FieldState = SecrecyEntry & {
 
 type CoreData = NonNullable<ReturnType<typeof useCore>["data"]>;
 
+const META_ENTRIES = (Object.keys(CORE_KEY_META) as CoreKey[]).map(
+  (key) => ({ key, ...CORE_KEY_META[key] })
+);
+
 const groups = Object.entries(CORE_KEY_GROUPS).map(([id, meta]) => ({
   id: id as CoreKeyGroup,
   ...meta,
-  keys: CORE_KEYS.filter((k) => k.group === id),
+  keys: META_ENTRIES.filter((k) => k.group === id),
 }));
 
 function fieldStatesFor(config: CoreData["config"]): FieldState[] {
-  return CORE_KEYS.map((keyDef) => {
-    const stored = config[keyDef.key];
+  return META_ENTRIES.map(({ key }) => {
+    const stored = config[key];
     return {
       ...maskedFromServer({
-        isSecret: keyDef.secret,
+        isSecret: stored?.isSecret ?? false,
         value: stored?.value,
         hasValue: stored?.hasValue,
       }),
-      key: keyDef.key,
+      key,
     };
   });
 }
@@ -138,9 +142,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                         id={keyDef.key}
                         name={keyDef.key}
                         entry={field}
-                        placeholder={
-                          keyDef.secret ? undefined : keyDef.placeholder
-                        }
+                        placeholder={keyDef.placeholder}
                         onInput={(value) => touchByKey(keyDef.key, value)}
                         onUndo={() =>
                           updateByKey(
@@ -157,7 +159,7 @@ function CoreConfigForm({ snapshot }: { snapshot: CoreData }) {
                           updateByKey(keyDef.key, clearSecretEntry(field))
                         }
                       />
-                      {"hint" in keyDef ? (
+                      {keyDef.hint ? (
                         <p className="text-text-muted mt-1 text-xs">
                           {keyDef.hint}
                         </p>
