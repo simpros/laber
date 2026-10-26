@@ -9,8 +9,6 @@ type NoticeMutation = {
   isError: boolean;
 };
 
-export type { NoticeMutation };
-
 export function noticeFor(
   mutation: NoticeMutation
 ):
@@ -23,7 +21,7 @@ export function noticeFor(
   return { kind: "hidden" };
 }
 
-export function MutationNotice({
+function MutationNotice({
   mutation,
   errorFallback,
   linkActivity,

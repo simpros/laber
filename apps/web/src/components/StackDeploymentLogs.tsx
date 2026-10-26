@@ -1,4 +1,5 @@
-import StatusBadge from "@/components/StatusBadge";
+import { StatusBadge } from "@laber/ui";
+import { logTone } from "@/lib/status-tone";
 import type { StackDeploymentLog } from "@/lib/queries/stacks";
 
 export default function StackDeploymentLogs({
@@ -19,7 +20,9 @@ export default function StackDeploymentLogs({
           className="bg-surface-2 border-border rounded-lg border px-4 py-3"
         >
           <div className="flex items-center gap-3 text-sm">
-            <StatusBadge status={log.status} />
+            <StatusBadge tone={logTone(log.status)}>
+              {log.status}
+            </StatusBadge>
             <span className="text-text-secondary font-mono">
               {log.action}
             </span>
