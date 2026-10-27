@@ -48,3 +48,6 @@ tests/.auth/
 
 # Lock files (bun.lockb is binary, bun.lock is text - include bun.lock)
 bun.lockb
+
+# HumanLayer task artifacts
+.humanlayer/
