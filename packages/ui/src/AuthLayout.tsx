@@ -13,8 +13,11 @@ export default function AuthLayout({
 }: AuthLayoutProps) {
   return (
     <div className="flex min-h-dvh items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+      <div className="animate-rise w-full max-w-sm">
         <div className="mb-8 text-center">
+          <div className="bg-accent shadow-accent/30 mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl font-mono text-xl font-bold text-white shadow-lg">
+            {title.charAt(0)}
+          </div>
           <h1 className="font-mono text-2xl font-bold tracking-tight">
             {title}
           </h1>

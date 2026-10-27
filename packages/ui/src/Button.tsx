@@ -11,11 +11,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "rounded-lg font-medium transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-1.5";
+  "rounded-lg font-medium inline-flex items-center justify-center gap-1.5 select-none transition-[background-color,color,border-color,transform,box-shadow] duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50";
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-accent hover:bg-accent-hover text-white",
-  secondary: "border-border hover:bg-surface-3 border",
+  primary:
+    "bg-accent hover:bg-accent-hover text-white shadow-sm shadow-accent/20",
+  secondary:
+    "border-border hover:bg-surface-3 hover:border-border-hover border",
   danger: "bg-danger/10 text-danger hover:bg-danger/20",
   ghost: "text-text-secondary hover:text-text-primary",
 };
