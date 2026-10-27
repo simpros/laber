@@ -24,20 +24,33 @@ export default function ActivityPanel() {
     }
   }, [activities]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, setOpen]);
+
   return (
     <>
-      {open && (
-        <button
-          className="fixed inset-0 z-40 bg-black/30 transition-opacity"
-          onClick={() => setOpen(false)}
-          aria-label="Close activity panel"
-        ></button>
-      )}
+      <button
+        className={`fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] transition-opacity duration-200 ease-out ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={() => setOpen(false)}
+        aria-label="Close activity panel"
+        tabIndex={-1}
+      ></button>
 
       <div
-        className={`bg-surface-1 border-border fixed top-0 right-0 z-50 flex h-dvh w-[420px] max-w-[90vw] flex-col border-l shadow-2xl transition-transform duration-200 ease-out ${
+        className={`bg-surface-1 border-border fixed top-0 right-0 z-50 flex h-dvh w-[420px] max-w-[90vw] flex-col border-l shadow-2xl transition-transform duration-300 ease-(--ease-drawer) ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
+        inert={!open}
+        role="dialog"
+        aria-label="Activity"
       >
         <div className="border-border flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
@@ -76,13 +89,20 @@ export default function ActivityPanel() {
 
         <div className="flex-1 overflow-y-auto" ref={panelBody}>
           {activities.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex h-full flex-col items-center justify-center gap-2">
+              <Icon
+                size="lg"
+                className="text-text-muted h-8 w-8 opacity-40"
+              >
+                <path d="M8 1.5v5l3 1.5" />
+                <circle cx="8" cy="8" r="6.5" />
+              </Icon>
               <p className="text-text-muted text-sm">No recent activity</p>
             </div>
           ) : (
             <div className="divide-border divide-y">
               {activities.map((activity) => (
-                <div key={activity.id} className="px-4 py-3">
+                <div key={activity.id} className="animate-fade px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
                       {activity.status === "running" ? (

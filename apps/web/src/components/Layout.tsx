@@ -24,24 +24,32 @@ export default function Layout({
         <AppSidebar />
       </aside>
 
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 md:hidden"
-          onClick={(e) => e.stopPropagation()}
+      <div
+        className={`fixed inset-0 z-40 md:hidden ${
+          sidebarOpen ? "" : "pointer-events-none"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+        inert={!sidebarOpen}
+      >
+        <button
+          className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out ${
+            sidebarOpen ? "opacity-100" : "opacity-0"
+          }`}
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
+          tabIndex={-1}
+        ></button>
+        <aside
+          className={`bg-surface-1 border-border relative z-50 flex h-full w-60 flex-col border-r transition-transform duration-300 ease-(--ease-drawer) ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
         >
-          <button
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close sidebar"
-          ></button>
-          <aside className="bg-surface-1 border-border relative z-50 flex h-full w-60 flex-col border-r">
-            <AppSidebar onNavigate={() => setSidebarOpen(false)} />
-          </aside>
-        </div>
-      )}
+          <AppSidebar onNavigate={() => setSidebarOpen(false)} />
+        </aside>
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col [contain:paint]">
-        <header className="bg-surface-1 border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
+        <header className="bg-surface-1/80 border-border flex items-center gap-3 border-b px-4 py-3 backdrop-blur-md md:hidden">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -61,7 +69,9 @@ export default function Layout({
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 sm:p-6 md:p-8">{children}</div>
+          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 md:p-8">
+            {children}
+          </div>
         </main>
       </div>
 

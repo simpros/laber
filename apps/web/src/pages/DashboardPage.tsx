@@ -12,42 +12,56 @@ export default function DashboardPage() {
     <QueryStatus query={query} failedMessage="Failed to load dashboard">
       {(data) => (
         <div className="space-y-8">
-          <div>
-            <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <div className="animate-rise">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Dashboard
+            </h1>
             <p className="text-text-secondary mt-1 text-sm">
               Overview of your homelab infrastructure
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Card className="p-5">
+            <Card
+              className="animate-rise p-5"
+              style={{ animationDelay: "60ms" }}
+            >
               <p className="text-text-muted text-xs font-medium tracking-wider uppercase">
                 Total Stacks
               </p>
-              <p className="mt-1 font-mono text-3xl font-bold">
+              <p className="mt-2 font-mono text-3xl font-bold tabular-nums">
                 {data.stats.totalStacks}
               </p>
             </Card>
-            <Card className="p-5">
+            <Card
+              className="animate-rise p-5"
+              style={{ animationDelay: "110ms" }}
+            >
               <p className="text-text-muted text-xs font-medium tracking-wider uppercase">
                 Deployed
               </p>
-              <p className="text-success mt-1 font-mono text-3xl font-bold">
+              <p className="text-success mt-2 font-mono text-3xl font-bold tabular-nums">
                 {data.stats.deployedStacks}
               </p>
             </Card>
-            <Card className="p-5">
+            <Card
+              className="animate-rise p-5"
+              style={{ animationDelay: "160ms" }}
+            >
               <p className="text-text-muted text-xs font-medium tracking-wider uppercase">
                 Repositories
               </p>
-              <p className="mt-1 font-mono text-3xl font-bold">
+              <p className="mt-2 font-mono text-3xl font-bold tabular-nums">
                 {data.stats.repositories}
               </p>
             </Card>
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
+            <Card
+              className="animate-rise"
+              style={{ animationDelay: "220ms" }}
+            >
               <CardHeader title="Core Services" />
               <div className="p-5">
                 {!data.coreConfigured ? (
@@ -71,14 +85,15 @@ export default function DashboardPage() {
                     {data.coreServices.map((svc) => (
                       <div
                         key={svc.name}
-                        className="bg-surface-1 flex items-center justify-between rounded-lg px-3 py-2.5"
+                        className="bg-surface-1 hover:bg-surface-3/60 flex items-center justify-between rounded-lg px-3 py-2.5 transition-colors duration-150"
                       >
                         <span className="font-mono text-sm">
                           {svc.name}
                         </span>
                         <span
-                          className={`text-xs font-medium ${statusColor(svc.state)}`}
+                          className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusColor(svc.state)}`}
                         >
+                          <span className="h-1.5 w-1.5 rounded-full bg-current"></span>
                           {svc.state}
                         </span>
                       </div>
@@ -88,7 +103,10 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            <Card>
+            <Card
+              className="animate-rise"
+              style={{ animationDelay: "270ms" }}
+            >
               <CardHeader title="Recent Activity" />
               <div className="p-5">
                 {data.recentLogs.length === 0 ? (

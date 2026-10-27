@@ -11,15 +11,17 @@ export default function StacksPage() {
     <QueryStatus query={query} failedMessage="Failed to load stacks">
       {(stacks) => (
         <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-semibold">Stacks</h1>
+          <div className="animate-rise">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Stacks
+            </h1>
             <p className="text-text-secondary mt-1 text-sm">
               Manage your deployed services
             </p>
           </div>
 
           {stacks.length === 0 ? (
-            <Card className="px-6 py-12 text-center">
+            <Card className="animate-rise px-6 py-16 text-center">
               <Icon size="lg" className="mx-auto h-12 w-12 opacity-20">
                 <path d="M8 1.5L14.5 5.5L8 9.5L1.5 5.5Z" />
                 <path d="M1.5 8L8 12L14.5 8" />
@@ -31,13 +33,14 @@ export default function StacksPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {stacks.map((stack) => (
+              {stacks.map((stack, i) => (
                 <Link
                   key={stack.name}
                   to="/stacks/$name"
                   params={{ name: stack.name }}
                   search={{ tab: undefined }}
-                  className="bg-surface-2 border-border hover:border-border-hover group rounded-xl border p-5 transition-colors"
+                  style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+                  className="animate-rise bg-surface-2 border-border group [@media(hover:hover)]:hover:border-accent/40 rounded-xl border p-5 shadow-sm shadow-black/5 transition-[border-color,transform,box-shadow] duration-200 ease-out active:scale-[0.99] [@media(hover:hover)]:hover:-translate-y-0.5 [@media(hover:hover)]:hover:shadow-lg [@media(hover:hover)]:hover:shadow-black/10"
                 >
                   <div className="flex items-start justify-between">
                     <div>

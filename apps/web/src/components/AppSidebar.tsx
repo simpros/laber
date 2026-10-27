@@ -44,9 +44,8 @@ const nav: Array<{ to: string; label: string; icon: NavIconName }> = [
   { to: "/core", label: "Core Services", icon: "cpu" },
 ];
 
-const bottomNav: Array<{ to: string; label: string; icon: NavIconName }> = [
-  { to: "/settings/repository", label: "Repository", icon: "settings" },
-];
+const bottomNav: Array<{ to: string; label: string; icon: NavIconName }> =
+  [{ to: "/settings/repository", label: "Repository", icon: "settings" }];
 
 function useIsActive(href: string) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -70,13 +69,23 @@ function NavLink({
     <Link
       to={to}
       onClick={onNavigate}
-      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+      aria-current={active ? "page" : undefined}
+      className={`relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
         active
-          ? "bg-surface-3 text-text-primary"
+          ? "bg-accent/10 text-text-primary font-medium"
           : "text-text-secondary hover:bg-surface-2 hover:text-text-primary"
       }`}
     >
-      <Icon className="opacity-60">{NAV_ICONS[icon]}</Icon>
+      <span
+        className={`bg-accent absolute top-2 bottom-2 -left-3 w-0.5 rounded-full transition-[opacity,transform] duration-200 ease-out ${
+          active ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0"
+        }`}
+      ></span>
+      <Icon
+        className={`transition-colors ${active ? "text-accent" : "opacity-60"}`}
+      >
+        {NAV_ICONS[icon]}
+      </Icon>
       {label}
     </Link>
   );
@@ -135,7 +144,7 @@ export default function AppSidebar({
 }: {
   onNavigate?: () => void;
 }) {
-  const { theme, toggle } = useTheme();
+  const { preference, cycle } = useTheme();
   const { data: session } = useSession();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -148,7 +157,10 @@ export default function AppSidebar({
 
   return (
     <>
-      <div className="border-border flex items-center gap-2 border-b px-5 py-4">
+      <div className="border-border flex items-center gap-2.5 border-b px-5 py-4">
+        <span className="bg-accent shadow-accent/30 flex h-7 w-7 items-center justify-center rounded-lg font-mono text-sm font-bold text-white shadow-md">
+          l
+        </span>
         <span className="font-mono text-lg font-bold tracking-tight">
           laber
         </span>
@@ -157,7 +169,7 @@ export default function AppSidebar({
         </span>
       </div>
 
-      <nav className="flex-1 space-y-0.5 p-3">
+      <nav className="flex-1 space-y-0.5 overflow-hidden p-3">
         {nav.map((item) => (
           <NavLink
             key={item.to}
@@ -194,25 +206,32 @@ export default function AppSidebar({
           </div>
           <div className="flex items-center gap-0.5">
             <button
-              onClick={toggle}
-              className="text-text-muted hover:text-text-primary rounded-md p-1.5 transition-colors"
-              title="Toggle theme"
+              onClick={cycle}
+              className="text-text-muted hover:text-text-primary hover:bg-surface-2 rounded-md p-1.5 transition-[color,background-color,transform] duration-150 active:scale-90"
+              title={`Theme: ${preference}`}
+              aria-label={`Theme: ${preference} (click to change)`}
             >
-              {theme === "dark" ? (
+              {preference === "system" ? (
                 <Icon>
-                  <circle cx="8" cy="8" r="3.5" />
-                  <path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7" />
+                  <rect x="1.5" y="2.5" width="13" height="9" rx="1.5" />
+                  <path d="M5.5 14h5M8 11.5V14" />
+                </Icon>
+              ) : preference === "dark" ? (
+                <Icon>
+                  <path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z" />
                 </Icon>
               ) : (
                 <Icon>
-                  <path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z" />
+                  <circle cx="8" cy="8" r="3.5" />
+                  <path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7" />
                 </Icon>
               )}
             </button>
             <button
               onClick={handleSignOut}
-              className="text-text-muted hover:text-danger rounded-md p-1.5 transition-colors"
+              className="text-text-muted hover:text-danger hover:bg-danger/10 rounded-md p-1.5 transition-[color,background-color,transform] duration-150 active:scale-90"
               title="Sign out"
+              aria-label="Sign out"
             >
               <Icon>
                 <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M6 8h8" />

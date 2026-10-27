@@ -16,11 +16,15 @@ export default function StatusBadge({
   return (
     <span
       className={cn(
-        "rounded px-1.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs font-medium",
         toneClass(tone),
         className
       )}
     >
+      <span
+        aria-hidden
+        className="h-1.5 w-1.5 rounded-full bg-current"
+      ></span>
       {children}
     </span>
   );
