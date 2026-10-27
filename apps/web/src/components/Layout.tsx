@@ -15,6 +15,18 @@ export default function Layout({
     setSidebarOpen(false);
   }, [pathname]);
 
+  // Keep the drawer content mounted only while open or sliding out, so
+  // the hidden drawer never duplicates the desktop sidebar's controls.
+  const [drawerMounted, setDrawerMounted] = useState(false);
+  useEffect(() => {
+    if (sidebarOpen) {
+      setDrawerMounted(true);
+      return;
+    }
+    const t = setTimeout(() => setDrawerMounted(false), 300);
+    return () => clearTimeout(t);
+  }, [sidebarOpen]);
+
   return (
     <div
       className="flex h-dvh overflow-hidden"
@@ -44,7 +56,9 @@ export default function Layout({
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <AppSidebar onNavigate={() => setSidebarOpen(false)} />
+          {drawerMounted && (
+            <AppSidebar onNavigate={() => setSidebarOpen(false)} />
+          )}
         </aside>
       </div>
 
